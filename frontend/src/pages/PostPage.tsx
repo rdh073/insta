@@ -160,7 +160,6 @@ export function PostPage() {
   const accounts = useAccountStore((s) => s.accounts);
   const jobs = usePostStore((s) => s.jobs);
   const addJob = usePostStore((s) => s.addJob);
-  const setJobs = usePostStore((s) => s.setJobs);
   const [caption, setCaption] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
