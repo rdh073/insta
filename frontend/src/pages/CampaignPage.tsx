@@ -252,7 +252,6 @@ function JobCard({ job, onUpdate }: { job: PostJob; onUpdate: (j: PostJob) => vo
 
 export function CampaignPage() {
   const jobs = usePostStore((s) => s.jobs);
-  const setJobs = usePostStore((s) => s.setJobs);
   const updateJob = usePostStore((s) => s.updateJob);
   const [filter, setFilter] = useState<StatusFilter>('all');
 

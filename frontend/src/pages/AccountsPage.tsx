@@ -751,7 +751,7 @@ export function AccountsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState('');
-  const [busyAccountIds, setBusyAccountIds] = useState<Set<string>>(new Set());
+  const [, setBusyAccountIds] = useState<Set<string>>(new Set());
   const [showBulkProxy, setShowBulkProxy] = useState(false);
   const [showTOTPSetup, setShowTOTPSetup] = useState(false);
   const [totpAccountId, setTOTPAccountId] = useState<string | undefined>();

@@ -15,11 +15,13 @@ interface Props {
   variant?: Variant;
   children: ReactNode;
   className?: string;
+  title?: string;
 }
 
-export function Badge({ variant = 'gray', children, className }: Props) {
+export function Badge({ variant = 'gray', children, className, title }: Props) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em]',
         styles[variant],

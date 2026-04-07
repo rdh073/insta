@@ -31,7 +31,7 @@ import { useSettingsStore, PROVIDERS } from '../store/settings';
 import type { AIProvider } from '../store/settings';
 import { useAccountStore } from '../store/accounts';
 import { useCopilotStore } from '../store/copilot';
-import type { RunState, CopilotSession } from '../store/copilot';
+import type { RunState } from '../store/copilot';
 import type { Account } from '../types';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
