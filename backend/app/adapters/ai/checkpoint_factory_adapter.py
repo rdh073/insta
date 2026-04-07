@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 from pathlib import Path
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -62,18 +61,17 @@ class ConfigurableCheckpointFactory:
 
     def _create_sqlite(self):
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         except ImportError as exc:
             raise RuntimeError(
                 "SQLite checkpointer backend requested but dependency is missing. "
-                "Install: langgraph-checkpoint-sqlite"
+                "Install: langgraph-checkpoint-sqlite aiosqlite"
             ) from exc
 
         db_path = self.sqlite_path or self._default_sqlite_path()
         db_file = Path(db_path)
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(db_file), check_same_thread=False)
-        return SqliteSaver(conn)
+        return AsyncSqliteSaver.from_conn_string(str(db_file))
 
     @staticmethod
     def _default_sqlite_path() -> str:
