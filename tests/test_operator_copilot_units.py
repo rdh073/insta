@@ -1,0 +1,691 @@
+"""Unit tests for operator copilot — policy classification, state, and node functions.
+
+Tests cover:
+- ToolPolicyRegistry: classify, classify_calls, has_blocked, has_write_sensitive,
+  all_read_only, filter_executable
+- make_initial_state: field initialisation, UUID generation
+- validate_approval_payload: contract enforcement
+- ingest_request_node: step_count increment, approval_attempted reset
+- classify_goal_node: blocked intent, normal intent, JSON parse error fallback
+- plan_actions_node: strips unknown tool names, returns empty plan
+- review_tool_policy_node: flags classification, strips BLOCKED, risk assessment
+- execute_tools_node: calls executor, captures results, logs failures
+- finish_node: sets stop_reason
+
+Uses FakeLLMGateway, FakeToolExecutor, FakeApprovalPort, FakeAuditLogPort.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+
+import pytest
+
+from ai_copilot.application.operator_copilot_policy import ToolPolicy, ToolPolicyRegistry
+from ai_copilot.application.state import (
+    VALID_APPROVAL_RESULTS,
+    VALID_STOP_REASONS,
+    make_initial_state,
+)
+from ai_copilot.application.ports import (
+    AUDIT_EVENT_TYPES,
+    APPROVAL_PAYLOAD_REQUIRED_KEYS,
+    validate_approval_payload,
+)
+from ai_copilot.adapters.fake_ports_operator_copilot import (
+    FakeLLMGateway,
+    FakeToolExecutor,
+    FakeApprovalPort,
+    FakeAuditLogPort,
+)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _make_nodes(
+    llm=None,
+    executor=None,
+    approval=None,
+    audit=None,
+    policy=None,
+):
+    from ai_copilot.application.graphs.operator_copilot import OperatorCopilotNodes
+
+    return OperatorCopilotNodes(
+        llm_gateway=llm or FakeLLMGateway(),
+        tool_executor=executor or FakeToolExecutor(),
+        approval_port=approval or FakeApprovalPort(),
+        audit_log=audit or FakeAuditLogPort(),
+        policy_registry=policy or ToolPolicyRegistry(),
+    )
+
+
+def _base_state(**overrides):
+    state = {
+        "messages": [],
+        "current_tool_calls": None,
+        "tool_results": {},
+        "stop_reason": None,
+        "step_count": 0,
+        "thread_id": "test-thread",
+        "operator_request": "show my accounts",
+        "normalized_goal": None,
+        "execution_plan": None,
+        "proposed_tool_calls": [],
+        "approved_tool_calls": [],
+        "tool_policy_flags": {},
+        "risk_assessment": None,
+        "approval_request": None,
+        "approval_result": None,
+        "review_findings": None,
+        "final_response": None,
+        "approval_attempted": False,
+    }
+    state.update(overrides)
+    return state
+
+
+# ===========================================================================
+# ToolPolicyRegistry unit tests
+# ===========================================================================
+
+
+def test_classify_read_only():
+    reg = ToolPolicyRegistry()
+    cls = reg.classify("list_accounts")
+    assert cls.policy == ToolPolicy.READ_ONLY
+    assert cls.requires_approval is False
+    assert cls.reason  # non-empty
+
+
+def test_classify_write_sensitive():
+    reg = ToolPolicyRegistry()
+    cls = reg.classify("follow_user")
+    assert cls.policy == ToolPolicy.WRITE_SENSITIVE
+    assert cls.requires_approval is True
+
+
+def test_classify_blocked():
+    reg = ToolPolicyRegistry()
+    cls = reg.classify("delete_account")
+    assert cls.policy == ToolPolicy.BLOCKED
+    assert cls.requires_approval is False
+
+
+def test_classify_unknown_is_blocked():
+    reg = ToolPolicyRegistry()
+    cls = reg.classify("nonexistent_tool_xyz")
+    assert cls.policy == ToolPolicy.BLOCKED
+    assert "allowlist" in cls.reason.lower() or "unknown" in cls.reason.lower()
+
+
+def test_classify_calls_returns_mapping():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "list_accounts"},
+        {"id": "c2", "name": "follow_user"},
+    ]
+    flags = reg.classify_calls(calls)
+    assert flags["c1"] == "read_only"
+    assert flags["c2"] == "write_sensitive"
+
+
+def test_has_blocked_true():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "list_accounts"},
+        {"id": "c2", "name": "delete_account"},
+    ]
+    assert reg.has_blocked(calls) is True
+
+
+def test_has_blocked_false():
+    reg = ToolPolicyRegistry()
+    calls = [{"id": "c1", "name": "list_accounts"}]
+    assert reg.has_blocked(calls) is False
+
+
+def test_has_write_sensitive_true():
+    reg = ToolPolicyRegistry()
+    calls = [{"id": "c1", "name": "follow_user"}]
+    assert reg.has_write_sensitive(calls) is True
+
+
+def test_has_write_sensitive_false():
+    reg = ToolPolicyRegistry()
+    calls = [{"id": "c1", "name": "list_accounts"}]
+    assert reg.has_write_sensitive(calls) is False
+
+
+def test_all_read_only_true():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "list_accounts"},
+        {"id": "c2", "name": "get_posts"},
+    ]
+    assert reg.all_read_only(calls) is True
+
+
+def test_all_read_only_false_when_write():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "list_accounts"},
+        {"id": "c2", "name": "follow_user"},
+    ]
+    assert reg.all_read_only(calls) is False
+
+
+def test_filter_executable_removes_blocked():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "list_accounts"},
+        {"id": "c2", "name": "delete_account"},   # BLOCKED
+        {"id": "c3", "name": "follow_user"},
+    ]
+    result = reg.filter_executable(calls)
+    names = [c["name"] for c in result]
+    assert "delete_account" not in names
+    assert "list_accounts" in names
+    assert "follow_user" in names
+
+
+def test_filter_executable_all_blocked_returns_empty():
+    reg = ToolPolicyRegistry()
+    calls = [
+        {"id": "c1", "name": "delete_account"},
+        {"id": "c2", "name": "bulk_dm"},
+    ]
+    assert reg.filter_executable(calls) == []
+
+
+def test_classify_actual_registered_tool_names():
+    reg = ToolPolicyRegistry()
+
+    assert reg.classify("list_followers").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("list_following").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("list_proxy_pool").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("pick_proxy").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_direct_thread").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("list_direct_messages").policy == ToolPolicy.READ_ONLY
+
+    assert reg.classify("import_proxies").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("recheck_proxy_pool").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("delete_proxy").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("send_message_to_thread").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("find_or_create_direct_thread").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("delete_direct_message").policy == ToolPolicy.WRITE_SENSITIVE
+
+
+# ===========================================================================
+# make_initial_state tests
+# ===========================================================================
+
+
+def test_make_initial_state_fields():
+    state = make_initial_state("test request", thread_id="t-abc")
+    assert state["operator_request"] == "test request"
+    assert state["thread_id"] == "t-abc"
+    assert state["step_count"] == 0
+    assert state["proposed_tool_calls"] == []
+    assert state["approved_tool_calls"] == []
+    assert state["tool_policy_flags"] == {}
+    assert state["approval_attempted"] is False
+    assert state["stop_reason"] is None
+    assert state["final_response"] is None
+
+
+def test_make_initial_state_auto_generates_thread_id():
+    state = make_initial_state("test request")
+    assert state["thread_id"]
+    assert len(state["thread_id"]) > 0
+
+
+def test_make_initial_state_different_threads():
+    a = make_initial_state("req")
+    b = make_initial_state("req")
+    assert a["thread_id"] != b["thread_id"]
+
+
+# ===========================================================================
+# validate_approval_payload tests
+# ===========================================================================
+
+
+def test_validate_approval_payload_passes():
+    payload = {
+        "operator_intent": "follow top users",
+        "proposed_tool_calls": [{"id": "c1", "name": "follow_user", "arguments": {}}],
+        "tool_reasons": {"c1": "grow audience"},
+        "risk_assessment": {"level": "medium", "reasons": [], "blocking": False},
+        "options": ["approve", "reject", "edit"],
+    }
+    validate_approval_payload(payload)  # must not raise
+
+
+def test_validate_approval_payload_missing_key_raises():
+    payload = {
+        "operator_intent": "follow top users",
+        "proposed_tool_calls": [],
+        # missing: tool_reasons, risk_assessment, options
+    }
+    with pytest.raises(ValueError) as exc_info:
+        validate_approval_payload(payload)
+    assert "missing required keys" in str(exc_info.value).lower()
+
+
+def test_validate_approval_payload_lists_all_missing():
+    payload = {}
+    with pytest.raises(ValueError) as exc_info:
+        validate_approval_payload(payload)
+    msg = str(exc_info.value)
+    for key in APPROVAL_PAYLOAD_REQUIRED_KEYS:
+        assert key in msg
+
+
+# ===========================================================================
+# VALID_APPROVAL_RESULTS and VALID_STOP_REASONS constants
+# ===========================================================================
+
+
+def test_valid_approval_results_contains_expected():
+    assert "approved" in VALID_APPROVAL_RESULTS
+    assert "rejected" in VALID_APPROVAL_RESULTS
+    assert "edited" in VALID_APPROVAL_RESULTS
+    assert "timeout" in VALID_APPROVAL_RESULTS
+
+
+def test_valid_stop_reasons_contains_expected():
+    assert "done" in VALID_STOP_REASONS
+    assert "rejected" in VALID_STOP_REASONS
+    assert "blocked" in VALID_STOP_REASONS
+    assert "error" in VALID_STOP_REASONS
+
+
+# ===========================================================================
+# ingest_request_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_ingest_request_increments_step_count():
+    nodes = _make_nodes()
+    state = _base_state(step_count=3)
+    result = await nodes.ingest_request_node(state)
+    assert result["step_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_ingest_request_resets_approval_attempted():
+    nodes = _make_nodes()
+    state = _base_state(approval_attempted=True)
+    result = await nodes.ingest_request_node(state)
+    assert result["approval_attempted"] is False
+
+
+@pytest.mark.asyncio
+async def test_ingest_request_clears_proposed_calls():
+    nodes = _make_nodes()
+    state = _base_state(proposed_tool_calls=[{"id": "c1", "name": "old_tool"}])
+    result = await nodes.ingest_request_node(state)
+    assert result["proposed_tool_calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_ingest_request_logs_operator_request_event():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(audit=audit)
+    await nodes.ingest_request_node(_base_state())
+    assert audit.has_event("operator_request")
+
+
+# ===========================================================================
+# classify_goal_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_non_blocked():
+    classification = json.dumps({
+        "normalized_goal": "list all accounts",
+        "blocked": False,
+        "block_reason": None,
+        "category": "account_info",
+    })
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[classification]))
+    state = _base_state(operator_request="show me my accounts")
+
+    result = await nodes.classify_goal_node(state)
+
+    assert result["normalized_goal"] == "list all accounts"
+    assert result.get("stop_reason") is None
+    assert result.get("final_response") is None
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_blocked_sets_stop_reason():
+    classification = json.dumps({
+        "normalized_goal": "spam users",
+        "blocked": True,
+        "block_reason": "mass spam action",
+        "category": "spam",
+    })
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[classification]))
+    state = _base_state(operator_request="spam everyone")
+
+    result = await nodes.classify_goal_node(state)
+
+    assert result["stop_reason"] == "blocked"
+    assert result["final_response"]
+    assert "mass spam action" in result["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_logs_planner_decision():
+    classification = json.dumps({
+        "normalized_goal": "list accounts",
+        "blocked": False,
+        "block_reason": None,
+    })
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[classification]), audit=audit)
+    await nodes.classify_goal_node(_base_state())
+    assert audit.has_event("planner_decision")
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_json_parse_error_fallback():
+    # LLM returns non-JSON → fallback should not crash
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=["not json at all"]))
+    state = _base_state(operator_request="show me accounts")
+    result = await nodes.classify_goal_node(state)
+    # fallback: normalized_goal = operator_request, not blocked
+    assert result.get("stop_reason") is None
+
+
+# ===========================================================================
+# plan_actions_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_returns_proposed_calls():
+    plan_resp = json.dumps({
+        "execution_plan": [{"step": 1, "tool": "list_accounts", "reason": "show accounts", "risk_level": "low"}],
+        "proposed_tool_calls": [{"id": "c1", "name": "list_accounts", "arguments": {}}],
+    })
+    executor = FakeToolExecutor(
+        results={"list_accounts": {"accounts": []}},
+        schemas=[{"function": {"name": "list_accounts", "description": "lists accounts"}}],
+    )
+    nodes = _make_nodes(
+        llm=FakeLLMGateway(responses=[plan_resp]),
+        executor=executor,
+    )
+    state = _base_state(normalized_goal="list all accounts")
+
+    result = await nodes.plan_actions_node(state)
+
+    assert len(result["proposed_tool_calls"]) == 1
+    assert result["proposed_tool_calls"][0]["name"] == "list_accounts"
+    assert len(result["execution_plan"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_strips_unknown_tool_names():
+    plan_resp = json.dumps({
+        "execution_plan": [],
+        "proposed_tool_calls": [
+            {"id": "c1", "name": "list_accounts", "arguments": {}},
+            {"id": "c2", "name": "nonexistent_tool", "arguments": {}},
+        ],
+    })
+    executor = FakeToolExecutor(
+        results={"list_accounts": {"accounts": []}},
+        schemas=[{"function": {"name": "list_accounts", "description": "lists accounts"}}],
+    )
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[plan_resp]), executor=executor)
+    result = await nodes.plan_actions_node(_base_state())
+
+    names = [c["name"] for c in result["proposed_tool_calls"]]
+    assert "nonexistent_tool" not in names
+    assert "list_accounts" in names
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_empty_plan_on_json_error():
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=["bad json"]))
+    result = await nodes.plan_actions_node(_base_state())
+    assert result["proposed_tool_calls"] == []
+    assert result["execution_plan"] == []
+
+
+class _PlannerContextExecutor(FakeToolExecutor):
+    async def get_planner_context(self) -> dict:
+        return {
+            "managed_accounts": [
+                {"username": "@operator", "status": "active", "proxy": "configured"},
+                {"username": "@backup", "status": "inactive", "proxy": "none"},
+            ],
+            "managed_account_count": 2,
+            "active_account_count": 1,
+        }
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_includes_runtime_context_and_parameter_guidance():
+    llm = FakeLLMGateway(responses=[json.dumps({"execution_plan": [], "proposed_tool_calls": []})])
+    executor = _PlannerContextExecutor(
+        schemas=[{
+            "function": {
+                "name": "follow_user",
+                "description": "Follow an Instagram user. [write-sensitive: requires operator approval]",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "username": {"type": "string", "description": "Authenticated account username"},
+                        "target_username": {"type": "string", "description": "Target username"},
+                    },
+                    "required": ["username", "target_username"],
+                },
+            },
+        }],
+    )
+    nodes = _make_nodes(llm=llm, executor=executor)
+
+    await nodes.plan_actions_node(_base_state(normalized_goal="follow @alice using @operator"))
+
+    planner_payload = json.loads(llm.call_log[-1]["messages"][-1]["content"])
+    assert planner_payload["managed_accounts"][0]["username"] == "@operator"
+    assert planner_payload["managed_account_count"] == 2
+    assert planner_payload["available_tools"][0]["policy"] == "write_sensitive"
+    assert "acting managed account" in planner_payload["available_tools"][0]["parameter_notes"]["username"].lower()
+    assert "external instagram target" in planner_payload["available_tools"][0]["parameter_notes"]["target_username"].lower()
+
+
+# ===========================================================================
+# review_tool_policy_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_read_only_flags():
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}]
+    )
+    result = await nodes.review_tool_policy_node(state)
+
+    assert result["tool_policy_flags"]["c1"] == "read_only"
+    assert result["risk_assessment"]["level"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_write_sensitive_flags():
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": "follow_user", "arguments": {}}]
+    )
+    result = await nodes.review_tool_policy_node(state)
+
+    assert result["tool_policy_flags"]["c1"] == "write_sensitive"
+    assert result["risk_assessment"]["level"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_strips_blocked():
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[
+            {"id": "c1", "name": "list_accounts"},
+            {"id": "c2", "name": "delete_account"},   # BLOCKED
+        ]
+    )
+    result = await nodes.review_tool_policy_node(state)
+
+    # blocked tool stripped from proposed
+    remaining_names = [c["name"] for c in result["proposed_tool_calls"]]
+    assert "delete_account" not in remaining_names
+    assert "list_accounts" in remaining_names
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_all_blocked_empty_executable():
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": "delete_account"}]
+    )
+    result = await nodes.review_tool_policy_node(state)
+    assert result["proposed_tool_calls"] == []
+    assert result["risk_assessment"]["level"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_logs_policy_gate():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(audit=audit)
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": "list_accounts"}]
+    )
+    await nodes.review_tool_policy_node(state)
+    assert audit.has_event("policy_gate")
+
+
+@pytest.mark.asyncio
+async def test_review_tool_policy_prepopulates_approved_calls():
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": "list_accounts"}]
+    )
+    result = await nodes.review_tool_policy_node(state)
+    # approved_tool_calls pre-populated with executable calls
+    assert len(result["approved_tool_calls"]) == 1
+    assert result["approved_tool_calls"][0]["name"] == "list_accounts"
+
+
+# ===========================================================================
+# execute_tools_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_calls_executor():
+    executor = FakeToolExecutor(results={"list_accounts": {"accounts": [{"id": "a1"}]}})
+    nodes = _make_nodes(executor=executor)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}]
+    )
+    result = await nodes.execute_tools_node(state)
+
+    assert "c1" in result["tool_results"]
+    assert result["tool_results"]["c1"]["accounts"] == [{"id": "a1"}]
+    assert executor.was_called_with("list_accounts")
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_captures_errors():
+    executor = FakeToolExecutor(results={})  # empty → will raise ValueError
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}]
+    )
+    result = await nodes.execute_tools_node(state)
+
+    assert "c1" in result["tool_results"]
+    assert "error" in result["tool_results"]["c1"]
+    assert audit.has_event("execution_failure")
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_logs_tool_execution():
+    executor = FakeToolExecutor(results={"list_accounts": {"accounts": []}})
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}]
+    )
+    await nodes.execute_tools_node(state)
+    assert audit.has_event("tool_execution")
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_with_json_string_args():
+    executor = FakeToolExecutor(results={"get_posts": {"posts": []}})
+    nodes = _make_nodes(executor=executor)
+    state = _base_state(
+        approved_tool_calls=[{
+            "id": "c1",
+            "name": "get_posts",
+            "arguments": json.dumps({"limit": 5}),  # string args
+        }]
+    )
+    result = await nodes.execute_tools_node(state)
+    assert "c1" in result["tool_results"]
+    _, args = executor.calls[0]
+    assert args == {"limit": 5}
+
+
+# ===========================================================================
+# finish_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_finish_node_done_when_no_stop_reason():
+    nodes = _make_nodes()
+    state = _base_state(stop_reason=None)
+    result = await nodes.finish_node(state)
+    assert result["stop_reason"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_finish_node_preserves_explicit_stop_reason():
+    nodes = _make_nodes()
+    state = _base_state(stop_reason="blocked")
+    result = await nodes.finish_node(state)
+    assert result["stop_reason"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_finish_node_logs_stop_reason():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(audit=audit)
+    await nodes.finish_node(_base_state(stop_reason="done"))
+    assert audit.has_event("stop_reason")
+
+
+@pytest.mark.asyncio
+async def test_finish_node_converts_responded_to_done():
+    nodes = _make_nodes()
+    state = _base_state(stop_reason="responded")
+    result = await nodes.finish_node(state)
+    assert result["stop_reason"] == "done"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

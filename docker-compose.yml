@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# InstaManager — Docker Compose
+#
+# Network topology (production-safe):
+#   Internet → :${FRONTEND_PORT} (nginx)
+#                  └── /api/* → backend:8000  (internal only)
+#                  └── /*     → React SPA
+#   backend ←→ postgres   (internal only, no public port)
+#   pgadmin ←→ postgres   (dev profile, localhost only)
+#
+# Usage:
+#   cp backend/.env.example backend/.env   # edit API keys + ENCRYPTION_KEY
+#   docker compose up -d                   # start all services
+#   docker compose logs -f backend         # tail backend logs
+#   docker compose down                    # stop all
+#
+# Profiles:
+#   default          — backend + frontend + postgres
+#   --profile dev    — adds pgadmin for database inspection
+#
+# Volumes:
+#   insta-pg-data    — PostgreSQL data (persistent)
+#   insta-sessions   — Instagram session files (persistent)
+#   insta-checkpoints — LangGraph checkpoint SQLite (persistent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: instamanager
+      POSTGRES_USER: instauser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-instapass}
+    volumes:
+      - insta-pg-data:/var/lib/postgresql/data
+    # No public ports — only reachable by backend on the internal Docker network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U instauser -d instamanager"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend (FastAPI) ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override persistence to use the postgres container
+      PERSISTENCE_BACKEND: sql
+      PERSISTENCE_DATABASE_URL: postgresql+psycopg://instauser:${POSTGRES_PASSWORD:-instapass}@postgres:5432/instamanager
+      # Durable LangGraph checkpoints
+      LANGGRAPH_CHECKPOINTER_BACKEND: sqlite
+      LANGGRAPH_CHECKPOINTER_SQLITE_PATH: /app/checkpoints/langgraph.sqlite3
+      # CORS — only the nginx frontend container needs access
+      APP_CORS_ORIGINS: http://frontend
+    volumes:
+      - insta-sessions:/app/sessions
+      - insta-checkpoints:/app/checkpoints
+    # No public ports — only reachable by frontend nginx on the internal Docker network
+
+  # ── Frontend (React SPA + reverse proxy via Nginx) ─────────────────────────
+  # Public entry point. Nginx serves the React SPA and reverse-proxies
+  # all /api/* and /health requests to the backend container internally.
+  # The backend is never directly reachable from outside.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty = Vite uses relative URLs; nginx handles /api/* → backend
+        VITE_BACKEND_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
+  # ── pgAdmin (optional, dev profile) ────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    profiles: ["dev"]
+    depends_on:
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+
+volumes:
+  insta-pg-data:
+  insta-sessions:
+  insta-checkpoints:

@@ -1,0 +1,60 @@
+"""Port for reading Instagram post-level insights.
+
+Provides stable contract for accessing post analytics without exposing
+instagrapi's analytics dict payloads to application code.
+"""
+
+from typing import Protocol
+
+from app.application.dto.instagram_analytics_dto import MediaInsightSummary
+
+
+class InstagramInsightReader(Protocol):
+    """Protocol for reading post-level Instagram insights.
+
+    All methods are read-only and stateless.
+    """
+
+    def get_media_insight(
+        self,
+        account_id: str,
+        media_pk: int,
+    ) -> MediaInsightSummary:
+        """Retrieve insights for a specific post/media.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            media_pk: Instagram media/post primary key.
+
+        Returns:
+            MediaInsightSummary with post metrics.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or media not found.
+        """
+        ...
+
+    def list_media_insights(
+        self,
+        account_id: str,
+        post_type: str = "ALL",
+        time_frame: str = "TWO_YEARS",
+        ordering: str = "REACH_COUNT",
+        count: int = 0,
+    ) -> list[MediaInsightSummary]:
+        """List insights for multiple media.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            post_type: Type of posts to retrieve (e.g. "ALL", "PHOTO", "VIDEO", "CAROUSEL").
+            time_frame: Time window for insights (e.g. "TWO_YEARS", "ONE_YEAR", "MONTH").
+            ordering: Sort order for results (e.g. "REACH_COUNT", "IMPRESSIONS", "ENGAGEMENT").
+            count: Maximum posts to retrieve (0 = all available).
+
+        Returns:
+            List of MediaInsightSummary sorted by ordering.
+
+        Raises:
+            ValueError: If account not found or not authenticated.
+        """
+        ...

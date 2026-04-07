@@ -1,0 +1,474 @@
+"""Account authentication use cases - login, logout, relogin, 2FA."""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from contextlib import nullcontext
+
+from ..dto.account_dto import (
+    LoginRequest,
+    AccountResponse,
+    BulkReloginRequest,
+)
+from ..ports import (
+    AccountRepository,
+    ClientRepository,
+    StatusRepository,
+    InstagramClient,
+    ActivityLogger,
+    TOTPManager,
+    SessionStore,
+)
+from ..ports.instagram_error_handling import InstagramExceptionHandler
+from ..ports.instagram_identity import InstagramIdentityReader
+from ..ports.persistence_models import AccountRecord
+from ..ports.persistence_uow import PersistenceUnitOfWork
+from ...domain.instagram_failures import InstagramFailure
+
+
+class AccountAuthUseCases:
+    """Authentication workflows: login, logout, relogin, 2FA."""
+
+    def __init__(
+        self,
+        account_repo: AccountRepository,
+        client_repo: ClientRepository,
+        status_repo: StatusRepository,
+        instagram: InstagramClient,
+        logger: ActivityLogger,
+        totp: TOTPManager,
+        session_store: SessionStore,
+        error_handler: InstagramExceptionHandler,
+        identity_reader: InstagramIdentityReader,
+        uow: PersistenceUnitOfWork | None = None,
+    ):
+        self.account_repo = account_repo
+        self.client_repo = client_repo
+        self.status_repo = status_repo
+        self.instagram = instagram
+        self.logger = logger
+        self.totp = totp
+        self.session_store = session_store
+        self.error_handler = error_handler
+        self.identity_reader = identity_reader
+        self.uow = uow
+
+    def _uow_scope(self):
+        """Return transaction context when UoW is configured."""
+        if self.uow is None:
+            return nullcontext()
+        return self.uow
+
+    def _get_account_status(self, account_id: str) -> str:
+        """Determine current account status."""
+        if self.client_repo.exists(account_id):
+            return "active"
+        return self.status_repo.get(account_id, "idle")
+
+    def _account_username(self, account_id: str, default: str = "") -> str:
+        """Get account username."""
+        account = self.account_repo.get(account_id)
+        return (account or {}).get("username", default)
+
+    def _activate_account_client(
+        self,
+        account_id: str,
+        client,
+        *,
+        hydrate_profile: bool = True,
+    ) -> None:
+        """Store authenticated client and optionally fetch profile metadata."""
+        self.client_repo.set(account_id, client)
+        self.status_repo.set(account_id, "active")
+        if not hydrate_profile:
+            return
+        try:
+            profile = self.identity_reader.get_authenticated_account(account_id)
+            updates = {
+                "full_name": profile.full_name,
+                "profile_pic_url": profile.profile_pic_url,
+            }
+            if profile.follower_count is not None:
+                updates["followers"] = profile.follower_count
+            if profile.following_count is not None:
+                updates["following"] = profile.following_count
+            self.account_repo.update(account_id, **updates)
+        except Exception:
+            pass
+
+    def _activate_and_respond(
+        self,
+        account_id: str,
+        username: str,
+        client,
+        event: str = "login_success",
+    ) -> AccountResponse:
+        """Activate client, log success, and return an active AccountResponse.
+
+        Consolidates the repeated activate → log → respond triple that appears
+        across login, TOTP auto-login, and 2FA completion paths.
+        """
+        self._activate_account_client(account_id, client, hydrate_profile=False)
+        self.logger.log_event(account_id, username, event, status="active")
+        return AccountResponse(id=account_id, username=username, status="active")
+
+    def hydrate_account_profile(self, account_id: str) -> dict | None:
+        """Fetch and persist profile data for an active account.
+
+        Designed to run as a background task after login/2FA/relogin so the
+        HTTP response is not delayed. Silently no-ops if the account is no
+        longer active or the API call fails.
+
+        Returns the updated fields dict (including ``id``) so the caller can
+        forward them to an event bus without accessing internal state.
+        Returns ``None`` on any failure.
+        """
+        try:
+            # account_info() validates the session and returns name/pic.
+            # follower/following counts are NOT fetched here — use
+            # refresh_follower_counts() for that (separate user_info call).
+            profile = self.identity_reader.get_authenticated_account(account_id)
+            updates: dict = {"full_name": profile.full_name}
+            if profile.profile_pic_url:
+                updates["profile_pic_url"] = profile.profile_pic_url
+            self.account_repo.update(account_id, **updates)
+            return {"id": account_id, **updates}
+        except Exception:
+            return None  # best-effort — account is already active, profile data is optional
+
+    def refresh_follower_counts(self, account_id: str) -> dict | None:
+        """Fetch follower/following counts via user_info() and persist them.
+
+        Separate from hydrate_account_profile — user_info() is a heavier call
+        that returns public profile data. Called when the user selects an
+        account in the frontend, or during bulk startup hydration.
+
+        Returns the updated fields dict (including ``id``) for SSE publishing,
+        or None on any failure.
+        """
+        try:
+            data = self.identity_reader.get_profile_for_hydration(account_id)
+            if not data:
+                return None
+            updates: dict = {}
+            if data.get("follower_count") is not None:
+                updates["followers"] = data["follower_count"]
+            if data.get("following_count") is not None:
+                updates["following"] = data["following_count"]
+            if not updates:
+                return None
+            self.account_repo.update(account_id, **updates)
+            return {"id": account_id, **updates}
+        except Exception:
+            return None
+
+    @staticmethod
+    def _relogin_failure_status(failure: InstagramFailure) -> str | None:
+        """Determine the account status to set after a relogin failure.
+
+        Returns None when the failure is transient and the account status should
+        be left unchanged (credentials may still be valid).
+        """
+        if failure.family == "challenge":
+            return "challenge"
+        if failure.code == "two_factor_required":
+            return "2fa_required"
+        if failure.retryable and not failure.requires_user_action:
+            # Transient failure — do not overwrite a potentially valid status.
+            return None
+        return "error"
+
+    def login_account(self, request: LoginRequest) -> AccountResponse:
+        """Login an account."""
+        totp_secret = request.totp_secret
+        account_id: str
+
+        # Phase 1: fast persistence only — UoW released before any network I/O.
+        # Holding a DB transaction across a 5-30s Instagram network call would
+        # block all other DB operations (reads, writes, other account actions).
+        with self._uow_scope():
+            existing_id = self.account_repo.find_by_username(request.username)
+            if existing_id and self.client_repo.exists(existing_id):
+                account = self.account_repo.get(existing_id)
+                return AccountResponse(
+                    id=existing_id,
+                    username=account["username"],
+                    status="active",
+                )
+
+            if totp_secret:
+                totp_secret = self.totp.normalize_secret(totp_secret)
+
+            # Create or reuse account — merge credentials into any existing record
+            # so profile data (full_name, followers, etc.) is never wiped.
+            account_id = existing_id or str(uuid.uuid4())
+            existing = self.account_repo.get(account_id)
+            if existing:
+                self.account_repo.update(
+                    account_id,
+                    username=request.username,
+                    password=request.password,
+                    proxy=request.proxy,
+                    totp_secret=totp_secret,
+                )
+            else:
+                self.account_repo.set(
+                    account_id,
+                    AccountRecord(
+                        username=request.username,
+                        password=request.password,
+                        proxy=request.proxy,
+                        totp_secret=totp_secret,
+                    ),
+                )
+
+        # Phase 2: Instagram network I/O — outside the UoW so the DB lock is not
+        # held during the slow login call. Fresh accounts go straight to a full
+        # credential login; existing session files attempt a restore first.
+        try:
+            client = self.instagram.create_authenticated_client(
+                request.username,
+                request.password,
+                request.proxy,
+                totp_secret,
+            )
+            return self._activate_and_respond(account_id, request.username, client)
+        except Exception as exc:
+            failure = self.error_handler.handle(
+                exc,
+                operation="login",
+                account_id=account_id,
+                username=request.username,
+            )
+
+            # 2FA required — only happens for SMS/email (no totp_secret)
+            if failure.code == "two_factor_required":
+                self.logger.log_event(
+                    account_id,
+                    request.username,
+                    "login_2fa_required",
+                    status="2fa_required",
+                )
+                return AccountResponse(
+                    id=account_id,
+                    username=request.username,
+                    status="2fa_required",
+                )
+
+            # Other error — clean up the account record and raise
+            self.logger.log_event(
+                account_id,
+                request.username,
+                "login_failed",
+                detail=failure.user_message,
+                status="error",
+            )
+            self.account_repo.remove(account_id)
+            raise
+
+    def complete_2fa_login(
+        self, account_id: str, code: str, is_totp: bool = False
+    ) -> AccountResponse:
+        """Complete 2FA login."""
+        if not self.account_repo.exists(account_id):
+            raise ValueError("Account not found")
+
+        account = self.account_repo.get(account_id) or {}
+        username = account.get("username", "")
+        password = account.get("password", "")
+        proxy = account.get("proxy")
+
+        if is_totp:
+            totp_secret = account.get("totp_secret")
+            if not totp_secret:
+                raise ValueError("TOTP not enabled for this account")
+            if not self.totp.verify_code(totp_secret, code):
+                self.logger.log_event(
+                    account_id,
+                    username,
+                    "totp_verification_failed",
+                    status="error",
+                )
+                raise ValueError("Invalid TOTP code")
+            self.logger.log_event(
+                account_id, username, "totp_verified", status="active"
+            )
+            # Continue with Instagram 2FA completion if needed
+            code = ""
+
+        try:
+            client = self.instagram.complete_2fa(username, password, code, proxy)
+            return self._activate_and_respond(account_id, username, client)
+        except Exception as exc:
+            failure = self.error_handler.handle(
+                exc,
+                operation="complete_2fa",
+                account_id=account_id,
+                username=username,
+            )
+            self.logger.log_event(
+                account_id,
+                username,
+                "login_2fa_failed",
+                detail=failure.user_message,
+                status="error",
+            )
+            raise
+
+    def logout_account(self, account_id: str, detail: str = "") -> AccountResponse:
+        """Logout an account."""
+        with self._uow_scope():
+            if not self.account_repo.exists(account_id):
+                raise ValueError("Account not found")
+
+            account = self.account_repo.get(account_id) or {}
+            username = account.get("username", "")
+
+            # Remove local runtime and persisted session state without waiting on
+            # a remote Instagram logout request.
+            self.client_repo.remove(account_id)
+            self.session_store.delete_session(username)
+
+            self.logger.log_event(
+                account_id, username, "logout", detail=detail, status="removed"
+            )
+            self.status_repo.clear(account_id)
+            self.account_repo.remove(account_id)
+
+            return AccountResponse(
+                id=account_id,
+                username=username,
+                status="removed",
+            )
+
+    def relogin_account(self, account_id: str) -> AccountResponse:
+        """Relogin an account."""
+        with self._uow_scope():
+            try:
+                result = self.instagram.relogin_account(account_id)
+                return AccountResponse(
+                    id=result.get("id", account_id),
+                    username=result.get("username", ""),
+                    status=result.get("status", "active"),
+                )
+            except Exception as exc:
+                account = self.account_repo.get(account_id) or {}
+                username = account.get("username", account_id)
+                failure = self.error_handler.handle(
+                    exc,
+                    operation="relogin",
+                    account_id=account_id,
+                    username=username,
+                )
+                new_status = self._relogin_failure_status(failure)
+
+                if new_status is not None:
+                    self.status_repo.set(account_id, new_status)
+
+                self.logger.log_event(
+                    account_id,
+                    username,
+                    "relogin_failed",
+                    detail=failure.user_message,
+                    status=new_status or account.get("status", "unknown"),
+                )
+                raise
+
+    def relogin_account_by_username(self, username: str) -> dict:
+        """Relogin account by username, returning summary for AI tools."""
+        normalized = username.lstrip("@")
+        account_id = self.find_by_username(normalized)
+        if not account_id:
+            return {"error": f"Account @{normalized} not found"}
+
+        try:
+            self.relogin_account(account_id)
+            account = self.account_repo.get(account_id) or {}
+            return {
+                "success": True,
+                "username": normalized,
+                "status": "active",
+                "followers": account.get("followers"),
+                "message": f"@{normalized} re-logged in successfully",
+            }
+        except Exception as exc:
+            failure = self.error_handler.handle(
+                exc,
+                operation="relogin",
+                account_id=account_id,
+                username=normalized,
+            )
+            return {
+                "success": False,
+                "username": normalized,
+                "error": failure.user_message,
+            }
+
+    def find_by_username(self, username: str) -> str | None:
+        """Find account ID by username."""
+        return self.account_repo.find_by_username(username)
+
+    async def bulk_relogin_accounts(
+        self, request: BulkReloginRequest
+    ) -> list[AccountResponse]:
+        """Relogin multiple accounts concurrently."""
+        semaphore = asyncio.Semaphore(request.concurrency)
+
+        async def _relogin_one(account_id: str) -> AccountResponse:
+            async with semaphore:
+                try:
+                    result = await asyncio.to_thread(
+                        self.instagram.relogin_account, account_id
+                    )
+                    return AccountResponse(
+                        id=result.get("id", account_id),
+                        username=result.get("username", ""),
+                        status=result.get("status", "active"),
+                    )
+                except Exception as exc:
+                    account = self.account_repo.get(account_id) or {}
+                    username = account.get("username", account_id)
+                    failure = self.error_handler.handle(
+                        exc,
+                        operation="relogin",
+                        account_id=account_id,
+                        username=username,
+                    )
+                    # Use the same status-determination logic as single relogin.
+                    # Bulk relogin never leaves status unchanged — fall back to "error"
+                    # so the response always has an actionable status.
+                    error_status = self._relogin_failure_status(failure) or "error"
+                    self.status_repo.set(account_id, error_status)
+                    self.logger.log_event(
+                        account_id,
+                        username,
+                        "relogin_failed",
+                        detail=failure.user_message,
+                        status=error_status,
+                    )
+                    return AccountResponse(
+                        id=account_id,
+                        username=username,
+                        status=error_status,
+                    )
+
+        return await asyncio.gather(
+            *[_relogin_one(account_id) for account_id in request.account_ids]
+        )
+
+    def bulk_logout_accounts(self, account_ids: list[str]) -> list[AccountResponse]:
+        """Logout multiple accounts."""
+        results = []
+        for account_id in account_ids:
+            try:
+                results.append(self.logout_account(account_id, detail="bulk"))
+            except ValueError:
+                results.append(
+                    AccountResponse(
+                        id=account_id,
+                        username="",
+                        status="not_found",
+                    )
+                )
+        return results

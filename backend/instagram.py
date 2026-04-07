@@ -1,0 +1,605 @@
+"""
+Instagram operations: relogin, run post job, schedule post job.
+Depends on state only.
+
+ARCHITECTURE NOTE:
+- Smart engagement logic is NOT in this file
+- It lives in: ai_copilot/application/ (graphs, use_cases, nodes)
+- This file handles Instagram client lifecycle and posting
+- Adapters may use Instagram client from this module via bridges
+- Smart engagement decisions (scoring, approval, execution) happen in ai_copilot layer
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
+from pathlib import Path
+from typing import Callable, Optional
+
+# Max seconds allowed per account upload before marking as failed
+_ACCOUNT_UPLOAD_TIMEOUT = 180
+
+from state import (
+    IGClient,
+    BadPassword,
+    LoginRequired,
+    TwoFactorRequired,
+    SESSIONS_DIR,
+    ThreadSafeJobStore,
+    account_to_dict,
+    get_account,
+    get_client,
+    get_job,
+    has_account,
+    job_store,
+    log_event,
+    pop_client,
+    pop_pending_2fa_client,
+    set_account_status,
+    set_client,
+    store_pending_2fa_client,
+    update_account,
+)
+from app.adapters.instagram.exception_handler import instagram_exception_handler
+from app.adapters.instagram.device_pool import random_device_profile
+
+
+def _new_client(proxy: Optional[str] = None):
+    client = IGClient()
+    client.request_timeout = 60  # 60s per HTTP request — prevents challenge hang
+    # Random inter-request delay mimics human behaviour and reduces the
+    # likelihood of triggering Instagram rate-limits or bot detection.
+    # Instagrapi best-practice: https://subzeroid.github.io/instagrapi/usage-guide/best-practices
+    client.delay_range = [1, 3]
+    if proxy:
+        client.set_proxy(proxy)
+    device, user_agent = random_device_profile()
+    client.set_device(device)
+    client.set_user_agent(user_agent)
+    # Skip post-login feed calls (get_reels_tray_feed + get_timeline_feed).
+    # instagrapi's default login_flow() emulates app behaviour but is not
+    # required for session validity — skipping it makes fresh-account login
+    # faster and avoids unnecessary API exposure on new accounts.
+    client.login_flow = lambda: True
+    return client
+
+
+def _classify_exception(
+    error: Exception,
+    *,
+    operation: str,
+    account_id: str | None = None,
+    username: str | None = None,
+):
+    """Translate an exception to a stable Instagram failure."""
+    return instagram_exception_handler.handle(
+        error,
+        operation=operation,
+        account_id=account_id,
+        username=username,
+    )
+
+
+def create_authenticated_client(
+    username: str, password: str, proxy: Optional[str] = None,
+    totp_secret: Optional[str] = None,
+    verify_session: bool = False,
+):
+    """Authenticate and return a ready client.
+
+    Follows the official instagrapi best-practice pattern:
+
+    SESSION PATH (session file exists):
+      1. load_settings  — restore cookies + device UUIDs (no network)
+      2. login()        — uses session, NOT credentials (no network, no TOTP)
+      3. optional verification via account_info() when verify_session=True
+         - OK             → dump_settings, return
+         - LoginRequired  → session expired:
+             a. preserve device UUIDs from old settings
+             b. reset settings (clear stale cookies)
+             c. login(verification_code=totp) — full re-auth, TOTP passed upfront
+             d. dump_settings, return
+         - TwoFactorRequired → SMS/email 2FA, store pending client, raise
+         - BadPassword    → raise (fresh login won't help)
+         - other          → fall through to fresh login
+
+    FRESH LOGIN PATH (no session file, or session path failed non-terminally):
+      1. new client
+      2. login(verification_code=totp) — TOTP passed upfront in first call
+         - TwoFactorRequired (no TOTP secret) → store pending, raise
+      3. dump_settings, return
+    """
+    session_file = SESSIONS_DIR / f"{username}.json"
+
+    def _totp_code() -> str:
+        """Generate a fresh TOTP code, or empty string if no secret."""
+        if not totp_secret:
+            return ""
+        import pyotp
+        return pyotp.TOTP(totp_secret).now()
+
+    if session_file.exists():
+        client = _new_client(proxy)
+        client.load_settings(session_file)
+        try:
+            # Session restore — login() uses cookies, not credentials.
+            client.login(username, password)
+            if verify_session:
+                # account_info() is lighter than get_timeline_feed() for
+                # session validation: small response, no feed payload, and
+                # returns useful profile data (follower/following counts).
+                client.account_info()
+
+        except LoginRequired:
+            # Session expired — preserve device UUIDs, reset cookies, re-auth.
+            try:
+                old_settings = client.get_settings()
+                client.set_settings({})
+                client.set_uuids(old_settings["uuids"])
+                client.login(username, password, verification_code=_totp_code())
+            except TwoFactorRequired:
+                store_pending_2fa_client(username, client)
+                raise
+            except BadPassword:
+                raise
+            except Exception:
+                pass  # fall through to fresh login
+            else:
+                client.dump_settings(session_file)
+                return client
+
+        except TwoFactorRequired:
+            # Only raised when totp_secret is absent (SMS/email 2FA).
+            store_pending_2fa_client(username, client)
+            raise
+
+        except BadPassword:
+            raise  # wrong credential — a fresh client won't help
+
+        except Exception:
+            # Non-terminal failure (ChallengeRequired, corruption, timeout …).
+            # Fall through to a completely fresh login below.
+            pass
+
+        else:
+            client.dump_settings(session_file)
+            return client
+
+    # Fresh login — new client, no stale session state.
+    client = _new_client(proxy)
+    try:
+        # TOTP passed upfront in the initial login() call — the correct
+        # instagrapi pattern for TOTP (avoids the two-step TwoFactorRequired flow).
+        client.login(username, password, verification_code=_totp_code())
+    except TwoFactorRequired:
+        # Only reached when totp_secret is absent (SMS/email 2FA).
+        store_pending_2fa_client(username, client)
+        raise
+    client.dump_settings(session_file)
+    return client
+
+
+def activate_account_client(account_id: str, client) -> dict:
+    # Activate immediately — session already persisted by create_authenticated_client.
+    # Profile enrichment (followers/following) is handled by the background task
+    # scheduled in the HTTP route layer, so we don't fetch it here.
+    set_client(account_id, client)
+    set_account_status(account_id, "active")
+    return account_to_dict(account_id, status="active")
+
+
+def complete_2fa_client(
+    username: str, password: str, verification_code: str, proxy: Optional[str] = None
+):
+    """Complete 2FA login for an account with a verification code."""
+    session_file = SESSIONS_DIR / f"{username}.json"
+    client = pop_pending_2fa_client(username)
+    if client is None:
+        # Fallback: create fresh client (handles TOTP case where identifier can refresh)
+        client = _new_client(proxy)
+    client.login(username, password, verification_code=verification_code)
+    client.dump_settings(session_file)
+    return client
+
+
+_MAX_RELOGIN_ATTEMPTS = 3
+
+
+def relogin_account_sync(account_id: str) -> dict:
+    """Synchronous relogin with retry for transient failures."""
+    if not has_account(account_id):
+        raise ValueError("Account not found")
+    meta = get_account(account_id) or {}
+    username = meta.get("username", "")
+    password = meta.get("password")
+    if not password:
+        raise ValueError(
+            f"No stored password for @{username}. Login manually via the Accounts page."
+        )
+    proxy = meta.get("proxy")
+    totp_secret = meta.get("totp_secret")
+
+    # Drop stale client reference without invalidating the server-side session.
+    # Calling logout() here would invalidate the session file that
+    # create_authenticated_client is about to reuse, forcing a full re-auth.
+    pop_client(account_id)
+
+    cl = None
+    for attempt in range(_MAX_RELOGIN_ATTEMPTS):
+        if attempt > 0:
+            time.sleep(2 ** (attempt - 1))  # 1s, then 2s
+        try:
+            # Pass totp_secret so the TOTP code is sent in the initial login()
+            # call — avoids the broken two-step TwoFactorRequired round-trip.
+            cl = create_authenticated_client(username, password, proxy, totp_secret)
+            break  # success — exit retry loop
+        except Exception as exc:
+            failure = _classify_exception(
+                exc, operation="relogin", account_id=account_id, username=username
+            )
+            if failure.retryable and attempt < _MAX_RELOGIN_ATTEMPTS - 1:
+                continue  # transient — retry
+            raise
+
+    result = activate_account_client(account_id, cl)
+    log_event(account_id, username, "relogin_success", status="active")
+    return result
+
+
+def _build_usertags(specs: list[dict]):
+    """Build instagrapi Usertag objects from [{user_id, username, x, y}] dicts."""
+    from instagrapi.types import UserShort, Usertag
+
+    tags = []
+    for spec in specs:
+        try:
+            user = UserShort(
+                pk=str(spec["user_id"]),
+                username=spec.get("username", ""),
+            )
+            tags.append(
+                Usertag(
+                    user=user,
+                    x=float(spec.get("x", 0.5)),
+                    y=float(spec.get("y", 0.5)),
+                )
+            )
+        except Exception:
+            continue
+    return tags
+
+
+def _build_location(loc: dict | None):
+    """Build an instagrapi Location from {name, lat, lng} dict, or None."""
+    if not loc:
+        return None
+    from instagrapi.types import Location
+
+    try:
+        return Location(
+            name=loc["name"],
+            lat=loc.get("lat"),
+            lng=loc.get("lng"),
+        )
+    except Exception:
+        return None
+
+
+# ── Media upload strategies ────────────────────────────────────────────────
+#
+# Each strategy is a plain function with a common signature:
+#   (cl, media_paths, caption, thumbnail_path, igtv_title, usertags, location, extra_data) -> None
+#
+# The dispatcher replaces the if/elif chain in _upload_one and can be extended
+# by adding a new function + registering it in _UPLOAD_STRATEGIES.
+
+
+def _upload_reels(
+    cl, media_paths, caption, thumbnail_path, igtv_title, usertags, location, extra_data
+):
+    cl.clip_upload(
+        Path(media_paths[0]),
+        caption=caption,
+        thumbnail=Path(thumbnail_path) if thumbnail_path else None,
+        usertags=usertags,
+        location=location,
+        extra_data=extra_data,
+    )
+
+
+def _upload_igtv(
+    cl, media_paths, caption, thumbnail_path, igtv_title, usertags, location, extra_data
+):
+    cl.igtv_upload(
+        Path(media_paths[0]),
+        title=igtv_title or "",
+        caption=caption,
+        thumbnail=Path(thumbnail_path) if thumbnail_path else None,
+        usertags=usertags,
+        location=location,
+        extra_data=extra_data,
+    )
+
+
+def _upload_photo(
+    cl,
+    media_paths,
+    caption,
+    thumbnail_path,  # unused: photos do not support custom thumbnails
+    igtv_title,  # unused: N/A for photos
+    usertags,
+    location,
+    extra_data,
+):
+    cl.photo_upload(
+        Path(media_paths[0]),
+        caption=caption,
+        usertags=usertags,
+        location=location,
+        extra_data=extra_data,
+    )
+
+
+def _upload_album(
+    cl,
+    media_paths,
+    caption,
+    thumbnail_path,  # unused: albums do not support custom thumbnails
+    igtv_title,  # unused: N/A for albums
+    usertags,
+    location,
+    extra_data,
+):
+    cl.album_upload(
+        [Path(p) for p in media_paths],
+        caption=caption,
+        usertags=usertags,
+        location=location,
+        extra_data=extra_data,
+    )
+
+
+# Type alias for all upload strategy functions.
+# Each strategy receives the same 8 arguments so _dispatch_upload can call any of them uniformly.
+_UploadFn = Callable[..., None]
+
+# Maps media_type string → upload function.
+# Add a new entry here to support future media types without touching _upload_one.
+_UPLOAD_STRATEGIES: dict[str, _UploadFn] = {
+    "reels": _upload_reels,
+    "video": _upload_reels,  # alias — same behaviour as reels
+    "igtv": _upload_igtv,
+    "photo": _upload_photo,
+    "album": _upload_album,
+}
+
+_DEFAULT_UPLOAD_STRATEGY: _UploadFn = _upload_album  # fallback for unknown types
+
+
+def _dispatch_upload(
+    cl,
+    media_type: str,
+    media_paths: list[str],
+    caption: str,
+    thumbnail_path: str | None,
+    igtv_title: str | None,
+    usertags,
+    location,
+    extra_data: dict,
+) -> None:
+    """Select and invoke the correct upload strategy for *media_type*."""
+    strategy: _UploadFn = _UPLOAD_STRATEGIES.get(media_type, _DEFAULT_UPLOAD_STRATEGY)
+    strategy(
+        cl,
+        media_paths,
+        caption,
+        thumbnail_path,
+        igtv_title,
+        usertags,
+        location,
+        extra_data,
+    )
+
+
+class PostJobExecutor:
+    """Concurrent upload engine — posts the same media to N accounts in parallel.
+
+    All job-state mutations go through ``ThreadSafeJobStore`` so that
+    polling readers (GET /api/posts) and upload worker threads never race
+    on raw dict access.
+    """
+
+    def __init__(
+        self,
+        store: ThreadSafeJobStore | None = None,
+        upload_timeout: int = _ACCOUNT_UPLOAD_TIMEOUT,
+    ) -> None:
+        self._store = store or job_store
+        self._upload_timeout = upload_timeout
+
+    # ── public entry point ────────────────────────────────────────────────
+
+    def run(self, job_id: str) -> None:
+        """Execute all account uploads for *job_id* concurrently."""
+        job = self._store.get(job_id)
+        self._store.set_job_status(job_id, "running")
+
+        media_paths: list[str] = job["_media_paths"]
+        caption: str = job["caption"]
+        media_type: str = job.get("mediaType", "photo")
+        thumbnail_path: str | None = job.get("_thumbnail_path")
+        igtv_title: str | None = job.get("_igtv_title")
+        usertags_raw: list[dict] = job.get("_usertags") or []
+        location_raw: dict | None = job.get("_location")
+        extra_data: dict = job.get("_extra_data") or {}
+
+        accounts = job["results"]
+        if not accounts:
+            self._store.set_job_status(job_id, "completed")
+            self._store.clear_control(job_id)
+            return
+
+        # One thread per account — all upload simultaneously.
+        executor = ThreadPoolExecutor(max_workers=len(accounts))
+        futures = [
+            executor.submit(
+                self._upload_one,
+                job_id=job_id,
+                account_id=result["accountId"],
+                username=result["username"],
+                media_paths=media_paths,
+                caption=caption,
+                media_type=media_type,
+                thumbnail_path=thumbnail_path,
+                igtv_title=igtv_title,
+                usertags_raw=usertags_raw,
+                location_raw=location_raw,
+                extra_data=extra_data,
+            )
+            for result in accounts
+        ]
+
+        # Total wall-clock timeout for all concurrent uploads.
+        wait_futures(futures, timeout=self._upload_timeout)
+        executor.shutdown(wait=False)
+
+        # Mark accounts that are still uploading after timeout.
+        for result in accounts:
+            account_id = result["accountId"]
+            status = self._store.get_result_status(job_id, account_id)
+            if status == "uploading":
+                self._store.update_result(
+                    job_id,
+                    account_id,
+                    status="failed",
+                    error=f"Upload timed out after {self._upload_timeout}s",
+                    error_code="upload_timeout",
+                )
+                log_event(
+                    account_id,
+                    result.get("username", ""),
+                    "post_failed",
+                    detail="upload_timeout",
+                )
+
+        # Determine final job status.
+        tally = self._store.tally_results(job_id)
+        self._store.clear_control(job_id)
+
+        if tally["skipped"] > 0 and tally["success"] == 0 and tally["failed"] == 0:
+            final = "stopped"
+        elif tally["skipped"] > 0:
+            final = "partial"
+        elif tally["failed"] == 0:
+            final = "completed"
+        elif tally["success"] == 0:
+            final = "failed"
+        else:
+            final = "partial"
+        self._store.set_job_status(job_id, final)
+
+        # Clean up temp files.
+        self._cleanup_temp_files(job)
+
+    # ── single-account worker (runs in thread) ────────────────────────────
+
+    def _upload_one(
+        self,
+        *,
+        job_id: str,
+        account_id: str,
+        username: str,
+        media_paths: list[str],
+        caption: str,
+        media_type: str,
+        thumbnail_path: str | None,
+        igtv_title: str | None,
+        usertags_raw: list[dict],
+        location_raw: dict | None,
+        extra_data: dict,
+    ) -> None:
+        store = self._store
+
+        if store.is_stop_requested(job_id):
+            store.update_result(job_id, account_id, status="skipped")
+            return
+
+        store.wait_if_paused(job_id)
+
+        if store.is_stop_requested(job_id):
+            store.update_result(job_id, account_id, status="skipped")
+            return
+
+        cl = get_client(account_id)
+        if not cl:
+            store.update_result(
+                job_id, account_id, status="failed", error="Account not logged in"
+            )
+            return
+
+        store.update_result(job_id, account_id, status="uploading")
+        print(
+            f"[POST] Uploading for @{username}: type={media_type} caption={repr(caption[:100])}",
+            file=sys.stderr,
+        )
+
+        usertags = _build_usertags(usertags_raw)
+        location = _build_location(location_raw)
+
+        try:
+            _dispatch_upload(
+                cl,
+                media_type=media_type,
+                media_paths=media_paths,
+                caption=caption,
+                thumbnail_path=thumbnail_path,
+                igtv_title=igtv_title,
+                usertags=usertags,
+                location=location,
+                extra_data=extra_data,
+            )
+            store.update_result(job_id, account_id, status="success")
+            log_event(account_id, username, "post_success", detail=f"job={job_id}")
+        except Exception as e:
+            failure = _classify_exception(
+                e,
+                operation="post_media",
+                account_id=account_id,
+                username=username,
+            )
+            store.update_result(
+                job_id,
+                account_id,
+                status="failed",
+                error=failure.user_message,
+                error_code=failure.code,
+            )
+            log_event(
+                account_id,
+                username,
+                "post_failed",
+                detail=failure.detail or failure.user_message,
+            )
+
+    # ── temp file cleanup ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _cleanup_temp_files(job: dict) -> None:
+        for path in job.get("_media_paths", []):
+            Path(path).unlink(missing_ok=True)
+            if path.endswith((".mp4", ".mov")):
+                Path(path + ".jpg").unlink(missing_ok=True)
+        thumb = job.get("_thumbnail_path")
+        if thumb:
+            Path(thumb).unlink(missing_ok=True)
+
+
+# Module-level singleton for backward compatibility.
+_executor = PostJobExecutor()
+
+
+def run_post_job(job_id: str) -> None:
+    """Legacy entry point — delegates to PostJobExecutor."""
+    _executor.run(job_id)
