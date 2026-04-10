@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "008_add_templates"
-down_revision = "007_add_accounts_health_fields"
+down_revision = "007_accounts_health"
 branch_labels = None
 depends_on = None
 
