@@ -209,7 +209,7 @@ export function ActivityPage() {
             <Button
               variant={autoRefresh ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => setAutoRefresh((v) => !v)}
+              onClick={() => setAutoRefresh(!autoRefresh)}
             >
               <Activity className="h-4 w-4" />
               {autoRefresh ? 'Live On' : 'Live Off'}

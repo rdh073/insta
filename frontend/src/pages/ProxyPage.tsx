@@ -21,8 +21,8 @@ export function ProxyPage() {
       <div className="flex gap-1 rounded-[1.2rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.03)] p-1">
         {(
           [
-            { id: 'routing' as Tab, label: 'Account Routing', icon: Globe },
-            { id: 'pool'    as Tab, label: 'Proxy Pool',      icon: Database },
+            { id: 'routing' as const, label: 'Account Routing', icon: Globe },
+            { id: 'pool'    as const, label: 'Proxy Pool',      icon: Database },
           ] as const
         ).map(({ id, label, icon: Icon }) => (
           <button
