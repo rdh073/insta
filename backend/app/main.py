@@ -103,6 +103,13 @@ def create_app() -> FastAPI:
         from app.bootstrap.logging_config import _attach_sse_handler
         _attach_sse_handler()
 
+        import sys
+        _root = logging.getLogger()
+        print(
+            f"[LIFESPAN] root level={_root.level} handlers={_root.handlers}",
+            file=sys.stderr, flush=True,
+        )
+
         logger.info(
             "InstaManager started version=%s persistence_backend=%s cors_origins=%s",
             APP_VERSION,
