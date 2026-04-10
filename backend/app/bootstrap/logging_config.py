@@ -23,6 +23,17 @@ def configure_vendor_logging() -> None:
     so the levels take effect for all subsequent SDK calls.
     Also attaches the SSE log-stream handler to the root logger.
     """
+    # Guarantee a console StreamHandler on root so logs reach docker/terminal
+    # even before uvicorn's own dictConfig runs.  basicConfig is a no-op when
+    # root already has handlers, so this only fires on the very first call.
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
     level = _resolve_level()
 
     # instagrapi core + private-API module
