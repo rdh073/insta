@@ -24,6 +24,7 @@ import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
+import { useSmartEngagementStore } from '../store/smartEngagement';
 import { buildProxyImageUrl } from '../lib/api-base';
 import { cn } from '../lib/cn';
 import type { Account } from '../types';
@@ -387,16 +388,24 @@ export function SmartEngagementPage() {
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccounts = accounts.filter((a) => a.status === 'active');
 
-  const [goal, setGoal] = useState('');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<'recommendation' | 'execute'>('recommendation');
-  const [maxTargets, setMaxTargets] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState('');
-  const [results, setResults] = useState<AccountResult[]>([]);
-  const [resumeLoading, setResumeLoading] = useState(false);
+  const goal = useSmartEngagementStore((s) => s.goal);
+  const setGoal = useSmartEngagementStore((s) => s.setGoal);
+  const selectedIds = useSmartEngagementStore((s) => s.selectedIds);
+  const setSelectedIds = useSmartEngagementStore((s) => s.setSelectedIds);
+  const mode = useSmartEngagementStore((s) => s.mode);
+  const setMode = useSmartEngagementStore((s) => s.setMode);
+  const maxTargets = useSmartEngagementStore((s) => s.maxTargets);
+  const setMaxTargets = useSmartEngagementStore((s) => s.setMaxTargets);
+  const loading = useSmartEngagementStore((s) => s.loading);
+  const setLoading = useSmartEngagementStore((s) => s.setLoading);
+  const progress = useSmartEngagementStore((s) => s.progress);
+  const setProgress = useSmartEngagementStore((s) => s.setProgress);
+  const results = useSmartEngagementStore((s) => s.results);
+  const setResults = useSmartEngagementStore((s) => s.setResults);
+  const resumeLoading = useSmartEngagementStore((s) => s.resumeLoading);
+  const setResumeLoading = useSmartEngagementStore((s) => s.setResumeLoading);
 
-  // Auto-select first active account on mount
+  // Auto-select first active account on mount if nothing is persisted
   useEffect(() => {
     if (selectedIds.length === 0 && activeAccounts.length > 0) {
       setSelectedIds([activeAccounts[0].id]);
@@ -457,9 +466,10 @@ export function SmartEngagementPage() {
     try {
       const payload: ResumeRequest = { thread_id: threadId, decision, content };
       const resp = await smartEngagementApi.resume(payload, backendUrl);
-      setResults((prev) =>
-        prev.map((r) => (r.response.thread_id === threadId ? { ...r, response: resp } : r)),
+      const updated = results.map((r) =>
+        r.response.thread_id === threadId ? { ...r, response: resp } : r,
       );
+      setResults(updated);
       toast.success(`Decision: ${decision}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Resume failed');

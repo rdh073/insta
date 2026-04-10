@@ -22,6 +22,7 @@ import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { logsApi } from '../api/logs';
 import type { ActivityLogEntry } from '../types';
+import { useActivityStore } from '../store/activity';
 import { cn } from '../lib/cn';
 
 // ─── Event registry ──────────────────────────────────────────────────────────
@@ -122,11 +123,15 @@ export function ActivityPage() {
   const [entries, setEntries] = useState<ActivityLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [username, setUsername] = useState('');
-  const [event, setEvent] = useState('');
+  const username = useActivityStore((s) => s.username);
+  const setUsername = useActivityStore((s) => s.setUsername);
+  const event = useActivityStore((s) => s.event);
+  const setEvent = useActivityStore((s) => s.setEvent);
+  const search = useActivityStore((s) => s.search);
+  const setSearch = useActivityStore((s) => s.setSearch);
+  const autoRefresh = useActivityStore((s) => s.autoRefresh);
+  const setAutoRefresh = useActivityStore((s) => s.setAutoRefresh);
   const [offset, setOffset] = useState(0);
-  const [search, setSearch] = useState('');
-  const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const load = useCallback(

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   AlertCircle,
   CheckCircle,
@@ -299,7 +298,8 @@ function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => vo
 export function CampaignPage() {
   const jobs      = usePostStore((s) => s.jobs);
   const removeJob = usePostStore((s) => s.removeJob);
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const filter    = usePostStore((s) => s.campaignFilter);
+  const setFilter = usePostStore((s) => s.setCampaignFilter);
 
   // Real-time updates via SSE — replaces polling.
   // forceConnect=true because CampaignPage is the monitoring dashboard

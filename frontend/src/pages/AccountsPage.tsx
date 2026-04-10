@@ -36,6 +36,7 @@ import { Modal } from '../components/ui/Modal';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
+import { useAccountsUIStore } from '../store/accountsUI';
 import { buildProxyImageUrl } from '../lib/api-base';
 import type { Account } from '../types';
 
@@ -1025,7 +1026,8 @@ export function AccountsPage() {
   const [showBulkProxy, setShowBulkProxy] = useState(false);
   const [showTOTPSetup, setShowTOTPSetup] = useState(false);
   const [totpAccountId, setTOTPAccountId] = useState<string | undefined>();
-  const [searchQuery, setSearchQuery] = useState('');
+  const searchQuery = useAccountsUIStore((s) => s.searchQuery);
+  const setSearchQuery = useAccountsUIStore((s) => s.setSearchQuery);
   const [rateLimitMap, setRateLimitMap] = useState<Map<string, RateLimitEntry>>(new Map());
   const sessionInputRef = useRef<HTMLInputElement>(null);
 

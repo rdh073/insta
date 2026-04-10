@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStoriesStore } from '../store/stories';
 import toast from 'react-hot-toast';
 import { Camera, CheckSquare, Eye, Loader, Play, Square, Trash2 } from 'lucide-react';
 import { storiesApi } from '../api/instagram/stories';
@@ -79,7 +80,8 @@ function StoryRow({
 
 export function StoriesPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const [userId, setUserId] = useState('');
+  const userId = useStoriesStore((s) => s.userId);
+  const setUserId = useStoriesStore((s) => s.setUserId);
   const [stories, setStories] = useState<StorySummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());

@@ -1,13 +1,12 @@
-import { useState } from 'react';
+import { useProxyStore } from '../store/proxy';
 import { Database, Globe, Shield } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { AccountRoutingTab } from '../features/proxy/components/AccountRoutingTab';
 import { ProxyPoolTab } from '../features/proxy/components/ProxyPoolTab';
 
-type Tab = 'routing' | 'pool';
-
 export function ProxyPage() {
-  const [tab, setTab] = useState<Tab>('routing');
+  const tab = useProxyStore((s) => s.tab);
+  const setTab = useProxyStore((s) => s.setTab);
 
   return (
     <div className="page-shell max-w-7xl space-y-6">
