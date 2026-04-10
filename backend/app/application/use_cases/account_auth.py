@@ -24,7 +24,7 @@ from ..ports.instagram_error_handling import InstagramExceptionHandler
 from ..ports.instagram_identity import InstagramIdentityReader
 from ..ports.persistence_models import AccountRecord
 from ..ports.persistence_uow import PersistenceUnitOfWork
-from ...domain.instagram_failures import InstagramFailure
+from ...domain.instagram_failures import InstagramFailure, InstagramAdapterError
 
 
 class AccountAuthUseCases:
@@ -117,12 +117,16 @@ class AccountAuthUseCases:
         """Fetch and persist profile data for an active account.
 
         Designed to run as a background task after login/2FA/relogin so the
-        HTTP response is not delayed. Silently no-ops if the account is no
-        longer active or the API call fails.
+        HTTP response is not delayed.
 
         Returns the updated fields dict (including ``id``) so the caller can
         forward them to an event bus without accessing internal state.
         Returns ``None`` on any failure.
+
+        When the failure indicates the session is dead (requires_user_action=True,
+        e.g. login_required / logout_reason:8), the account is marked "error" and
+        the client is evicted so future bulk-hydrate cycles skip it automatically.
+        Transient failures (rate-limit, network) are silently swallowed.
         """
         try:
             # account_info() validates the session and returns name/pic.
@@ -134,8 +138,23 @@ class AccountAuthUseCases:
                 updates["profile_pic_url"] = profile.profile_pic_url
             self.account_repo.update(account_id, **updates)
             return {"id": account_id, **updates}
+        except InstagramAdapterError as exc:
+            failure = exc.failure
+            if failure.requires_user_action:
+                # Hard session failure (login_required, challenge, etc.) — evict
+                # the dead client and mark error so this account drops out of the
+                # "active" pool and stops generating API noise.
+                self.status_repo.set(account_id, "error")
+                if self.client_repo.exists(account_id):
+                    self.client_repo.remove(account_id)
+                self.account_repo.update(
+                    account_id,
+                    last_error=failure.user_message,
+                    last_error_code=failure.code,
+                )
+            return None
         except Exception:
-            return None  # best-effort — account is already active, profile data is optional
+            return None  # transient — leave status untouched
 
     def refresh_follower_counts(self, account_id: str) -> dict | None:
         """Fetch follower/following counts via user_info() and persist them.

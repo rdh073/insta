@@ -60,6 +60,10 @@ def _hydrate_and_publish(usecases, account_id: str) -> None:
         account_event_bus.publish("account_updated", result)
         if pic_url := result.get("profile_pic_url"):
             warm_image_cache(pic_url)
+    # On failure (result is None), hydrate_account_profile already sets status="error"
+    # in the DB for hard session failures (login_required etc.).  The frontend will
+    # reflect the change on next GET /api/accounts or verify call — no SSE needed here.
+
     counts = usecases.refresh_follower_counts(account_id)
     if counts:
         account_event_bus.publish("account_updated", counts)
