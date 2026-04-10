@@ -578,6 +578,11 @@ class AccountUseCases:
                     "fullName": account_dto.full_name,
                     "followers": account_dto.followers or 0,
                     "following": account_dto.following or 0,
+                    # True only when the Instagram client session is actually loaded in memory.
+                    # An account can have status="active" in the DB but no live client (e.g.
+                    # after a restart with a failed session reload).  Smart engagement uses
+                    # this field to gate on real session availability, not just DB status.
+                    "client_exists": self.client_repo.exists(account_dto.id),
                 },
             })
         return {

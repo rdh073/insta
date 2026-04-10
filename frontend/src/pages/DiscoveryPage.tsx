@@ -16,6 +16,8 @@ import type { HashtagSummary } from '../types/instagram/discovery';
 import type { MediaSummary } from '../types/instagram/media';
 import { Button } from '../components/ui/Button';
 import { useDiscoveryStore } from '../store/discovery';
+import { useSettingsStore } from '../store/settings';
+import { buildProxyImageUrl } from '../lib/api-base';
 import { cn } from '../lib/cn';
 
 type Feed = 'top' | 'recent';
@@ -33,8 +35,9 @@ function mediaIcon(t: number) {
   return <Image className="h-3 w-3" />;
 }
 
-function MediaCard({ media }: { media: MediaSummary }) {
-  const thumb = media.resources[0]?.thumbnailUrl ?? null;
+function MediaCard({ media, backendUrl, backendApiKey }: { media: MediaSummary; backendUrl?: string; backendApiKey?: string }) {
+  const rawThumb = media.resources[0]?.thumbnailUrl ?? null;
+  const thumb = rawThumb ? buildProxyImageUrl(rawThumb, backendUrl, backendApiKey) : null;
   return (
     <div className="group relative aspect-square w-full overflow-hidden rounded-2xl border border-[rgba(162,179,229,0.10)] transition-all duration-200 hover:border-[rgba(125,207,255,0.24)]">
       {thumb ? (
@@ -61,11 +64,11 @@ function MediaCard({ media }: { media: MediaSummary }) {
   );
 }
 
-function HashtagCard({ hashtag }: { hashtag: HashtagSummary }) {
+function HashtagCard({ hashtag, backendUrl, backendApiKey }: { hashtag: HashtagSummary; backendUrl?: string; backendApiKey?: string }) {
   return (
     <div className="flex items-center gap-4 rounded-2xl border border-[rgba(125,207,255,0.14)] bg-[rgba(125,207,255,0.06)] px-5 py-4">
       {hashtag.profilePicUrl ? (
-        <img src={hashtag.profilePicUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
+        <img src={buildProxyImageUrl(hashtag.profilePicUrl, backendUrl, backendApiKey)} alt="" className="h-12 w-12 rounded-full object-cover" />
       ) : (
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[rgba(125,207,255,0.18)] bg-[rgba(125,207,255,0.10)]">
           <Hash className="h-5 w-5 text-[#7dcfff]" />
@@ -84,6 +87,8 @@ function HashtagCard({ hashtag }: { hashtag: HashtagSummary }) {
 
 export function DiscoveryPage() {
   const { accountId, setAccountId } = useAccountPicker();
+  const backendUrl    = useSettingsStore((s) => s.backendUrl);
+  const backendApiKey = useSettingsStore((s) => s.backendApiKey);
 
   const hashtagInput = useDiscoveryStore((s) => s.hashtagInput);
   const feed         = useDiscoveryStore((s) => s.feed);
@@ -191,7 +196,7 @@ export function DiscoveryPage() {
 
         {hashtag && (
           <div className="mx-auto max-w-4xl space-y-5">
-            <HashtagCard hashtag={hashtag} />
+            <HashtagCard hashtag={hashtag} backendUrl={backendUrl} backendApiKey={backendApiKey} />
 
             <div className="flex items-center justify-between">
               <div className="flex gap-1 rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.02)] p-1">
@@ -232,7 +237,7 @@ export function DiscoveryPage() {
             )}
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
               {posts.map((m) => (
-                <MediaCard key={m.pk} media={m} />
+                <MediaCard key={m.pk} media={m} backendUrl={backendUrl} backendApiKey={backendApiKey} />
               ))}
             </div>
           </div>

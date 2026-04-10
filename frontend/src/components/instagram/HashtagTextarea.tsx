@@ -13,10 +13,10 @@ function fmt(n: number | null | undefined) {
 }
 
 /** Extract the hashtag being typed at the current cursor position.
- *  Returns the word after the last `#` before the cursor (no spaces). */
+ *  Returns the word after the last `#` before the cursor, or null if < 2 chars. */
 function hashtagAtCursor(text: string, cursor: number): string | null {
   const before = text.slice(0, cursor);
-  const match = before.match(/#(\w{1,})$/);
+  const match = before.match(/#(\w{2,})$/);
   return match ? match[1] : null;
 }
 
@@ -97,25 +97,36 @@ export function HashtagTextarea({
     };
   }, [showDropdown]);
 
-  // Debounced search
+  // Debounced search with abort on stale query
   useEffect(() => {
     if (!activeTag || !accountId) {
       setResults([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
     setActiveIndex(0);
+    const abortCtrl = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const data = await discoveryApi.searchHashtags(accountId, activeTag);
-        setResults(data.slice(0, 8));
+        if (!abortCtrl.signal.aborted) {
+          setResults(data.slice(0, 8));
+        }
       } catch {
-        setResults([]);
+        if (!abortCtrl.signal.aborted) {
+          setResults([]);
+        }
       } finally {
-        setLoading(false);
+        if (!abortCtrl.signal.aborted) {
+          setLoading(false);
+        }
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortCtrl.abort();
+    };
   }, [activeTag, accountId]);
 
   function pickSuggestion(name: string) {
@@ -153,11 +164,12 @@ export function HashtagTextarea({
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
       if (results.length > 0) {
-        e.preventDefault();
         pickSuggestion(results[activeIndex]?.name ?? activeTag!);
       } else {
         setActiveTag(null);
+        setResults([]);
       }
     } else if (e.key === 'Escape' || e.key === ' ') {
       setActiveTag(null);

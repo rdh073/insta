@@ -8,6 +8,7 @@ pyotp==2.9.0
 langgraph==1.1.4
 langgraph-checkpoint==4.0.1
 langgraph-checkpoint-sqlite==3.0.3
+aiosqlite>=0.19.0
 SQLAlchemy==2.0.48
 psycopg[binary]==3.3.3
 alembic==1.18.4

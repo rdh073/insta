@@ -311,11 +311,11 @@ def _build_ai_services(
     _allowed_tools = ["list_accounts", "get_account_info", "get_post_jobs"]
     _provider_feature_flags = {
         "ENABLE_PROVIDER_OPENAI_CODEX": os.getenv(
-            "ENABLE_PROVIDER_OPENAI_CODEX", "false"
+            "ENABLE_PROVIDER_OPENAI_CODEX", "true"
         ).lower()
         == "true",
         "ENABLE_PROVIDER_CLAUDE_CODE": os.getenv(
-            "ENABLE_PROVIDER_CLAUDE_CODE", "false"
+            "ENABLE_PROVIDER_CLAUDE_CODE", "true"
         ).lower()
         == "true",
     }
@@ -409,13 +409,13 @@ def _build_smart_engagement(account_usecases, ig_usecases, ai_services):
         executor=NoOpExecutorAdapter(),
         audit_log=audit_log,
         engagement_memory=engagement_memory,
-        checkpointer=checkpoint_factory.create(),
+        checkpoint_factory=checkpoint_factory,
         store=engagement_store,
         max_steps=11,
     )
 
     _execution_enabled = (
-        os.getenv("SMART_ENGAGEMENT_EXECUTION_ENABLED", "false").lower() == "true"
+        os.getenv("SMART_ENGAGEMENT_EXECUTION_ENABLED", "true").lower() == "true"
     )
     exe = None
     if _execution_enabled:
@@ -437,7 +437,7 @@ def _build_smart_engagement(account_usecases, ig_usecases, ai_services):
             executor=executor,
             audit_log=audit_log,
             engagement_memory=engagement_memory,
-            checkpointer=checkpoint_factory.create(),
+            checkpoint_factory=checkpoint_factory,
             store=engagement_store,
             max_steps=11,
         )

@@ -9,6 +9,7 @@ import {
   Edit3,
   FileText,
   RefreshCw,
+  Search,
   Shield,
   Sparkles,
   Target,
@@ -23,6 +24,7 @@ import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
+import { buildProxyImageUrl } from '../lib/api-base';
 import { cn } from '../lib/cn';
 import type { Account } from '../types';
 
@@ -58,14 +60,24 @@ function AccountMultiPicker({
   onChange: (ids: string[]) => void;
 }) {
   const accounts = useAccountStore((s) => s.accounts);
+  const backendUrl = useSettingsStore((s) => s.backendUrl);
+  const backendApiKey = useSettingsStore((s) => s.backendApiKey);
   const activeAccounts = accounts.filter((a) => a.status === 'active');
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const filtered = query.trim()
+    ? activeAccounts.filter((a) => a.username.toLowerCase().includes(query.toLowerCase()))
+    : activeAccounts;
 
   const allSelected = activeAccounts.length > 0 && activeAccounts.every((a) => selected.includes(a.id));
+  const allFilteredSelected = filtered.length > 0 && filtered.every((a) => selected.includes(a.id));
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setQuery(''); return; }
+    setTimeout(() => searchRef.current?.focus(), 30);
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
@@ -78,6 +90,15 @@ function AccountMultiPicker({
       onChange([]);
     } else {
       onChange(activeAccounts.map((a) => a.id));
+    }
+  }
+
+  function toggleFiltered() {
+    if (allFilteredSelected) {
+      onChange(selected.filter((id) => !filtered.find((a) => a.id === id)));
+    } else {
+      const newIds = filtered.map((a) => a.id).filter((id) => !selected.includes(id));
+      onChange([...selected, ...newIds]);
     }
   }
 
@@ -99,7 +120,7 @@ function AccountMultiPicker({
   } else if (selectedAccounts.length === 1) {
     triggerLabel = `@${selectedAccounts[0].username}`;
   } else {
-    triggerLabel = `@${selectedAccounts[0].username} + ${selectedAccounts.length - 1} more`;
+    triggerLabel = `@${selectedAccounts[0].username} +${selectedAccounts.length - 1} more`;
   }
 
   if (activeAccounts.length === 0) {
@@ -110,6 +131,8 @@ function AccountMultiPicker({
     );
   }
 
+  const isSearching = query.trim().length > 0;
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -117,69 +140,96 @@ function AccountMultiPicker({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-[rgba(162,179,229,0.16)] bg-[rgba(10,14,24,0.52)] px-3 py-2.5 text-sm text-[#c0caf5] transition-colors hover:border-[rgba(125,207,255,0.3)]"
       >
-        <div className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5 text-[#7aa2f7]" />
-          <span>{triggerLabel}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <Users className="h-3.5 w-3.5 shrink-0 text-[#7aa2f7]" />
+          <span className="truncate">{triggerLabel}</span>
         </div>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-[#4a5578] transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-[#4a5578] transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-xl border border-[rgba(125,207,255,0.14)] bg-[rgba(9,12,22,0.97)] shadow-[0_12px_36px_rgba(4,8,18,0.5)] backdrop-blur-2xl">
-          {/* Select All */}
+        <div className="absolute left-0 right-0 z-50 mt-1 flex max-h-80 flex-col overflow-hidden rounded-xl border border-[rgba(125,207,255,0.14)] bg-[rgba(9,12,22,0.97)] shadow-[0_12px_36px_rgba(4,8,18,0.5)] backdrop-blur-2xl">
+          {/* Search input */}
+          <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-[#4a5578]" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search accounts…"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-[#c0caf5] outline-none placeholder:text-[#4a5578]"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} className="cursor-pointer text-[#4a5578] hover:text-[#c0caf5]">
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Select All / Select Filtered */}
           <button
             type="button"
-            onClick={toggleAll}
-            className="flex w-full cursor-pointer items-center gap-3 border-b border-[rgba(162,179,229,0.08)] px-3 py-2.5 text-left transition-colors hover:bg-[rgba(125,207,255,0.06)]"
+            onClick={isSearching ? toggleFiltered : toggleAll}
+            className="flex w-full shrink-0 cursor-pointer items-center gap-3 border-b border-[rgba(162,179,229,0.08)] px-3 py-2.5 text-left transition-colors hover:bg-[rgba(125,207,255,0.06)]"
           >
             <div className={cn(
-              'flex h-4.5 w-4.5 items-center justify-center rounded border transition-colors',
-              allSelected
+              'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+              (isSearching ? allFilteredSelected : allSelected)
                 ? 'border-[#7dcfff] bg-[rgba(125,207,255,0.2)]'
                 : 'border-[rgba(162,179,229,0.2)] bg-transparent',
             )}>
-              {allSelected && <Check className="h-3 w-3 text-[#7dcfff]" />}
+              {(isSearching ? allFilteredSelected : allSelected) && <Check className="h-2.5 w-2.5 text-[#7dcfff]" />}
             </div>
-            <span className="text-[13px] font-semibold text-[#7dcfff]">All Active Accounts</span>
-            <Badge variant="blue" className="ml-auto">{activeAccounts.length}</Badge>
+            <span className="text-[13px] font-semibold text-[#7dcfff]">
+              {isSearching ? `Select all matching (${filtered.length})` : `All Active Accounts`}
+            </span>
+            {!isSearching && <Badge variant="blue" className="ml-auto">{activeAccounts.length}</Badge>}
           </button>
 
-          {/* Individual accounts */}
-          <div className="max-h-56 overflow-y-auto">
-            {activeAccounts.map((acc) => {
-              const checked = selected.includes(acc.id);
-              return (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => toggleOne(acc.id)}
-                  className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-[rgba(255,255,255,0.03)]"
-                >
-                  <div className={cn(
-                    'flex h-4.5 w-4.5 items-center justify-center rounded border transition-colors',
-                    checked
-                      ? 'border-[#7dcfff] bg-[rgba(125,207,255,0.2)]'
-                      : 'border-[rgba(162,179,229,0.2)] bg-transparent',
-                  )}>
-                    {checked && <Check className="h-3 w-3 text-[#7dcfff]" />}
-                  </div>
+          {/* Individual accounts — scrollable */}
+          <div className="overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-center text-[13px] text-[#4a5578]">No accounts match "{query}"</div>
+            ) : (
+              filtered.map((acc) => {
+                const checked = selected.includes(acc.id);
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => toggleOne(acc.id)}
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-[rgba(255,255,255,0.03)]"
+                  >
+                    <div className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                      checked
+                        ? 'border-[#7dcfff] bg-[rgba(125,207,255,0.2)]'
+                        : 'border-[rgba(162,179,229,0.2)] bg-transparent',
+                    )}>
+                      {checked && <Check className="h-2.5 w-2.5 text-[#7dcfff]" />}
+                    </div>
 
-                  {/* Avatar */}
-                  <div className="relative shrink-0">
-                    {acc.avatar ? (
-                      <img src={acc.avatar} alt={acc.username} className="h-7 w-7 rounded-full object-cover" />
-                    ) : (
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.06)] text-[11px] font-semibold uppercase text-[#7aa2f7]">
-                        {acc.username.slice(0, 2)}
-                      </div>
-                    )}
-                    <span className={cn('absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[rgba(9,12,22,1)]', STATUS_DOT[acc.status])} />
-                  </div>
+                    {/* Avatar */}
+                    <div className="relative shrink-0">
+                      {acc.avatar ? (
+                        <img src={buildProxyImageUrl(acc.avatar, backendUrl, backendApiKey)} alt={acc.username} className="h-7 w-7 rounded-full object-cover" />
+                      ) : (
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.06)] text-[11px] font-semibold uppercase text-[#7aa2f7]">
+                          {acc.username.slice(0, 2)}
+                        </div>
+                      )}
+                      <span className={cn('absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[rgba(9,12,22,1)]', STATUS_DOT[acc.status])} />
+                    </div>
 
-                  <span className="text-[13px] text-[#c0caf5]">@{acc.username}</span>
-                </button>
-              );
-            })}
+                    <span className="truncate text-[13px] text-[#c0caf5]">@{acc.username}</span>
+                    {checked && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-[#7dcfff]" />}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       )}

@@ -12,6 +12,7 @@ Todo-4 additions:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -68,6 +69,7 @@ class SmartEngagementUseCase:
         audit_log: AuditLogPort,
         engagement_memory: EngagementMemoryPort | None = None,
         checkpointer=None,
+        checkpoint_factory=None,
         store=None,
         max_steps: int = 11,
     ):
@@ -81,7 +83,13 @@ class SmartEngagementUseCase:
             executor: Engagement action executor
             audit_log: Audit event logging
             engagement_memory: Cross-thread engagement memory (optional)
-            checkpointer: LangGraph checkpointer (REQUIRED for interrupt/resume).
+            checkpointer: Pre-created LangGraph checkpointer.  Use this when a
+                MemorySaver (sync-compatible) is appropriate, e.g. in tests.
+            checkpoint_factory: Factory with ``create_async()`` method.  Preferred
+                over ``checkpointer`` for production — the async checkpointer is
+                created lazily on the first ``run()`` / ``resume()`` call so that
+                bootstrap stays synchronous while the graph still uses an async-
+                compatible SQLite saver (AsyncSqliteSaver) at runtime.
             store: LangGraph Store instance for cross-thread memory.
             max_steps: Max workflow iterations (default 11 for 11-node graph)
         """
@@ -95,7 +103,7 @@ class SmartEngagementUseCase:
         self.checkpointer = checkpointer
         self.max_steps = max_steps
 
-        nodes = SmartEngagementNodes(
+        self._nodes = SmartEngagementNodes(
             account_context=account_context,
             candidate_discovery=candidate_discovery,
             risk_scoring=risk_scoring,
@@ -105,10 +113,35 @@ class SmartEngagementUseCase:
             engagement_memory=engagement_memory,
             max_steps=max_steps,
         )
-        # Pass checkpointer and store to graph
-        self.graph = build_smart_engagement_graph(
-            nodes, checkpointer=checkpointer, store=store,
-        )
+        self._store = store
+        self._checkpoint_factory = checkpoint_factory
+        self._graph_lock = asyncio.Lock()
+
+        if checkpoint_factory is None:
+            # Eager path: caller supplied a pre-created checkpointer (tests, MemorySaver)
+            self.graph = build_smart_engagement_graph(
+                self._nodes, checkpointer=checkpointer, store=store,
+            )
+        else:
+            # Lazy path: async checkpointer created on first run()/resume() call
+            self.graph = None
+
+    async def _ensure_graph(self) -> None:
+        """Lazily build the compiled graph with an async checkpointer.
+
+        Called at the start of every ``run()`` and ``resume()`` when
+        ``checkpoint_factory`` was supplied instead of a pre-built checkpointer.
+        A lock prevents duplicate initialisation under concurrent requests.
+        """
+        if self.graph is not None:
+            return
+        async with self._graph_lock:
+            if self.graph is not None:
+                return
+            checkpointer = await self._checkpoint_factory.create_async()
+            self.graph = build_smart_engagement_graph(
+                self._nodes, checkpointer=checkpointer, store=self._store,
+            )
 
     async def run(
         self,
@@ -144,6 +177,7 @@ class SmartEngagementUseCase:
             - audit_trail: Decision history
             - outcome_reason: Human-readable reason for workflow end
         """
+        await self._ensure_graph()
         thread_id = (metadata or {}).get("thread_id") or str(uuid.uuid4())
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -250,6 +284,7 @@ class SmartEngagementUseCase:
         Returns:
             Same format as run() - final workflow state
         """
+        await self._ensure_graph()
         config = {"configurable": {"thread_id": thread_id}}
 
         try:

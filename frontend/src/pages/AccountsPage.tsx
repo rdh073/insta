@@ -36,6 +36,7 @@ import { Modal } from '../components/ui/Modal';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
+import { buildProxyImageUrl } from '../lib/api-base';
 import type { Account } from '../types';
 
 /** Format remaining cooldown seconds into a compact human string. */
@@ -97,13 +98,14 @@ const statusBadge = (account: Account, compact = false) => {
 
 function AccountAvatar({ username, avatar, size = 'md' }: { username: string; avatar?: string; size?: 'sm' | 'md' }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const backendUrl = useSettingsStore((s) => s.backendUrl);
+  const backendApiKey = useSettingsStore((s) => s.backendApiKey);
   const dim = size === 'sm' ? 'h-8 w-8' : 'h-12 w-12';
   const radius = size === 'sm' ? 'rounded-[0.8rem]' : 'rounded-[1.2rem]';
   const textSize = size === 'sm' ? 'text-xs' : 'text-sm';
 
   if (avatar && !imgFailed) {
-    const apiKey = useSettingsStore.getState().backendApiKey?.trim();
-    const src = `/api/proxy/image?url=${encodeURIComponent(avatar)}${apiKey ? `&x_api_key=${encodeURIComponent(apiKey)}` : ''}`;
+    const src = buildProxyImageUrl(avatar, backendUrl, backendApiKey);
     return (
       <img
         src={src}

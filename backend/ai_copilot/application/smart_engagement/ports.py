@@ -70,6 +70,23 @@ class AccountContextPort(ABC):
             True if account is active and not in cooldown
         """
 
+    async def try_refresh_session(self, account_id: str) -> bool:
+        """Attempt to restore an expired or missing Instagram session.
+
+        Called automatically by load_account_context_node when login_state is
+        not 'logged_in'.  Subclasses that can re-authenticate override this;
+        the default implementation is a safe no-op that returns False so that
+        existing test stubs and adapters without relogin capability continue to
+        work without changes.
+
+        Args:
+            account_id: Account whose session needs refreshing
+
+        Returns:
+            True if the session is now loaded and ready, False otherwise
+        """
+        return False
+
 
 class EngagementCandidatePort(ABC):
     """Port for discovering engagement targets based on intent."""

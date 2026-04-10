@@ -175,7 +175,13 @@ class SmartEngagementNodes:
     async def load_account_context_node(self, state: SmartEngagementState) -> dict:
         """Fetch account health and constraints.
 
-        Fail-fast: if account not healthy → outcome_reason set for log_outcome.
+        If the account's session is missing/expired the node attempts one
+        automatic relogin via AccountContextPort.try_refresh_session() before
+        giving up.  This lets smart engagement recover from stale sessions
+        (e.g. after a server restart) without operator intervention.
+
+        Fail-fast: if account still not healthy after refresh attempt →
+        outcome_reason set for log_outcome.
         Routing: route_after_account_context() → 'discover_candidates' or 'log_outcome'
         """
         account_id = state.get("account_id", "")
@@ -188,6 +194,69 @@ class SmartEngagementNodes:
                 and health.get("login_state") == "logged_in"
                 and health.get("cooldown_until") is None
             )
+
+            # Session not ready — try one automatic relogin before giving up.
+            # try_refresh_session() returns False by default (no-op for adapters
+            # that don't support it) so this is always safe to call.
+            if not is_healthy and health.get("login_state") != "logged_in":
+                refresh_event = await self._emit(AuditEvent(
+                    event_type="session_refresh_attempted",
+                    node_name="load_account_context",
+                    event_data={"account_id": account_id, "reason": "session_not_loaded"},
+                    timestamp=time.time(),
+                ))
+                refreshed = await self.account_context.try_refresh_session(account_id)
+                if refreshed:
+                    # Re-fetch health after successful refresh
+                    health = await self.account_context.get_account_context(account_id)
+                    is_healthy = (
+                        health.get("status") == "active"
+                        and health.get("login_state") == "logged_in"
+                        and health.get("cooldown_until") is None
+                    )
+                    refresh_status = "success" if is_healthy else "partial"
+                else:
+                    refresh_status = "failed"
+
+                refresh_done_event = await self._emit(AuditEvent(
+                    event_type="session_refresh_result",
+                    node_name="load_account_context",
+                    event_data={
+                        "account_id": account_id,
+                        "result": refresh_status,
+                        "now_healthy": is_healthy,
+                    },
+                    timestamp=time.time(),
+                ))
+
+                if not is_healthy:
+                    reason = _account_not_healthy_reason(health)
+                    skip_event = await self._emit(AuditEvent(
+                        event_type="action_skipped",
+                        node_name="load_account_context",
+                        event_data={"reason": reason},
+                        timestamp=time.time(),
+                    ))
+                    return {
+                        "account_health": health,
+                        "outcome_reason": reason,
+                        "stop_reason": "account_not_ready",
+                        "audit_trail": [refresh_event, refresh_done_event, skip_event],
+                    }
+
+                return {
+                    "account_health": health,
+                    "audit_trail": [
+                        refresh_event,
+                        refresh_done_event,
+                        await self._emit(AuditEvent(
+                            event_type="account_loaded",
+                            node_name="load_account_context",
+                            event_data={"account_id": account_id, "status": health.get("status"), "login_state": health.get("login_state"), "session_refreshed": True},
+                            timestamp=time.time(),
+                        )),
+                    ],
+                }
 
             if not is_healthy:
                 reason = _account_not_healthy_reason(health)
@@ -971,11 +1040,11 @@ def _parse_goal(goal: str) -> dict:
 def _account_not_healthy_reason(health: dict) -> str:
     """Return human-readable reason why account is not healthy."""
     if health.get("login_state") != "logged_in":
-        return f"Account not logged in: {health.get('login_state')}"
+        return "Account session not loaded — please log in again from the Accounts page"
     if health.get("cooldown_until") is not None:
         return f"Account in cooldown until {health.get('cooldown_until')}"
     if health.get("status") != "active":
-        return f"Account status: {health.get('status')}"
+        return f"Account status: {health.get('status')} — account is not active"
     return "Account not ready"
 
 

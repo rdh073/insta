@@ -11,11 +11,9 @@ import { useTemplateStore } from '../store/templates';
 import type { CaptionTemplate } from '../types';
 
 function TemplateModal({
-  open,
   onClose,
   initial,
 }: {
-  open: boolean;
   onClose: () => void;
   initial?: CaptionTemplate;
 }) {
@@ -49,7 +47,7 @@ function TemplateModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={initial ? 'Edit Template' : 'New Template'}>
+    <Modal open onClose={onClose} title={initial ? 'Edit Template' : 'New Template'}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Name"
@@ -197,8 +195,8 @@ export function TemplatesPage() {
         </div>
       )}
 
-      <TemplateModal open={showCreate} onClose={() => setShowCreate(false)} />
-      {editing && <TemplateModal open onClose={() => setEditing(undefined)} initial={editing} />}
+      {showCreate && <TemplateModal onClose={() => setShowCreate(false)} />}
+      {editing && <TemplateModal key={editing.id} onClose={() => setEditing(undefined)} initial={editing} />}
     </div>
   );
 }

@@ -317,8 +317,10 @@ async def test_unhealthy_account_node_sets_stop_reason():
 
     assert result["stop_reason"] == "account_not_ready"
     assert result["outcome_reason"]
-    assert len(result["audit_trail"]) == 1
-    assert result["audit_trail"][0]["event_type"] == "action_skipped"
+    # Refresh path emits: session_refresh_attempted + session_refresh_result + action_skipped
+    event_types = [e["event_type"] for e in result["audit_trail"]]
+    assert "action_skipped" in event_types
+    assert "session_refresh_attempted" in event_types
 
 
 @pytest.mark.asyncio

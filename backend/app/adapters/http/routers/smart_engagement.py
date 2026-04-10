@@ -48,7 +48,7 @@ from ai_copilot.adapters.approval_adapter import InMemoryApprovalAdapter
 
 router = APIRouter(prefix="/api/ai/smart-engagement", tags=["smart-engagement"])
 
-_EXECUTION_ENABLED = os.getenv("SMART_ENGAGEMENT_EXECUTION_ENABLED", "false").lower() == "true"
+_EXECUTION_ENABLED = os.getenv("SMART_ENGAGEMENT_EXECUTION_ENABLED", "true").lower() == "true"
 
 
 # =============================================================================

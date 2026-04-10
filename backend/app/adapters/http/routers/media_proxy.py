@@ -9,10 +9,9 @@ from fastapi.responses import Response
 router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
 _ALLOWED_HOSTS = {
-    "instagram.fsrg2-1.fna.fbcdn.net",
-    "scontent.cdninstagram.com",
+    "fbcdn.net",           # Facebook/Instagram CDN (all regional nodes: *.fna.fbcdn.net, etc.)
+    "cdninstagram.com",    # Instagram's own CDN (scontent-*.cdninstagram.com)
     "instagram.com",
-    "cdninstagram.com",
 }
 
 _CLIENT = httpx.Client(

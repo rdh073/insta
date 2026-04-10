@@ -17,14 +17,25 @@ from ai_copilot.application.smart_engagement.state import AccountHealth
 
 @runtime_checkable
 class AccountSummaryProvider(Protocol):
-    """Application seam for account summary data."""
+    """Application seam for account summary data and session management."""
 
     def get_accounts_summary(self) -> dict:
         """Return account summaries keyed by account metadata."""
 
+    def relogin_account(self, account_id: str):
+        """Attempt to restore the Instagram session for account_id.
+
+        Returns an AccountResponse-like object with a .status attribute.
+        Raises on failure so the caller can treat it as a non-recovery.
+        """
+
 
 class AccountContextAdapter(AccountContextPort):
-    """Fetches account health and constraints from account service."""
+    """Fetches account health and constraints from account service.
+
+    Also implements try_refresh_session() so the smart-engagement workflow
+    can auto-recover from expired sessions without operator intervention.
+    """
 
     def __init__(self, account_service: AccountSummaryProvider):
         """Initialize with app-owned account summary seam.
@@ -53,8 +64,12 @@ class AccountContextAdapter(AccountContextPort):
             raise ValueError(f"Account {account_id} not found")
 
         status = str(account.get("status", "idle") or "idle").lower()
-        login_state = "logged_in" if status == "active" else "needs_relogin"
-        normalized_status = "active" if status == "active" else "needs_relogin"
+        # client_exists reflects whether the Instagram session is actually loaded in
+        # memory right now.  status=="active" alone is not sufficient: the DB can
+        # persist "active" even when the session failed to reload after a restart.
+        client_exists = bool(account.get("client_exists", status == "active"))
+        login_state = "logged_in" if status == "active" and client_exists else "needs_relogin"
+        normalized_status = "active" if status == "active" and client_exists else "needs_relogin"
 
         return AccountHealth(
             status=normalized_status,
@@ -80,4 +95,31 @@ class AccountContextAdapter(AccountContextPort):
                 and health.get("cooldown_until") is None
             )
         except ValueError:
+            return False
+
+    async def try_refresh_session(self, account_id: str) -> bool:
+        """Attempt to restore the Instagram session via stored credentials.
+
+        Calls relogin_account() on the account service (which replays the stored
+        encrypted session / re-authenticates with saved credentials).  Returns
+        True if the session is now active, False on any failure.
+
+        Args:
+            account_id: Account whose session needs refreshing
+
+        Returns:
+            True if the session was successfully restored
+        """
+        try:
+            result = await asyncio.to_thread(
+                self.account_service.relogin_account, account_id
+            )
+            restored_status = getattr(result, "status", None) or (
+                result.get("status") if isinstance(result, dict) else None
+            )
+            return str(restored_status or "").lower() == "active"
+        except Exception:
+            logger.warning(
+                "Auto session refresh failed for account=%s", account_id, exc_info=True
+            )
             return False

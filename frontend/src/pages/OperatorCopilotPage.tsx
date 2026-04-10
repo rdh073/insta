@@ -27,6 +27,7 @@ import { fetchProviderModels, operatorCopilotApi, StreamAbortedError, NetworkErr
 import type { CopilotEvent } from '../api/operator-copilot';
 import { parseSlashCommand, getCommandSuggestions } from '../lib/slash-commands';
 import type { SlashCommand } from '../lib/slash-commands';
+import { buildProxyImageUrl } from '../lib/api-base';
 import { useSettingsStore, PROVIDERS } from '../store/settings';
 import type { AIProvider } from '../store/settings';
 import { useAccountStore } from '../store/accounts';
@@ -473,6 +474,7 @@ const STATUS_DOT: Record<Account['status'], string> = {
 
 export function OperatorCopilotPage() {
   const backendUrl = useSettingsStore((s) => s.backendUrl);
+  const backendApiKey = useSettingsStore((s) => s.backendApiKey);
   const provider = useSettingsStore((s) => s.provider);
   const model = useSettingsStore((s) => s.model);
   const apiKeys = useSettingsStore((s) => s.apiKeys);
@@ -667,8 +669,18 @@ export function OperatorCopilotPage() {
         approvalPayload: undefined,
       }));
       try {
+        const rawPayload = command.buildPayload(args);
+        // Resolve @username → account UUID: slash commands capture the username
+        // string but backend endpoints expect the account's UUID (account.id).
+        for (const key of ['account_id', 'accountId'] as const) {
+          const val = rawPayload[key];
+          if (typeof val === 'string') {
+            const match = accounts.find((a) => a.username === val);
+            if (match) rawPayload[key] = match.id;
+          }
+        }
         const payload = {
-          ...command.buildPayload(args),
+          ...rawPayload,
           provider,
           model,
           apiKey: apiKeys[provider] || undefined,
@@ -985,7 +997,7 @@ export function OperatorCopilotPage() {
                     {/* Avatar / initials */}
                     <div className="relative shrink-0">
                       {acc.avatar ? (
-                        <img src={acc.avatar} alt={acc.username} className="h-7 w-7 rounded-full object-cover" />
+                        <img src={buildProxyImageUrl(acc.avatar, backendUrl, backendApiKey)} alt={acc.username} className="h-7 w-7 rounded-full object-cover" />
                       ) : (
                         <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.06)] text-[11px] font-semibold uppercase text-[#7aa2f7]">
                           {acc.username.slice(0, 2)}

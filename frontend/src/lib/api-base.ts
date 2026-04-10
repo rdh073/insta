@@ -27,6 +27,15 @@ export function buildApiUrl(path: string, rawBackendUrl?: string): string {
 }
 
 
+export function buildProxyImageUrl(avatarUrl: string, backendUrl?: string, apiKey?: string): string {
+  const base = buildApiUrl('/proxy/image', backendUrl);
+  const params = new URLSearchParams({ url: avatarUrl });
+  const key = apiKey?.trim();
+  if (key) params.set('x_api_key', key);
+  return `${base}?${params}`;
+}
+
+
 export function describeBackend(rawBackendUrl?: string): string {
   const value = rawBackendUrl?.trim();
   if (!value) return 'Same origin';

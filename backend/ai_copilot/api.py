@@ -876,7 +876,7 @@ async def content_pipeline_run(
         caption_validator=CaptionValidatorAdapter(),
         post_scheduler=PostSchedulerAdapter(services["postjobs"]),
         account_usecases=services["accounts"],
-        checkpointer=ConfigurableCheckpointFactory.from_env().create(),
+        checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
 
     async def generate():
