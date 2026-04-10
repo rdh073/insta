@@ -410,7 +410,11 @@ class AccountAuthUseCases:
                     totp_secret=account.get("totp_secret"),
                     mode=mode,
                 )
-                # Clear any stale error state from the previous force-logout.
+                # Mark active and clear any stale error state.
+                # status_repo must be updated explicitly — instagram.py's
+                # activate_account_client only writes the legacy in-memory
+                # state._account_statuses, not the SQL-backed status_repo.
+                self.status_repo.set(account_id, "active")
                 self.account_repo.update(
                     account_id, last_error=None, last_error_code=None
                 )
