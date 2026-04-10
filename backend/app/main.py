@@ -133,27 +133,23 @@ def create_app() -> FastAPI:
                     sys.stderr.write(f"[LIFESPAN] emit exception: {_e}\n")
                     sys.stderr.flush()
 
-        # Deep inspect of logger chain
-        _lg = logging.getLogger("instamanager.bootstrap")
-        _im = logging.getLogger("instamanager")
+        # Check stream identity and FD number
+        _sh = _root.handlers[0]
+        _sh_stream = _sh.stream
+        try:
+            _fd = _sh_stream.fileno()
+        except Exception:
+            try:
+                _fd = _sh_stream.buffer.fileno()
+            except Exception:
+                _fd = "unknown"
         print(
-            f"[LIFESPAN] logger.parent={_lg.parent!r}  logger.manager.disable={_lg.manager.disable}",
+            f"[LIFESPAN] StreamHandler stream={_sh_stream!r} is_stderr={_sh_stream is sys.stderr} fileno={_fd}",
             file=sys.stderr, flush=True,
         )
-        print(
-            f"[LIFESPAN] root.handlers[0].filters={_root.handlers[0].filters}",
-            file=sys.stderr, flush=True,
-        )
-        logging.warning("ROOT WARNING TEST")
-        # Manually walk the chain
-        _c = _lg
-        while _c:
-            print(f"[LIFESPAN] chain: {_c.name!r} level={_c.level} propagate={_c.propagate} handlers={_c.handlers}", file=sys.stderr, flush=True)
-            if not _c.propagate:
-                break
-            _c = getattr(_c, 'parent', None)
-        logger.warning("LOGGER WARNING TEST")
-        print("[LIFESPAN] all logger calls done", file=sys.stderr, flush=True)
+        logging.warning("ROOT WARNING via logging module")
+        logger.warning("LOGGER WARNING from instamanager.bootstrap")
+        print("[LIFESPAN] all done", file=sys.stderr, flush=True)
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
 
