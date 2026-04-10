@@ -7,6 +7,7 @@ publish() is a thread-safe no-op until then.
 from __future__ import annotations
 
 import asyncio
+import datetime
 from typing import Any
 
 
@@ -24,6 +25,14 @@ class LogStreamBus:
         self._loop = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
         self._subscribers.add(q)
+        # Emit an immediate marker so the client sees the stream is live right away.
+        q.put_nowait({
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+            "level": "INFO",
+            "levelno": 20,
+            "name": "instamanager.log_stream",
+            "msg": f"Log stream connected — {len(self._subscribers)} active subscriber(s).",
+        })
         return q
 
     def unsubscribe(self, q: asyncio.Queue) -> None:

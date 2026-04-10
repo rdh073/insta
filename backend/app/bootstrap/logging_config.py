@@ -48,8 +48,11 @@ def configure_vendor_logging() -> None:
 def _attach_sse_handler() -> None:
     """Attach the SSE log-stream handler to key loggers (idempotent).
 
-    Safe to call multiple times — adds the handler only once per logger, but
-    always re-applies level overrides (uvicorn's dictConfig may reset them).
+    Safe to call multiple times — replaces any stale LogStreamHandler instances
+    so that the freshest handler (pointing to the live log_stream_bus) is always
+    the one that's wired.  Re-applies level overrides on every call because
+    uvicorn's dictConfig may reset them between the first call (at import time)
+    and the lifespan call (after dictConfig completes).
 
     uvicorn.access has propagate=False so we add the handler directly there;
     all other loggers flow through the root handler.
@@ -59,20 +62,23 @@ def _attach_sse_handler() -> None:
     handler = LogStreamHandler()
     handler.setLevel(logging.DEBUG)
 
-    def _add_once(lg: logging.Logger) -> None:
-        if not any(isinstance(h, LogStreamHandler) for h in lg.handlers):
-            lg.addHandler(handler)
+    def _replace(lg: logging.Logger) -> None:
+        """Remove stale LogStreamHandler instances then add the fresh one."""
+        for h in list(lg.handlers):
+            if isinstance(h, LogStreamHandler):
+                lg.removeHandler(h)
+        lg.addHandler(handler)
 
     # Root logger — catches all propagating loggers.
     root = logging.getLogger()
-    _add_once(root)
+    _replace(root)
     if root.level == 0 or root.level > logging.INFO:
         root.setLevel(logging.INFO)
 
     # uvicorn.access is propagate=False — must be wired directly.
     for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         lg = logging.getLogger(name)
-        _add_once(lg)
+        _replace(lg)
         if lg.level == 0 or lg.level > logging.INFO:
             lg.setLevel(logging.INFO)
 
