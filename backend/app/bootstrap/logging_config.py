@@ -48,25 +48,31 @@ def configure_vendor_logging() -> None:
 def _attach_sse_handler() -> None:
     """Attach the SSE log-stream handler to key loggers (idempotent).
 
-    Safe to call multiple times — adds the handler only once, but always
-    re-applies level overrides (uvicorn's dictConfig may reset them).
+    Safe to call multiple times — adds the handler only once per logger, but
+    always re-applies level overrides (uvicorn's dictConfig may reset them).
+
+    uvicorn.access has propagate=False so we add the handler directly there;
+    all other loggers flow through the root handler.
     """
     from app.adapters.http.log_stream_handler import LogStreamHandler
 
+    handler = LogStreamHandler()
+    handler.setLevel(logging.DEBUG)
+
+    def _add_once(lg: logging.Logger) -> None:
+        if not any(isinstance(h, LogStreamHandler) for h in lg.handlers):
+            lg.addHandler(handler)
+
+    # Root logger — catches all propagating loggers.
     root = logging.getLogger()
-
-    # Add handler only once.
-    if not any(isinstance(h, LogStreamHandler) for h in root.handlers):
-        handler = LogStreamHandler()
-        handler.setLevel(logging.DEBUG)
-        root.addHandler(handler)
-
-    # Always re-apply level overrides — uvicorn's dictConfig may have reset them.
+    _add_once(root)
     if root.level == 0 or root.level > logging.INFO:
         root.setLevel(logging.INFO)
 
-    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+    # uvicorn.access is propagate=False — must be wired directly.
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         lg = logging.getLogger(name)
+        _add_once(lg)
         if lg.level == 0 or lg.level > logging.INFO:
             lg.setLevel(logging.INFO)
 
