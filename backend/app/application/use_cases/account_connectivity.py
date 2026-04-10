@@ -170,6 +170,10 @@ class AccountConnectivityUseCases:
             new_status = _connectivity_failure_status(failure)
             if new_status is not None:
                 self.status_repo.set(account_id, new_status)
+                # Evict the dead client so _get_account_status() falls through
+                # to status_repo instead of returning "active" from a stale entry.
+                if self.client_repo.exists(account_id):
+                    self.client_repo.remove(account_id)
             self._mark_error(account_id, failure.user_message, failure.code)
             self.logger.log_event(
                 account_id,
@@ -194,6 +198,8 @@ class AccountConnectivityUseCases:
             new_status = _connectivity_failure_status(failure)
             if new_status is not None:
                 self.status_repo.set(account_id, new_status)
+                if self.client_repo.exists(account_id):
+                    self.client_repo.remove(account_id)
             self._mark_error(account_id, failure.user_message, failure.code)
             self.logger.log_event(
                 account_id,

@@ -2,7 +2,29 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional, Protocol
+
+
+class ReloginMode(str, Enum):
+    """Strategy selector for account relogin.
+
+    SESSION_RESTORE (default)
+        Try to reuse the existing session file first.  On ``LoginRequired``
+        the saved UUIDs are preserved, the session is cleared, and a fresh
+        credential login is attempted.  Falls through to a completely fresh
+        client when all restore attempts fail.
+
+    FRESH_CREDENTIALS
+        Skip the session file entirely.  Always creates a new client and
+        authenticates with the stored username + password + TOTP.  Required
+        when the account status is ``"error"`` with ``last_error_code ==
+        "login_required"`` (e.g. Instagram server-side force-logout /
+        logout_reason:8) — those sessions cannot be restored.
+    """
+
+    SESSION_RESTORE = "session_restore"
+    FRESH_CREDENTIALS = "fresh_credentials"
 
 
 class InstagramClient(Protocol):
@@ -30,8 +52,22 @@ class InstagramClient(Protocol):
         """Complete SMS/email 2FA authentication after TwoFactorRequired was raised."""
         ...
 
-    def relogin_account(self, account_id: str) -> dict:
-        """Relogin account and return account dict."""
+    def relogin_account(
+        self,
+        account_id: str,
+        *,
+        username: str,
+        password: str,
+        proxy: Optional[str] = None,
+        totp_secret: Optional[str] = None,
+        mode: ReloginMode = ReloginMode.SESSION_RESTORE,
+    ) -> dict:
+        """Relogin account using *mode* strategy and return account dict.
+
+        ``SESSION_RESTORE`` (default) tries to reuse the existing session
+        file.  ``FRESH_CREDENTIALS`` skips the session file and always
+        authenticates with stored username + password + TOTP.
+        """
         ...
 
 

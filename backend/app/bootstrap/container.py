@@ -585,6 +585,8 @@ def create_services():
         "post_job_control": post_job_control,
         "oauth_token_store": oauth_token_store,
         "_account_repo": account_repo,
+        "_client_repo": client_repo,
+        "_status_repo": status_repo,
         "_job_repo": job_repo,
         "_relogin_fn": acct["auth"].relogin_account,
         "ai_gateway": ai["ai_gateway"],

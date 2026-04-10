@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 import instagram as instagram_module
+from app.application.ports.adapters import ReloginMode
 
 
 class InstagramClientAdapter:
@@ -43,14 +44,22 @@ class InstagramClientAdapter:
         password: str,
         proxy: Optional[str] = None,
         totp_secret: Optional[str] = None,
+        mode: ReloginMode = ReloginMode.SESSION_RESTORE,
     ) -> dict:
-        """Relogin account using stored credentials. Returns account dict."""
+        """Relogin account using *mode* strategy. Returns account dict.
+
+        ``SESSION_RESTORE`` (default) tries the saved session file first.
+        ``FRESH_CREDENTIALS`` skips the session file and always authenticates
+        with stored username + password + TOTP — required after server-side
+        force-logouts (Instagram logout_reason:8).
+        """
         return instagram_module.relogin_account_sync(
             account_id,
             username=username,
             password=password,
             proxy=proxy,
             totp_secret=totp_secret,
+            mode=mode.value,
         )
 
     def run_post_job(self, job_id: str) -> None:

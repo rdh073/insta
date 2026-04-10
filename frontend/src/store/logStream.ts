@@ -48,7 +48,7 @@ export const useLogStreamStore = create<LogStreamState>()(
       minLevel: 10,
       nameFilter: '',
       autoScroll: true,
-      verboseMode: false,
+      verboseMode: true,
 
       addLine: (record) =>
         set((s) => {

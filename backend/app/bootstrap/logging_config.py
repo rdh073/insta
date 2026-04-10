@@ -6,7 +6,7 @@ or application loggers.
 
 Environment variables
 ---------------------
-INSTAGRAPI_LOG_LEVEL  DEBUG | INFO | WARNING | ERROR  (default WARNING)
+INSTAGRAPI_LOG_LEVEL  DEBUG | INFO | WARNING | ERROR  (default DEBUG)
 INSTAGRAPI_VERBOSE    1 | true | yes                  shorthand for DEBUG
 """
 
@@ -97,7 +97,7 @@ def _attach_sse_handler() -> None:
 def _resolve_level() -> int:
     explicit = os.getenv("INSTAGRAPI_LOG_LEVEL", "").strip().upper()
     if explicit:
-        return getattr(logging, explicit, logging.WARNING)
-    if os.getenv("INSTAGRAPI_VERBOSE", "").strip().lower() in ("1", "true", "yes", "on"):
-        return logging.DEBUG
-    return logging.WARNING
+        return getattr(logging, explicit, logging.DEBUG)
+    if os.getenv("INSTAGRAPI_VERBOSE", "").strip().lower() in ("0", "false", "no", "off"):
+        return logging.WARNING
+    return logging.DEBUG

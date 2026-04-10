@@ -232,7 +232,7 @@ export function LogStreamPage() {
             </span>
 
             <Button
-              variant={paused ? 'primary' : 'secondary'}
+              variant={paused ? 'secondary' : 'primary'}
               size="sm"
               onClick={() => setPaused(!paused)}
             >

@@ -128,6 +128,7 @@ interface SettingsStore {
   setProvider: (p: AIProvider) => void;
   setModel: (m: string) => void;
   setDashboardToken: (token: string) => void;
+  lockSession: () => void;
   setApiKey: (provider: AIProvider, key: string) => void;
   setProviderBaseUrl: (provider: AIProvider, url: string) => void;
 }
@@ -178,6 +179,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setBackendUrl: (backendUrl) => set({ backendUrl }),
       setBackendApiKey: (backendApiKey) => set({ backendApiKey }),
       setDashboardToken: (dashboardToken) => set({ dashboardToken }),
+      lockSession: () => set({ dashboardToken: '' }),
       setProvider: (provider) =>
         set((state) => ({
           provider,

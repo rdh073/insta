@@ -9,6 +9,7 @@ from .repositories import (
 from .persistence_uow import PersistenceUnitOfWork
 from .adapters import (
     InstagramClient,
+    ReloginMode,
     ActivityLogger,
     TOTPManager,
     SessionStore,
@@ -22,6 +23,7 @@ __all__ = [
     "JobRepository",
     "PersistenceUnitOfWork",
     "InstagramClient",
+    "ReloginMode",
     "ActivityLogger",
     "TOTPManager",
     "SessionStore",

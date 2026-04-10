@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ArrowLeftRight,
@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Layers,
   LayoutDashboard,
+  Lock,
   Menu,
   MessageCircle,
   Settings,
@@ -23,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useSettingsStore } from '../../store/settings';
 
 const navGroups = [
   {
@@ -114,6 +116,14 @@ function NavItem({
 
 export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: SidebarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const navigate = useNavigate();
+  const dashboardToken = useSettingsStore((s) => s.dashboardToken);
+  const lockSession = useSettingsStore((s) => s.lockSession);
+
+  const handleLock = () => {
+    lockSession();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <>
@@ -244,16 +254,25 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
             </nav>
 
             {/* Footer */}
-            {(activeJobs > 0 || providerLabel) && (
-              <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
-                <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
-                {activeJobs > 0 && (
-                  <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
-                    {activeJobs} jobs
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
+              <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
+              {activeJobs > 0 && (
+                <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
+                  {activeJobs} jobs
+                </span>
+              )}
+              {dashboardToken && (
+                <button
+                  type="button"
+                  onClick={handleLock}
+                  title="Lock — return to password portal"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.20)] bg-[rgba(247,118,142,0.06)] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.14)] cursor-pointer"
+                  aria-label="Lock session"
+                >
+                  <Lock className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </aside>
         </div>
       )}
@@ -290,17 +309,26 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
           ))}
         </nav>
 
-        {/* Footer: active jobs + provider — compact single row */}
-        {(activeJobs > 0 || providerLabel) && (
-          <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
-            <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
-            {activeJobs > 0 && (
-              <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
-                {activeJobs} jobs
-              </span>
-            )}
-          </div>
-        )}
+        {/* Footer: provider · active jobs · lock */}
+        <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
+          {activeJobs > 0 && (
+            <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
+              {activeJobs} jobs
+            </span>
+          )}
+          {dashboardToken && (
+            <button
+              type="button"
+              onClick={handleLock}
+              title="Lock — return to password portal"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.20)] bg-[rgba(247,118,142,0.06)] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.14)] cursor-pointer"
+              aria-label="Lock session"
+            >
+              <Lock className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </aside>
     </>
   );

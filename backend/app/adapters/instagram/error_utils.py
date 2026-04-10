@@ -39,10 +39,14 @@ def translate_instagram_error(
 ):
     """Translate a vendor exception using the catalog-driven handler.
 
-    Side effect: if the translated failure has http_hint == 429 and
-    ``account_id`` is provided, the account is automatically marked as
-    rate-limited in the module-level ``rate_limit_guard`` so that subsequent
-    calls are blocked during the cooldown window.
+    Side effects when ``account_id`` is provided:
+
+    * **Rate-limit** (http_hint 429) — marks the account in the
+      ``rate_limit_guard`` cooldown window.
+    * **Dead session** (non-retryable + requires_user_action, e.g.
+      ``login_required``) — evicts the stale client from
+      ``client_repo`` so that ``_get_account_status()`` stops
+      returning ``"active"`` for a broken session.
     """
     from app.adapters.instagram.rate_limit_guard import rate_limit_guard
 
@@ -58,7 +62,34 @@ def translate_instagram_error(
             account_id, failure_code=failure.code, username=username
         )
 
+    if (
+        account_id
+        and not failure.retryable
+        and failure.requires_user_action
+        and failure.family == "private_auth"
+    ):
+        _evict_dead_session(account_id)
+
     return failure
+
+
+def _evict_dead_session(account_id: str) -> None:
+    """Remove a stale client + set status to 'error' after a fatal auth failure.
+
+    Imported lazily to avoid circular imports at module load time.
+    """
+    try:
+        from app.adapters.http.dependencies import get_services
+
+        services = get_services()
+        client_repo = services["_client_repo"]
+        status_repo = services["_status_repo"]
+        if client_repo.exists(account_id):
+            client_repo.remove(account_id)
+        status_repo.set(account_id, "error")
+    except Exception:
+        # Best-effort — never let eviction crash the error path.
+        pass
 
 
 def check_rate_limit(account_id: str) -> None:

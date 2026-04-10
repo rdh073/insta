@@ -16,6 +16,7 @@ from ..ports import (
     ClientRepository,
     StatusRepository,
     InstagramClient,
+    ReloginMode,
     ActivityLogger,
     TOTPManager,
     SessionStore,
@@ -198,6 +199,23 @@ class AccountAuthUseCases:
             return None
         return "error"
 
+    @staticmethod
+    def _select_relogin_mode(account: dict) -> ReloginMode:
+        """Choose the relogin strategy based on the account's persisted state.
+
+        ``FRESH_CREDENTIALS`` is selected when the account is in an error state
+        caused by a server-side force-logout (Instagram logout_reason:8, mapped
+        to ``last_error_code="login_required"``).  Those session files are
+        permanently invalidated by Instagram and attempting a session restore
+        just wastes an API call before falling back to fresh credentials anyway.
+
+        All other accounts use ``SESSION_RESTORE`` — the faster path that reuses
+        the saved session token when the session is still valid.
+        """
+        if account.get("last_error_code") == "login_required":
+            return ReloginMode.FRESH_CREDENTIALS
+        return ReloginMode.SESSION_RESTORE
+
     def login_account(self, request: LoginRequest) -> AccountResponse:
         """Login an account."""
         totp_secret = request.totp_secret
@@ -362,7 +380,14 @@ class AccountAuthUseCases:
             )
 
     def relogin_account(self, account_id: str) -> AccountResponse:
-        """Relogin an account."""
+        """Relogin an account using the appropriate strategy.
+
+        Automatically selects ``FRESH_CREDENTIALS`` when the account's
+        ``last_error_code`` indicates a server-side force-logout
+        (``login_required`` / Instagram logout_reason:8) so the dead session
+        file is bypassed and a full credential login is performed directly.
+        All other accounts use the faster ``SESSION_RESTORE`` path.
+        """
         with self._uow_scope():
             account = self.account_repo.get(account_id) or {}
             username = account.get("username", account_id)
@@ -371,6 +396,7 @@ class AccountAuthUseCases:
                 raise ValueError(
                     f"No stored password for @{username}. Login manually via the Accounts page."
                 )
+            mode = self._select_relogin_mode(account)
             try:
                 result = self.instagram.relogin_account(
                     account_id,
@@ -378,6 +404,11 @@ class AccountAuthUseCases:
                     password=password,
                     proxy=account.get("proxy"),
                     totp_secret=account.get("totp_secret"),
+                    mode=mode,
+                )
+                # Clear any stale error state from the previous force-logout.
+                self.account_repo.update(
+                    account_id, last_error=None, last_error_code=None
                 )
                 return AccountResponse(
                     id=result.get("id", account_id),
@@ -457,6 +488,7 @@ class AccountAuthUseCases:
                         status="error",
                         last_error=f"No stored password for @{username}. Login manually.",
                     )
+                mode = self._select_relogin_mode(account)
                 try:
                     result = await asyncio.to_thread(
                         self.instagram.relogin_account,
@@ -465,6 +497,10 @@ class AccountAuthUseCases:
                         password=password,
                         proxy=account.get("proxy"),
                         totp_secret=account.get("totp_secret"),
+                        mode=mode,
+                    )
+                    self.account_repo.update(
+                        account_id, last_error=None, last_error_code=None
                     )
                     return AccountResponse(
                         id=result.get("id", account_id),

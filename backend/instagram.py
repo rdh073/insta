@@ -308,6 +308,71 @@ def complete_2fa_client(
 _MAX_RELOGIN_ATTEMPTS = 3
 
 
+# ── Relogin strategies ────────────────────────────────────────────────────────
+#
+# Two concrete strategies share the same signature so _relogin_with_strategy
+# can call either uniformly.
+#
+# SessionRestoreStrategy  — default; calls create_authenticated_client() which
+#   tries to reload the existing session file first and only falls back to fresh
+#   credential login on LoginRequired.  Fastest when the session is still valid.
+#
+# FreshCredentialStrategy — skips the session file entirely; always creates a
+#   new client and authenticates with the stored username + password + TOTP.
+#   Required for Instagram server-side force-logouts (logout_reason:8) where
+#   the existing session file is permanently invalidated and cannot be restored.
+
+
+def _relogin_session_restore(
+    username: str,
+    password: str,
+    proxy: str | None,
+    totp_secret: str | None,
+):
+    """Relogin via session restore (try saved session, fall back to fresh login).
+
+    Delegates to create_authenticated_client which implements the full
+    session-file → LoginRequired → fresh-credential cascade.
+    """
+    return create_authenticated_client(username, password, proxy, totp_secret)
+
+
+def _relogin_fresh_credentials(
+    username: str,
+    password: str,
+    proxy: str | None,
+    totp_secret: str | None,
+):
+    """Relogin with fresh credentials, bypassing the existing session file.
+
+    Creates a new client and authenticates directly.  The resulting session is
+    persisted over any stale file so subsequent restores use the fresh token.
+    """
+    session_file = SESSIONS_DIR / f"{username}.json"
+
+    def _totp_code() -> str:
+        if not totp_secret:
+            return ""
+        import pyotp
+        return pyotp.TOTP(totp_secret).now()
+
+    client = _new_client(proxy)
+    try:
+        client.login(username, password, verification_code=_totp_code())
+    except TwoFactorRequired:
+        store_pending_2fa_client(username, client)
+        raise
+    client.dump_settings(session_file)
+    return client
+
+
+# Maps the string mode value from the port layer to the concrete strategy fn.
+_RELOGIN_STRATEGIES: dict[str, Callable] = {
+    "session_restore": _relogin_session_restore,
+    "fresh_credentials": _relogin_fresh_credentials,
+}
+
+
 def relogin_account_sync(
     account_id: str,
     *,
@@ -315,16 +380,24 @@ def relogin_account_sync(
     password: str,
     proxy: str | None = None,
     totp_secret: str | None = None,
+    mode: str = "session_restore",
 ) -> dict:
     """Synchronous relogin with retry for transient failures.
 
-    Credentials are passed in by the caller (fetched from the persistent store)
-    so this function does not depend on the legacy state.py _accounts dict.
+    Selects between ``session_restore`` and ``fresh_credentials`` strategy via
+    *mode*.  Credentials are passed in by the caller (fetched from the
+    persistent store) so this function does not depend on the legacy state.py
+    _accounts dict.
+
+    ``fresh_credentials`` is required when the account is in an error state due
+    to a server-side force-logout (Instagram logout_reason:8) — the session file
+    is permanently invalid and cannot be restored.
     """
+    strategy = _RELOGIN_STRATEGIES.get(mode, _relogin_session_restore)
 
     # Drop stale client reference without invalidating the server-side session.
     # Calling logout() here would invalidate the session file that
-    # create_authenticated_client is about to reuse, forcing a full re-auth.
+    # _relogin_session_restore is about to reuse, forcing a full re-auth.
     pop_client(account_id)
 
     cl = None
@@ -332,9 +405,7 @@ def relogin_account_sync(
         if attempt > 0:
             time.sleep(2 ** (attempt - 1))  # 1s, then 2s
         try:
-            # Pass totp_secret so the TOTP code is sent in the initial login()
-            # call — avoids the broken two-step TwoFactorRequired round-trip.
-            cl = create_authenticated_client(username, password, proxy, totp_secret)
+            cl = strategy(username, password, proxy, totp_secret)
             break  # success — exit retry loop
         except Exception as exc:
             failure = _classify_exception(
