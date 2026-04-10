@@ -105,10 +105,21 @@ def create_app() -> FastAPI:
 
         import sys
         _root = logging.getLogger()
+        _lg = logging.getLogger("instamanager.bootstrap")
         print(
             f"[LIFESPAN] root level={_root.level} handlers={_root.handlers}",
             file=sys.stderr, flush=True,
         )
+        print(
+            f"[LIFESPAN] logger name={_lg.name} level={_lg.level} effective={_lg.getEffectiveLevel()} propagate={_lg.propagate} handlers={_lg.handlers}",
+            file=sys.stderr, flush=True,
+        )
+        # Directly emit to root's StreamHandler to prove it works
+        for _h in _root.handlers:
+            import io
+            if hasattr(_h, 'stream'):
+                _h.stream.write("[LIFESPAN] direct stream write\n")
+                _h.stream.flush()
 
         logger.info(
             "InstaManager started version=%s persistence_backend=%s cors_origins=%s",
