@@ -4,14 +4,42 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.adapters.http.dependencies import get_logs_usecases
 from app.adapters.http.utils import format_error
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+
+
+class VerboseModeRequest(BaseModel):
+    enabled: bool
+
+
+@router.get("/verbose")
+def get_verbose_mode():
+    """Return whether instagrapi verbose (DEBUG) logging is currently active."""
+    enabled = logging.getLogger("instagrapi").level <= logging.DEBUG
+    return {"enabled": enabled}
+
+
+@router.post("/verbose")
+def set_verbose_mode(body: VerboseModeRequest):
+    """Toggle instagrapi verbose logging at runtime without restarting the server.
+
+    Sets INSTAGRAPI_LOG_LEVEL env var and re-runs configure_vendor_logging() so
+    the change takes effect immediately for all subsequent Instagram API calls.
+    """
+    from app.bootstrap.logging_config import configure_vendor_logging
+
+    os.environ["INSTAGRAPI_LOG_LEVEL"] = "DEBUG" if body.enabled else "WARNING"
+    configure_vendor_logging()
+    return {"enabled": body.enabled}
 
 
 @router.get("")

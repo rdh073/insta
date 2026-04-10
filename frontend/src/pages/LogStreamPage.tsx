@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   Terminal,
@@ -6,11 +6,12 @@ import {
   Pause,
   Play,
   Download,
+  Bug,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { buildSseUrl } from '../api/sse-token';
-import { resolveApiBaseUrl } from '../lib/api-base';
+import { buildApiUrl, resolveApiBaseUrl } from '../lib/api-base';
 import { useSettingsStore } from '../store/settings';
 import { useLogStreamStore, nextLogId } from '../store/logStream';
 import type { LogRecord } from '../store/logStream';
@@ -69,21 +70,25 @@ export function LogStreamPage() {
   const backendUrl    = useSettingsStore((s) => s.backendUrl);
   const backendApiKey = useSettingsStore((s) => s.backendApiKey);
 
-  const lines      = useLogStreamStore((s) => s.lines);
-  const total      = useLogStreamStore((s) => s.total);
-  const connected  = useLogStreamStore((s) => s.connected);
-  const paused     = useLogStreamStore((s) => s.paused);
-  const minLevel   = useLogStreamStore((s) => s.minLevel);
-  const nameFilter = useLogStreamStore((s) => s.nameFilter);
-  const autoScroll = useLogStreamStore((s) => s.autoScroll);
+  const lines       = useLogStreamStore((s) => s.lines);
+  const total       = useLogStreamStore((s) => s.total);
+  const connected   = useLogStreamStore((s) => s.connected);
+  const paused      = useLogStreamStore((s) => s.paused);
+  const minLevel    = useLogStreamStore((s) => s.minLevel);
+  const nameFilter  = useLogStreamStore((s) => s.nameFilter);
+  const autoScroll  = useLogStreamStore((s) => s.autoScroll);
+  const verboseMode = useLogStreamStore((s) => s.verboseMode);
 
-  const addLine      = useLogStreamStore((s) => s.addLine);
-  const clearLines   = useLogStreamStore((s) => s.clearLines);
-  const setConnected = useLogStreamStore((s) => s.setConnected);
-  const setPaused    = useLogStreamStore((s) => s.setPaused);
-  const setMinLevel  = useLogStreamStore((s) => s.setMinLevel);
+  const addLine       = useLogStreamStore((s) => s.addLine);
+  const clearLines    = useLogStreamStore((s) => s.clearLines);
+  const setConnected  = useLogStreamStore((s) => s.setConnected);
+  const setPaused     = useLogStreamStore((s) => s.setPaused);
+  const setMinLevel   = useLogStreamStore((s) => s.setMinLevel);
   const setNameFilter = useLogStreamStore((s) => s.setNameFilter);
   const setAutoScroll = useLogStreamStore((s) => s.setAutoScroll);
+  const setVerboseMode = useLogStreamStore((s) => s.setVerboseMode);
+
+  const [verbosePending, setVerbosePending] = useState(false);
 
   const termRef    = useRef<HTMLDivElement>(null);
   const esRef      = useRef<EventSource | null>(null);
@@ -93,6 +98,37 @@ export function LogStreamPage() {
 
   // Keep ref in sync so SSE callback reads current paused state without stale closure
   pausedRef.current = paused;
+
+  // ── Verbose mode sync ─────────────────────────────────────────────────────
+  // On mount, sync the UI toggle with the actual backend log level.
+  useEffect(() => {
+    const url = buildApiUrl('/logs/verbose', backendUrl);
+    const headers: Record<string, string> = {};
+    const key = backendApiKey?.trim();
+    if (key) headers['x-api-key'] = key;
+    fetch(url, { headers })
+      .then((r) => r.json())
+      .then((d: { enabled: boolean }) => setVerboseMode(d.enabled))
+      .catch(() => { /* ignore — server might not have the endpoint yet */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendUrl]);
+
+  const toggleVerbose = useCallback(async () => {
+    setVerbosePending(true);
+    const next = !verboseMode;
+    try {
+      const url = buildApiUrl('/logs/verbose', backendUrl);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const key = backendApiKey?.trim();
+      if (key) headers['x-api-key'] = key;
+      await fetch(url, { method: 'POST', headers, body: JSON.stringify({ enabled: next }) });
+      setVerboseMode(next);
+    } catch {
+      // keep existing state on error
+    } finally {
+      setVerbosePending(false);
+    }
+  }, [verboseMode, backendUrl, backendApiKey, setVerboseMode]);
 
   // ── SSE connection ────────────────────────────────────────────────────────
 
@@ -267,6 +303,24 @@ export function LogStreamPage() {
             <ArrowDown className="h-3.5 w-3.5" />
             Auto-scroll
           </button>
+
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={verboseMode}
+            disabled={verbosePending}
+            onClick={toggleVerbose}
+            title="Toggle instagrapi DEBUG logging at runtime"
+            className={cn(
+              'flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50',
+              verboseMode
+                ? 'border-[rgba(187,154,247,0.30)] bg-[rgba(187,154,247,0.12)] text-[#bb9af7]'
+                : 'border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.04)] text-[#7a8aae] hover:text-[#c0caf5]',
+            )}
+          >
+            <Bug className="h-3.5 w-3.5" />
+            Verbose
+          </button>
         </div>
 
         <span className="pb-0.5 font-mono text-[11px] text-[#59658c] self-end ml-auto">
@@ -291,7 +345,7 @@ export function LogStreamPage() {
               <Terminal className="mx-auto h-8 w-8 text-[#2a2f45] mb-3" />
               <p className="text-[#3a4060] text-sm">
                 {connected
-                  ? 'Waiting for log records… Set INSTAGRAPI_LOG_LEVEL=DEBUG for verbose output.'
+                  ? 'Waiting for log records… Enable Verbose to see instagrapi DEBUG traces.'
                   : 'Connecting to backend…'}
               </p>
             </div>

@@ -43,11 +43,17 @@ def _hydrate_and_publish(usecases, account_id: str) -> None:
     2. user_info(pk)  — gets follower_count + following_count
 
     Both results are published independently so the frontend updates as each
-    call completes rather than waiting for both.
+    call completes rather than waiting for both.  The fresh profile_pic_url is
+    also pre-downloaded into the avatar disk cache while the signed CDN URL is
+    still valid, so images survive URL expiry on subsequent page loads.
     """
+    from app.adapters.http.routers.media_proxy import warm_image_cache
+
     result = usecases.hydrate_account_profile(account_id)
     if result:
         account_event_bus.publish("account_updated", result)
+        if pic_url := result.get("profile_pic_url"):
+            warm_image_cache(pic_url)
     counts = usecases.refresh_follower_counts(account_id)
     if counts:
         account_event_bus.publish("account_updated", counts)
@@ -537,6 +543,8 @@ async def verify_account(
     account_id: str, usecases=Depends(get_account_connectivity_usecases)
 ):
     """Probe Instagram connectivity for an active account via account_info()."""
+    from app.adapters.http.routers.media_proxy import warm_image_cache
+
     try:
         result = await asyncio.to_thread(
             usecases.verify_account_connectivity, account_id
@@ -553,6 +561,9 @@ async def verify_account(
             event_payload["profile_pic_url"] = result.avatar
         if len(event_payload) > 1:
             account_event_bus.publish("account_updated", event_payload)
+        # Pre-warm avatar cache while the fresh CDN URL is still valid
+        if result.avatar:
+            warm_image_cache(result.avatar)
         return {
             "healthy": result.status == "active",
             "status": result.status,

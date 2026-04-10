@@ -25,6 +25,7 @@ interface LogStreamState {
   minLevel: number;
   nameFilter: string;
   autoScroll: boolean;
+  verboseMode: boolean;
 
   // Actions
   addLine: (record: LogRecord) => void;
@@ -34,6 +35,7 @@ interface LogStreamState {
   setMinLevel: (v: number) => void;
   setNameFilter: (v: string) => void;
   setAutoScroll: (v: boolean) => void;
+  setVerboseMode: (v: boolean) => void;
 }
 
 export const useLogStreamStore = create<LogStreamState>()(
@@ -46,6 +48,7 @@ export const useLogStreamStore = create<LogStreamState>()(
       minLevel: 10,
       nameFilter: '',
       autoScroll: true,
+      verboseMode: false,
 
       addLine: (record) =>
         set((s) => {
@@ -62,6 +65,7 @@ export const useLogStreamStore = create<LogStreamState>()(
       setMinLevel: (minLevel) => set({ minLevel }),
       setNameFilter: (nameFilter) => set({ nameFilter }),
       setAutoScroll: (autoScroll) => set({ autoScroll }),
+      setVerboseMode: (verboseMode) => set({ verboseMode }),
     }),
     {
       name: 'insta-log-stream',
@@ -70,6 +74,7 @@ export const useLogStreamStore = create<LogStreamState>()(
         minLevel: s.minLevel,
         nameFilter: s.nameFilter,
         autoScroll: s.autoScroll,
+        verboseMode: s.verboseMode,
       }),
     },
   ),
