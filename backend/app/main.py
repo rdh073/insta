@@ -39,14 +39,19 @@ def _resolve_oauth_state_secret() -> str:
     )
 
 
-async def _restore_pending_jobs(job_repo, scheduler) -> None:
+async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: asyncio.Event) -> None:
     """Re-queue pending/scheduled jobs from persistent storage on startup.
 
     Required for SQL backends (sqlite/postgres) where the in-memory job store
     (state._jobs) is empty after a restart even though the DB still holds the
     job records.  Calling job_repo.set() for each job triggers the dual-write
     that repopulates state._jobs so PostJobExecutor can find the job by ID.
+
+    Waits for session restore to finish first so accounts are authenticated
+    before jobs are re-enqueued — prevents immediate failure due to missing sessions.
     """
+    # Always hydrate state._jobs regardless of session readiness,
+    # so stop/pause/resume work immediately after startup.
     try:
         jobs = job_repo.list_all()
     except Exception as exc:
@@ -57,26 +62,40 @@ async def _restore_pending_jobs(job_repo, scheduler) -> None:
     if not pending:
         return
 
-    logger.info("job_restore.start count=%d", len(pending))
+    # Dual-write back to in-memory state first so control endpoints work.
     for job in pending:
         try:
-            # Dual-write back to in-memory state so PostJobExecutor can find it.
             job_repo.set(job.id, job)
-            # Re-enqueue on the scheduler (respects scheduled_at delay).
+        except Exception as exc:
+            logger.warning("job_restore.hydrate_skip job_id=%s reason=%s", job.id, exc)
+
+    logger.info("job_restore.start count=%d (waiting for sessions)", len(pending))
+
+    # Wait for session restore to complete before actually running jobs.
+    try:
+        await asyncio.wait_for(session_restore_done.wait(), timeout=120.0)
+    except asyncio.TimeoutError:
+        logger.warning("job_restore.session_wait_timeout — enqueuing anyway")
+
+    for job in pending:
+        try:
             scheduler.enqueue(job.id, job.scheduled_at)
             logger.info("job_restore.queued job_id=%s status=%s", job.id, job.status)
         except Exception as exc:
             logger.warning("job_restore.skip job_id=%s reason=%s", job.id, exc)
 
 
-async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None) -> None:
+async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_event: asyncio.Event | None = None) -> None:
     """Background task: relogin all persisted accounts on startup.
 
     After each successful relogin, fires profile hydration (followers/following)
     so the frontend receives account_updated SSE events without needing to poll.
+    Sets done_event when all accounts are processed so job restore can proceed.
     """
     ids = account_repo.list_all_ids()
     if not ids:
+        if done_event:
+            done_event.set()
         return
 
     logger.info("session_restore.start count=%d", len(ids))
@@ -98,6 +117,10 @@ async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None) -> None:
         await _one(aid)
         await asyncio.sleep(1.5)
 
+    if done_event:
+        done_event.set()
+        logger.info("session_restore.done — signalling job restore")
+
 
 def create_app() -> FastAPI:
     """Create the FastAPI application with production-safe runtime defaults."""
@@ -118,13 +141,10 @@ def create_app() -> FastAPI:
         if hasattr(job_queue, "start"):
             job_queue.start()
 
-        # Restore pending jobs from persistent storage (no-op for memory backend).
-        asyncio.ensure_future(
-            _restore_pending_jobs(
-                job_repo=services["_job_repo"],
-                scheduler=job_queue,
-            )
-        )
+        # Event that fires once all account sessions are restored.
+        # _restore_pending_jobs waits on this before re-enqueueing jobs
+        # so accounts are authenticated before jobs try to execute.
+        sessions_ready = asyncio.Event()
 
         # Wire event buses to the running event loop for SSE push.
         from app.adapters.scheduler.event_bus import post_job_event_bus
@@ -150,6 +170,14 @@ def create_app() -> FastAPI:
                 account_repo=services["_account_repo"],
                 relogin_fn=services["_relogin_fn"],
                 hydrate_fn=lambda aid: _hydrate_and_publish(account_auth, aid),
+                done_event=sessions_ready,
+            )
+        )
+        asyncio.ensure_future(
+            _restore_pending_jobs(
+                job_repo=services["_job_repo"],
+                scheduler=job_queue,
+                session_restore_done=sessions_ready,
             )
         )
         yield
