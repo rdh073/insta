@@ -46,7 +46,7 @@ def configure_vendor_logging() -> None:
 
 
 def _attach_sse_handler() -> None:
-    """Attach the SSE log-stream handler to the root logger (idempotent)."""
+    """Attach the SSE log-stream handler to key loggers (idempotent)."""
     from app.adapters.http.log_stream_handler import LogStreamHandler
 
     root = logging.getLogger()
@@ -54,8 +54,19 @@ def _attach_sse_handler() -> None:
         return  # already attached (e.g. uvicorn --reload re-imports)
 
     handler = LogStreamHandler()
-    handler.setLevel(logging.DEBUG)  # captures everything; source loggers filter
+    handler.setLevel(logging.DEBUG)
+
+    # Lower root logger to INFO so application logs flow through.
+    if root.level == logging.WARNING or root.level == 0:
+        root.setLevel(logging.INFO)
     root.addHandler(handler)
+
+    # Uvicorn loggers have propagate=True by default but their levels may be
+    # set higher; ensure they forward to the root handler at INFO.
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+        lg = logging.getLogger(name)
+        if lg.level == 0 or lg.level > logging.INFO:
+            lg.setLevel(logging.INFO)
 
 
 def _resolve_level() -> int:
