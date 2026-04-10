@@ -23,20 +23,10 @@ FROM nginx:alpine
 #   /*        → React SPA (index.html fallback)
 #
 # The backend container has no public ports — all traffic goes through here.
-# Password protection via HTTP Basic Auth (user: admin, password: protect).
-ARG BASIC_AUTH_PASSWORD=protect
-RUN apk add --no-cache apache2-utils && \
-    htpasswd -bc /etc/nginx/.htpasswd admin ${BASIC_AUTH_PASSWORD} && \
-    apk del apache2-utils
-
 RUN printf 'server {\n\
     listen 80;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
-\n\
-    # Password protection\n\
-    auth_basic "InstaManager";\n\
-    auth_basic_user_file /etc/nginx/.htpasswd;\n\
 \n\
     # Reverse proxy — backend API (internal Docker network only)\n\
     location /api/ {\n\
