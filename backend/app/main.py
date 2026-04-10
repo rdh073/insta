@@ -97,6 +97,12 @@ def create_app() -> FastAPI:
         account_event_bus.set_loop(loop)
         log_stream_bus.set_loop(loop)
 
+        # Re-attach SSE log handler after uvicorn's dictConfig resets logging.
+        # Must run inside lifespan so it fires after uvicorn finishes its own
+        # logging setup (which would otherwise reset the root logger level).
+        from app.bootstrap.logging_config import _attach_sse_handler
+        _attach_sse_handler()
+
         logger.info(
             "InstaManager started version=%s persistence_backend=%s cors_origins=%s",
             APP_VERSION,
