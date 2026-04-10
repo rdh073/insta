@@ -10,13 +10,25 @@ interface Props {
   className?: string;
 }
 
+/**
+ * Returns all focusable elements within a container.
+ */
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selectors =
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  return Array.from(container.querySelectorAll<HTMLElement>(selectors));
+}
+
 export function Modal({ open, onClose, title, children, className }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Focus management: move focus into modal on open, restore on close.
   useEffect(() => {
     if (!open) return;
 
-    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousActive =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
 
     return () => {
@@ -24,11 +36,38 @@ export function Modal({ open, onClose, title, children, className }: Props) {
     };
   }, [open]);
 
+  // Keyboard: Escape to close + Tab focus trapping.
   useEffect(() => {
     if (!open) return;
 
     const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      // Focus trap — cycle Tab within the modal dialog
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = getFocusableElements(dialogRef.current);
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey) {
+          // Shift+Tab: wrap from first → last
+          if (document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else {
+          // Tab: wrap from last → first
+          if (document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handler);
@@ -49,6 +88,7 @@ export function Modal({ open, onClose, title, children, className }: Props) {
       <div className="absolute inset-0 bg-[rgba(5,8,16,0.76)] backdrop-blur-md" onClick={onClose} />
 
       <div
+        ref={dialogRef}
         className={cn(
           'glass-panel glass-panel-strong relative z-10 w-full max-w-xl rounded-[2rem]',
           'shadow-[0_34px_90px_rgba(4,8,18,0.62),0_0_0_1px_rgba(125,207,255,0.05)]',
