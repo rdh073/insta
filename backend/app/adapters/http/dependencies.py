@@ -228,3 +228,9 @@ def get_dashboard_auth_usecases():
     """Get dashboard auth use cases via dependency injection."""
     services = get_services()
     return services["dashboard_auth"]
+
+
+def get_account_repo():
+    """Get raw account repository (for credential reads)."""
+    services = get_services()
+    return services["_account_repo"]

@@ -26,6 +26,7 @@ from app.adapters.http.dependencies import (
     get_account_proxy_usecases,
     get_account_totp_usecases,
     get_account_import_usecases,
+    get_account_repo,
     get_session_store,
 )
 from app.adapters.http.utils import format_error, format_instagram_failure
@@ -595,6 +596,22 @@ def get_rate_limited_accounts():
         }
         for aid, info in limited.items()
     ]
+
+
+@router.get("/{account_id}/credentials")
+def get_credentials(account_id: str, repo=Depends(get_account_repo)):
+    """Return stored credentials for an account (password + TOTP secret).
+
+    Intended for the operator UI only — never expose to untrusted clients.
+    """
+    record = repo.get(account_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {
+        "username": record.username,
+        "password": record.password or "",
+        "totpSecret": record.totp_secret or "",
+    }
 
 
 @router.delete("/rate-limited/{account_id}")

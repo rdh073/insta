@@ -4,8 +4,12 @@ import {
   CheckCircle,
   CheckSquare,
   Clock,
+  Copy,
   Download,
+  Eye,
+  EyeOff,
   Globe,
+  KeyRound,
   Loader,
   Lock,
   RefreshCw,
@@ -229,6 +233,104 @@ function auditMeta(event: string) {
   return AUDIT_META[event] ?? { label: event.replace(/_/g, ' '), color: '#7f8bb3' };
 }
 
+/* ── Credentials modal ───────────────────────────────────────────────────── */
+
+function CredentialField({ label, value }: { label: string; value: string }) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const display = visible ? value : '•'.repeat(Math.min(value.length || 8, 24));
+
+  async function handleCopy() {
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#5a6a90]">{label}</p>
+      <div className="flex items-center gap-2 rounded-[0.9rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-3 py-2.5">
+        <span className="flex-1 break-all font-mono text-sm text-[#c0caf5]">
+          {value ? display : <span className="text-[#4a5578]">—</span>}
+        </span>
+        {value && (
+          <>
+            <button
+              type="button"
+              onClick={() => setVisible((v) => !v)}
+              className="cursor-pointer shrink-0 text-[#5a6a90] transition-colors hover:text-[#c0caf5]"
+              title={visible ? 'Hide' : 'Show'}
+            >
+              {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="cursor-pointer shrink-0 text-[#5a6a90] transition-colors hover:text-[#7aa2f7]"
+              title="Copy"
+            >
+              {copied ? <CheckCircle className="h-3.5 w-3.5 text-[#9ece6a]" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CredentialsModal({
+  open,
+  onClose,
+  accountId,
+  username,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accountId: string;
+  username: string;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [creds, setCreds] = useState<{ username: string; password: string; totpSecret: string } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    accountsApi.getCredentials(accountId)
+      .then(setCreds)
+      .catch(() => setCreds(null))
+      .finally(() => setLoading(false));
+  }, [open, accountId]);
+
+  function handleClose() {
+    setCreds(null);
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title={`Credentials — @${username}`}>
+      {loading ? (
+        <div className="flex h-24 items-center justify-center">
+          <Loader className="h-5 w-5 animate-spin text-[#7dcfff]" />
+        </div>
+      ) : creds ? (
+        <div className="space-y-4">
+          <CredentialField label="Username" value={creds.username} />
+          <CredentialField label="Password" value={creds.password} />
+          {creds.totpSecret && (
+            <CredentialField label="TOTP Secret" value={creds.totpSecret} />
+          )}
+          <p className="rounded-[0.9rem] bg-[rgba(247,118,142,0.08)] px-3 py-2 text-[11px] text-[#f7768e]">
+            Keep these credentials private. Do not share or expose them.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-[#f7768e]">Failed to load credentials.</p>
+      )}
+    </Modal>
+  );
+}
+
 /* ── Detail panel (right column) ─────────────────────────────────────────── */
 
 function AccountDetail({
@@ -248,6 +350,7 @@ function AccountDetail({
   const [relogging, setRelogging] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [clearingLimit, setClearingLimit] = useState(false);
+  const [showCredentials, setShowCredentials] = useState(false);
   const [auditLog, setAuditLog] = useState<ActivityLogEntry[]>([]);
 
   useEffect(() => {
@@ -421,6 +524,10 @@ function AccountDetail({
             Setup 2FA
           </Button>
         )}
+        <Button size="sm" variant="secondary" onClick={() => setShowCredentials(true)}>
+          <KeyRound className="h-3.5 w-3.5" />
+          Credentials
+        </Button>
         <Button size="sm" variant="danger" onClick={handleLogout} loading={loggingOut}>
           <Trash2 className="h-3.5 w-3.5" />
           Remove
@@ -465,6 +572,13 @@ function AccountDetail({
           </div>
         </div>
       )}
+
+      <CredentialsModal
+        open={showCredentials}
+        onClose={() => setShowCredentials(false)}
+        accountId={account.id}
+        username={account.username}
+      />
     </Card>
   );
 }

@@ -72,4 +72,9 @@ export const accountsApi = {
 
   clearRateLimit: (id: string) =>
     api.delete<{ cleared: string }>(`/accounts/rate-limited/${id}`).then((r) => r.data),
+
+  getCredentials: (id: string) =>
+    api.get<{ username: string; password: string; totpSecret: string }>(
+      `/accounts/${id}/credentials`
+    ).then((r) => r.data),
 };
