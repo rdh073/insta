@@ -7,6 +7,7 @@ import type { HighlightSummary, HighlightDetail } from '../types/instagram/highl
 import type { StorySummary } from '../types/instagram/story';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { useHighlightsStore } from '../store/highlights';
 
 function StoryThumb({ story }: { story: StorySummary }) {
   return (
@@ -167,9 +168,7 @@ function HighlightCard({
 
 export function HighlightsPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const [userId, setUserId] = useState('');
-  const [highlights, setHighlights] = useState<HighlightSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { userId, setUserId, highlights, setHighlights, removeHighlight, loading, setLoading } = useHighlightsStore();
 
   async function handleLoad() {
     if (!accountId || !userId.trim()) return;
@@ -182,10 +181,6 @@ export function HighlightsPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function removeHighlight(pk: string) {
-    setHighlights((prev) => prev.filter((h) => h.pk !== pk));
   }
 
   return (

@@ -14,6 +14,7 @@ interface DiscoveryState {
   // In-memory results
   hashtag: HashtagSummary | null;
   posts: MediaSummary[];
+  loading: boolean;
 
   // Actions
   setHashtagInput: (v: string) => void;
@@ -21,6 +22,7 @@ interface DiscoveryState {
   setAmount: (v: number) => void;
   setHashtag: (h: HashtagSummary | null) => void;
   setPosts: (posts: MediaSummary[]) => void;
+  setLoading: (v: boolean) => void;
   clearResults: () => void;
 }
 
@@ -32,12 +34,14 @@ export const useDiscoveryStore = create<DiscoveryState>()(
       amount: 24,
       hashtag: null,
       posts: [],
+      loading: false,
 
       setHashtagInput: (hashtagInput) => set({ hashtagInput }),
       setFeed: (feed) => set({ feed }),
       setAmount: (amount) => set({ amount }),
       setHashtag: (hashtag) => set({ hashtag }),
       setPosts: (posts) => set({ posts }),
+      setLoading: (loading) => set({ loading }),
       clearResults: () => set({ hashtag: null, posts: [] }),
     }),
     {

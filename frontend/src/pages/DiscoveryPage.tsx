@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Film,
@@ -97,9 +96,9 @@ export function DiscoveryPage() {
   const setAmount       = useDiscoveryStore((s) => s.setAmount);
   const setHashtag      = useDiscoveryStore((s) => s.setHashtag);
   const setPosts        = useDiscoveryStore((s) => s.setPosts);
+  const setLoading      = useDiscoveryStore((s) => s.setLoading);
+  const loading         = useDiscoveryStore((s) => s.loading);
   const clearResults    = useDiscoveryStore((s) => s.clearResults);
-
-  const [loading, setLoading] = useState(false);
 
   async function handleLoad() {
     const name = hashtagInput.trim().replace(/^#/, '');

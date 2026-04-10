@@ -118,6 +118,8 @@ function AccountAvatar({ username, avatar, size = 'md' }: { username: string; av
 
 /* ── Compact account row for left column ─────────────────────────────────── */
 
+const NON_ACTIVE_STATUSES = new Set(['idle', 'error', 'challenge', '2fa_required']);
+
 function AccountRow({
   account,
   isActive,
@@ -125,6 +127,8 @@ function AccountRow({
   selected,
   onToggle,
   onClick,
+  onRelogin,
+  relogging,
   rateLimitInfo,
 }: {
   account: Account;
@@ -133,12 +137,16 @@ function AccountRow({
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
+  onRelogin: () => void;
+  relogging: boolean;
   rateLimitInfo?: RateLimitEntry;
 }) {
   const handleClick = () => {
     if (selectMode) onToggle();
     else onClick();
   };
+
+  const showReauth = NON_ACTIVE_STATUSES.has(account.status) && !selectMode;
 
   return (
     <div
@@ -168,13 +176,29 @@ function AccountRow({
         )}
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        {statusBadge(account, true)}
-        {rateLimitInfo && (
-          <span className="flex items-center gap-1 rounded-full border border-[rgba(255,158,100,0.24)] bg-[rgba(255,158,100,0.10)] px-1.5 py-0.5 text-[10px] font-medium text-[#ffb07a]">
-            <Clock className="h-2.5 w-2.5" />
-            {formatCooldown(rateLimitInfo.retry_after)}
-          </span>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex flex-col items-end gap-1">
+          {statusBadge(account, true)}
+          {rateLimitInfo && (
+            <span className="flex items-center gap-1 rounded-full border border-[rgba(255,158,100,0.24)] bg-[rgba(255,158,100,0.10)] px-1.5 py-0.5 text-[10px] font-medium text-[#ffb07a]">
+              <Clock className="h-2.5 w-2.5" />
+              {formatCooldown(rateLimitInfo.retry_after)}
+            </span>
+          )}
+        </div>
+
+        {showReauth && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRelogin(); }}
+            disabled={relogging}
+            title="Re-authenticate"
+            className="cursor-pointer rounded-lg p-1.5 text-[#5a6a90] transition-colors duration-150 hover:bg-[rgba(122,162,247,0.12)] hover:text-[#7aa2f7] disabled:opacity-40"
+          >
+            {relogging
+              ? <Loader className="h-3.5 w-3.5 animate-spin" />
+              : <RotateCcw className="h-3.5 w-3.5" />}
+          </button>
         )}
       </div>
     </div>
@@ -876,6 +900,7 @@ export function AccountsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [reloggingIds, setReloggingIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -906,6 +931,28 @@ export function AccountsPage() {
       next.delete(accountId);
       return next;
     });
+  };
+
+  const handleQuickRelogin = async (account: Account) => {
+    if (reloggingIds.has(account.id)) return;
+    setReloggingIds((prev) => new Set(prev).add(account.id));
+    updatePageStatus(account.id, 'logging_in');
+    try {
+      const updated = await accountsApi.relogin(account.id);
+      upsertPageAccount(updated);
+      toast.success(`@${account.username} re-authenticated`);
+    } catch (err) {
+      const e = err as ApiError;
+      const code = e.code ?? '';
+      let msg = e.message || 'Relogin failed';
+      let status: Account['status'] = 'error';
+      if (code === 'two_factor_required') { msg = '2FA required'; status = '2fa_required'; }
+      else if (code.startsWith('challenge')) { msg = 'Security challenge'; status = 'challenge'; }
+      updatePageStatus(account.id, status, msg);
+      toast.error(`@${account.username}: ${msg}`, { duration: 5000 });
+    } finally {
+      setReloggingIds((prev) => { const s = new Set(prev); s.delete(account.id); return s; });
+    }
   };
 
   const errorAccounts = accounts.filter((a) => a.status === 'error' || a.status === 'challenge');
@@ -1185,6 +1232,8 @@ export function AccountsPage() {
                         setActive(next);
                         if (next) accountsApi.refreshCounts(next).catch(() => {});
                       }}
+                      onRelogin={() => void handleQuickRelogin(account)}
+                      relogging={reloggingIds.has(account.id)}
                       rateLimitInfo={rateLimitMap.get(account.id)}
                     />
                   ))
