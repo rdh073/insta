@@ -1,5 +1,8 @@
 FROM python:3.12-slim AS base
 
+# Flush stdout/stderr immediately so logs appear in `docker logs`
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # System deps for psycopg (PostgreSQL) and cryptography
