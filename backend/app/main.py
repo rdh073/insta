@@ -116,10 +116,22 @@ def create_app() -> FastAPI:
         )
         # Directly emit to root's StreamHandler to prove it works
         for _h in _root.handlers:
-            import io
             if hasattr(_h, 'stream'):
                 _h.stream.write("[LIFESPAN] direct stream write\n")
                 _h.stream.flush()
+            else:
+                # Try emitting a synthetic record directly through the handler
+                import time
+                _r = logging.makeLogRecord({
+                    "level": logging.INFO, "levelno": 20,
+                    "name": "test", "msg": "[LIFESPAN] direct handler emit",
+                    "created": time.time(),
+                })
+                try:
+                    _h.emit(_r)
+                except Exception as _e:
+                    sys.stderr.write(f"[LIFESPAN] emit exception: {_e}\n")
+                    sys.stderr.flush()
 
         logger.info(
             "InstaManager started version=%s persistence_backend=%s cors_origins=%s",
@@ -128,6 +140,11 @@ def create_app() -> FastAPI:
             len(settings.cors_origins),
         )
         print("[LIFESPAN] logger.info fired OK", file=sys.stderr, flush=True)
+        # Check if uvicorn dictConfig ran AFTER us and reset the root logger
+        print(
+            f"[LIFESPAN AFTER] root level={_root.level} handlers={_root.handlers}",
+            file=sys.stderr, flush=True,
+        )
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
 
