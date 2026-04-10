@@ -24,7 +24,7 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Add the app root to path so we can import SQLAlchemy models
 backend_root = Path(__file__).parent.parent

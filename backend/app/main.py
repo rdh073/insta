@@ -103,53 +103,7 @@ def create_app() -> FastAPI:
         from app.bootstrap.logging_config import _attach_sse_handler
         _attach_sse_handler()
 
-        import sys
-        _root = logging.getLogger()
-        _lg = logging.getLogger("instamanager.bootstrap")
-        print(
-            f"[LIFESPAN] root level={_root.level} handlers={_root.handlers}",
-            file=sys.stderr, flush=True,
-        )
-        print(
-            f"[LIFESPAN] logger name={_lg.name} level={_lg.level} effective={_lg.getEffectiveLevel()} propagate={_lg.propagate} handlers={_lg.handlers}",
-            file=sys.stderr, flush=True,
-        )
-        # Directly emit to root's StreamHandler to prove it works
-        for _h in _root.handlers:
-            if hasattr(_h, 'stream'):
-                _h.stream.write("[LIFESPAN] direct stream write\n")
-                _h.stream.flush()
-            else:
-                # Try emitting a synthetic record directly through the handler
-                import time
-                _r = logging.makeLogRecord({
-                    "level": logging.INFO, "levelno": 20,
-                    "name": "test", "msg": "[LIFESPAN] direct handler emit",
-                    "created": time.time(),
-                })
-                try:
-                    _h.emit(_r)
-                except Exception as _e:
-                    sys.stderr.write(f"[LIFESPAN] emit exception: {_e}\n")
-                    sys.stderr.flush()
-
-        # Check stream identity and FD number
-        _sh = _root.handlers[0]
-        _sh_stream = _sh.stream
-        try:
-            _fd = _sh_stream.fileno()
-        except Exception:
-            try:
-                _fd = _sh_stream.buffer.fileno()
-            except Exception:
-                _fd = "unknown"
-        print(
-            f"[LIFESPAN] StreamHandler stream={_sh_stream!r} is_stderr={_sh_stream is sys.stderr} fileno={_fd}",
-            file=sys.stderr, flush=True,
-        )
-        logging.warning("ROOT WARNING via logging module")
-        logger.warning("LOGGER WARNING from instamanager.bootstrap")
-        print("[LIFESPAN] all done", file=sys.stderr, flush=True)
+        logger.info("InstaManager started — session restore queued")
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
 
