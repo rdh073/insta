@@ -1212,7 +1212,7 @@ export function AccountsPage() {
     setBulkLoading(true);
     try {
       const results = await accountsApi.bulkSetProxy(selectedIds, proxy.trim());
-      results.forEach((r) => patchAccount(r.id, { proxy: r.proxy, status: r.status as Account['status'] }));
+      results.forEach((r) => patchPageAccount(r.id, { proxy: r.proxy, status: r.status as Account['status'] }));
       toast.success(`Proxy updated for ${selectedIds.length} account${selectedIds.length !== 1 ? 's' : ''}`);
       exitSelectMode();
     } catch (error) {
