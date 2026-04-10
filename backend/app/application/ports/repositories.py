@@ -97,3 +97,27 @@ class JobRepository(Protocol):
     def list_all(self) -> list[JobRecord]:
         """List all jobs."""
         ...
+
+
+class TemplateRepository(Protocol):
+    """Interface for caption template storage."""
+
+    def get(self, template_id: str) -> Optional[dict]:
+        """Get template by ID."""
+        ...
+
+    def save(self, template: dict) -> None:
+        """Create or replace a template."""
+        ...
+
+    def update(self, template_id: str, **kwargs) -> None:
+        """Patch template fields."""
+        ...
+
+    def delete(self, template_id: str) -> bool:
+        """Delete template. Returns True if it existed."""
+        ...
+
+    def list_all(self) -> list[dict]:
+        """List all templates ordered by name."""
+        ...

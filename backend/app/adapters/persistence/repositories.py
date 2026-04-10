@@ -128,3 +128,26 @@ class InMemoryProxyRepository:
 
     def exists(self, host: str, port: int) -> bool:
         return (host, port) in self._store
+
+
+class InMemoryTemplateRepository:
+    """In-memory caption template repository."""
+
+    def __init__(self):
+        self._store: dict[str, dict] = {}
+
+    def get(self, template_id: str) -> dict | None:
+        return self._store.get(template_id)
+
+    def save(self, template: dict) -> None:
+        self._store[template["id"]] = dict(template)
+
+    def update(self, template_id: str, **kwargs) -> None:
+        if template_id in self._store:
+            self._store[template_id].update(kwargs)
+
+    def delete(self, template_id: str) -> bool:
+        return self._store.pop(template_id, None) is not None
+
+    def list_all(self) -> list[dict]:
+        return sorted(self._store.values(), key=lambda t: t.get("name", ""))

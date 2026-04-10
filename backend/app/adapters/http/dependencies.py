@@ -234,3 +234,9 @@ def get_account_repo():
     """Get raw account repository (for credential reads)."""
     services = get_services()
     return services["_account_repo"]
+
+
+def get_templates_usecases():
+    """Get templates use cases via dependency injection."""
+    services = get_services()
+    return services["templates"]

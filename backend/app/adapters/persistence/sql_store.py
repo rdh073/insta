@@ -89,6 +89,19 @@ class JobRow(Base):
     extra_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
+class TemplateRow(Base):
+    """Caption template persistence row."""
+
+    __tablename__ = "templates"
+
+    id:          Mapped[str]  = mapped_column(String(64), primary_key=True)
+    name:        Mapped[str]  = mapped_column(String(255), nullable=False)
+    caption:     Mapped[str]  = mapped_column(Text, nullable=False)
+    tags:        Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    usage_count: Mapped[int]  = mapped_column(Integer, default=0, nullable=False)
+    created_at:  Mapped[str]  = mapped_column(String(128), nullable=False)
+
+
 class ProxyRow(Base):
     """Proxy pool persistence row — stores only elite, working proxies."""
 

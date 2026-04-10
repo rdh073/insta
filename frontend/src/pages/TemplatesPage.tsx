@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, Hash, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { HashtagTextarea } from '../components/instagram/HashtagTextarea';
 import toast from 'react-hot-toast';
@@ -19,11 +19,12 @@ function TemplateModal({
 }) {
   const addTemplate = useTemplateStore((s) => s.addTemplate);
   const updateTemplate = useTemplateStore((s) => s.updateTemplate);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState(initial?.name ?? '');
   const [caption, setCaption] = useState(initial?.caption ?? '');
   const [tagsRaw, setTagsRaw] = useState(initial?.tags.join(', ') ?? '');
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!name.trim() || !caption.trim()) {
       toast.error('Name and caption are required');
@@ -35,15 +36,21 @@ function TemplateModal({
       .map((tag) => tag.trim())
       .filter(Boolean);
 
-    if (initial) {
-      updateTemplate(initial.id, { name: name.trim(), caption: caption.trim(), tags });
-      toast.success('Template updated');
-    } else {
-      addTemplate({ name: name.trim(), caption: caption.trim(), tags });
-      toast.success('Template created');
+    setSaving(true);
+    try {
+      if (initial) {
+        await updateTemplate(initial.id, { name: name.trim(), caption: caption.trim(), tags });
+        toast.success('Template updated');
+      } else {
+        await addTemplate({ name: name.trim(), caption: caption.trim(), tags });
+        toast.success('Template created');
+      }
+      onClose();
+    } catch {
+      toast.error('Failed to save template');
+    } finally {
+      setSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -81,7 +88,7 @@ function TemplateModal({
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" className="flex-1">
+          <Button type="submit" className="flex-1" loading={saving}>
             {initial ? 'Save Changes' : 'Create Template'}
           </Button>
         </div>
@@ -93,8 +100,13 @@ function TemplateModal({
 export function TemplatesPage() {
   const templates = useTemplateStore((s) => s.templates);
   const removeTemplate = useTemplateStore((s) => s.removeTemplate);
+  const fetchTemplates = useTemplateStore((s) => s.fetchTemplates);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<CaptionTemplate | undefined>();
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
 
   const sortedTemplates = [...templates].sort((left, right) => right.usageCount - left.usageCount);
   const mostUsed = sortedTemplates[0];
@@ -170,8 +182,8 @@ export function TemplatesPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      removeTemplate(template.id);
+                    onClick={async () => {
+                      await removeTemplate(template.id);
                       toast.success('Template deleted');
                     }}
                     className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl border border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.08)] text-[#ffc4d0] transition-colors duration-200 hover:bg-[rgba(247,118,142,0.14)]"

@@ -102,7 +102,8 @@ from app.adapters.instagram.insight_reader import InstagramInsightReaderAdapter
 from app.adapters.instagram.track_catalog import InstagramTrackCatalogAdapter
 from app.adapters.proxy.httpx_checker import HttpxProxyCheckerAdapter
 from app.adapters.proxy.proxy_parser import ProxyParser
-from app.adapters.persistence.factory import build_proxy_repository
+from app.adapters.persistence.factory import build_proxy_repository, build_template_repository
+from app.application.use_cases.templates import TemplatesUseCase
 
 
 def _build_persistence():
@@ -111,7 +112,8 @@ def _build_persistence():
         build_persistence_adapters()
     )
     proxy_repo = build_proxy_repository()
-    return account_repo, client_repo, status_repo, job_repo, uow, proxy_repo
+    template_repo = build_template_repository()
+    return account_repo, client_repo, status_repo, job_repo, uow, proxy_repo, template_repo
 
 
 def _build_instagram_adapters(client_repo):
@@ -461,7 +463,7 @@ def create_services():
     Returns a flat dict consumed by FastAPI dependency injection.
     """
     # ── 1. Persistence ────────────────────────────────────────────────────
-    account_repo, client_repo, status_repo, job_repo, uow, proxy_repo = (
+    account_repo, client_repo, status_repo, job_repo, uow, proxy_repo, template_repo = (
         _build_persistence()
     )
     activity_log = ActivityLogWriter()
@@ -470,6 +472,7 @@ def create_services():
     proxy_pool_usecases = ProxyPoolUseCases(
         checker=proxy_checker, repo=proxy_repo, parser=ProxyParser()
     )
+    templates_usecases = TemplatesUseCase(repo=template_repo)
 
     # ── 2. Instagram adapters ─────────────────────────────────────────────
     ig = _build_instagram_adapters(client_repo)
@@ -604,4 +607,5 @@ def create_services():
         "dashboard_auth": dashboard_auth_usecases,
         "llm_gateway_port": ai["llm_gateway_adapter"],
         "proxy_pool": proxy_pool_usecases,
+        "templates": templates_usecases,
     }

@@ -16,7 +16,7 @@ from app.domain.proxy import Proxy, ProxyAnonymity, ProxyProtocol
 
 from .errors import PersistenceInfrastructureError
 from .failure_catalog import build_persistence_failure_message
-from .sql_store import AccountRow, AccountStatusRow, JobRow, ProxyRow, SqlitePersistenceStore
+from .sql_store import AccountRow, AccountStatusRow, JobRow, ProxyRow, TemplateRow, SqlitePersistenceStore
 from .state_gateway import default_state_gateway
 
 
@@ -343,3 +343,79 @@ class SqlProxyRepository:
                 .filter(ProxyRow.host == host, ProxyRow.port == port)
                 .one_or_none()
             ) is not None
+
+
+class SqlTemplateRepository:
+    """SQL-backed caption template repository."""
+
+    def __init__(self, store: SqlitePersistenceStore):
+        self.store = store
+
+    @staticmethod
+    def _to_dict(row: TemplateRow) -> dict:
+        return {
+            "id": row.id,
+            "name": row.name,
+            "caption": row.caption,
+            "tags": row.tags or [],
+            "usage_count": row.usage_count or 0,
+            "created_at": row.created_at,
+        }
+
+    @_wrap_sql_error
+    def get(self, template_id: str) -> dict | None:
+        with self.store.session_scope() as session:
+            row = session.query(TemplateRow).filter(TemplateRow.id == template_id).one_or_none()
+            return self._to_dict(row) if row else None
+
+    @_wrap_sql_error
+    def save(self, template: dict) -> None:
+        with self.store.session_scope() as session:
+            row = session.query(TemplateRow).filter(TemplateRow.id == template["id"]).one_or_none()
+            if row is None:
+                row = TemplateRow(
+                    id=template["id"],
+                    name=template["name"],
+                    caption=template["caption"],
+                    tags=template.get("tags", []),
+                    usage_count=template.get("usage_count", 0),
+                    created_at=template.get("created_at", ""),
+                )
+                session.add(row)
+            else:
+                row.name = template["name"]
+                row.caption = template["caption"]
+                row.tags = template.get("tags", [])
+                row.usage_count = template.get("usage_count", row.usage_count)
+                row.created_at = template.get("created_at", row.created_at)
+            if self.store.get_active_session() is None:
+                session.commit()
+
+    @_wrap_sql_error
+    def update(self, template_id: str, **kwargs) -> None:
+        with self.store.session_scope() as session:
+            row = session.query(TemplateRow).filter(TemplateRow.id == template_id).one_or_none()
+            if row is None:
+                return
+            for field, value in kwargs.items():
+                if hasattr(row, field):
+                    setattr(row, field, value)
+            if self.store.get_active_session() is None:
+                session.commit()
+
+    @_wrap_sql_error
+    def delete(self, template_id: str) -> bool:
+        with self.store.session_scope() as session:
+            row = session.query(TemplateRow).filter(TemplateRow.id == template_id).one_or_none()
+            if row is None:
+                return False
+            session.delete(row)
+            if self.store.get_active_session() is None:
+                session.commit()
+            return True
+
+    @_wrap_sql_error
+    def list_all(self) -> list[dict]:
+        with self.store.session_scope() as session:
+            rows = session.query(TemplateRow).order_by(TemplateRow.name).all()
+            return [self._to_dict(row) for row in rows]

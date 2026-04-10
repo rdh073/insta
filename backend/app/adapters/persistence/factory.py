@@ -24,9 +24,10 @@ from .repositories import (
     InMemoryStatusRepository,
     InMemoryJobRepository,
     InMemoryProxyRepository,
+    InMemoryTemplateRepository,
 )
 from .sql_store import SqlitePersistenceStore
-from .sql_repositories import SqlAccountRepository, SqlStatusRepository, SqlJobRepository, SqlProxyRepository
+from .sql_repositories import SqlAccountRepository, SqlStatusRepository, SqlJobRepository, SqlProxyRepository, SqlTemplateRepository
 from .uow import InMemoryPersistenceUoW
 from .sql_uow import SqlAlchemyPersistenceUoW
 
@@ -131,6 +132,14 @@ def build_llm_config_repository():
             return InMemoryLLMConfigRepository()
 
     return InMemoryLLMConfigRepository()
+
+
+def build_template_repository():
+    """Build template repository based on backend configuration."""
+    sql_store = build_sql_persistence_store()
+    if sql_store is not None:
+        return SqlTemplateRepository(sql_store)
+    return InMemoryTemplateRepository()
 
 
 def build_oauth_token_store():

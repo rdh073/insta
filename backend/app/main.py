@@ -266,6 +266,7 @@ def create_app() -> FastAPI:
     from app.adapters.http.routers.llm_config import router as llm_config_router
     from app.adapters.http.routers.proxies import router as proxies_router
     from app.adapters.http.routers.sse import router as sse_router
+    from app.adapters.http.routers.templates import router as templates_router
     from ai_copilot.api import router as ai_copilot_router
 
     app.include_router(accounts_router)
@@ -281,6 +282,7 @@ def create_app() -> FastAPI:
     app.include_router(smart_engagement_router)
     app.include_router(llm_config_router)
     app.include_router(proxies_router)
+    app.include_router(templates_router)
     app.include_router(sse_router)
 
     @app.get("/health")
