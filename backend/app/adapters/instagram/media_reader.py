@@ -84,7 +84,7 @@ class InstagramMediaReaderAdapter:
 
         try:
             # Call vendor method to get Media object
-            media = client.media_info_by_media_pk(client.media_pk_from_code(code))
+            media = client.media_info(client.media_pk_from_code(code))
 
             # Map to DTO
             return self._map_media_to_summary(media)

@@ -96,6 +96,7 @@ class InstagramRelationshipWriterAdapter:
 
     def close_friend_remove(self, account_id: str, user_id: int) -> bool:
         """Remove a user from Close Friends list via instagrapi."""
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")
@@ -108,4 +109,6 @@ class InstagramRelationshipWriterAdapter:
                 operation="close_friend_remove",
                 account_id=account_id,
             )
+            if failure.http_hint == 429:
+                raise InstagramRateLimitError(failure.user_message)
             raise ValueError(failure.user_message)
