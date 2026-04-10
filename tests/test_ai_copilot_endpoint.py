@@ -139,12 +139,15 @@ def test_new_route_isolated():
 
 
 def test_dependency_injection_cached():
-    """Test that dependency injection uses caching."""
-    from ai_copilot.api import get_operator_copilot_usecase
+    """Test that the dependency injection factory is an async singleton."""
+    import asyncio
+    from ai_copilot.api import get_operator_copilot_usecase, _copilot_lock
 
-    # Should have lru_cache decorator
-    assert hasattr(get_operator_copilot_usecase, "__wrapped__")
-    print("✓ Dependency injection cached with lru_cache")
+    # Factory must be async (required for AsyncSqliteSaver init)
+    assert asyncio.iscoroutinefunction(get_operator_copilot_usecase)
+    # Module-level lock must exist (double-checked locking pattern)
+    assert isinstance(_copilot_lock, asyncio.Lock)
+    print("✓ Dependency injection uses async singleton pattern")
 
 
 if __name__ == "__main__":

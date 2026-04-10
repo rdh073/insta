@@ -71,6 +71,9 @@ async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None) -> None:
 
 def create_app() -> FastAPI:
     """Create the FastAPI application with production-safe runtime defaults."""
+    from app.bootstrap.logging_config import configure_vendor_logging
+    configure_vendor_logging()
+
     settings = load_runtime_settings()
 
     @asynccontextmanager
@@ -88,9 +91,11 @@ def create_app() -> FastAPI:
         # Wire event buses to the running event loop for SSE push.
         from app.adapters.scheduler.event_bus import post_job_event_bus
         from app.adapters.http.event_bus import account_event_bus
+        from app.adapters.http.log_stream_bus import log_stream_bus
         loop = asyncio.get_running_loop()
         post_job_event_bus.set_loop(loop)
         account_event_bus.set_loop(loop)
+        log_stream_bus.set_loop(loop)
 
         logger.info(
             "InstaManager started version=%s persistence_backend=%s cors_origins=%s",

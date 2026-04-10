@@ -15,6 +15,7 @@ Connection-level guards:
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from .repositories import (
@@ -35,8 +36,13 @@ def current_persistence_backend() -> str:
     return os.getenv("PERSISTENCE_BACKEND", "memory").strip().lower()
 
 
+@lru_cache(maxsize=None)
 def build_sql_persistence_store() -> SqlitePersistenceStore | None:
-    """Build a SQL persistence store when a durable backend is enabled."""
+    """Build (and cache) a SQL persistence store when a durable backend is enabled.
+
+    Cached so the engine and connection pool are created exactly once per process,
+    and Alembic migrations run only once on startup.
+    """
     persistence_backend = current_persistence_backend()
     if persistence_backend not in {"sqlite", "sql"}:
         return None

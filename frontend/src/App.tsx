@@ -24,6 +24,7 @@ const DiscoveryPage = lazy(async () => import('./pages/DiscoveryPage').then((mod
 const CampaignPage = lazy(async () => import('./pages/CampaignPage').then((module) => ({ default: module.CampaignPage })));
 const RelationshipsPage = lazy(async () => import('./pages/RelationshipsPage').then((module) => ({ default: module.RelationshipsPage })));
 const MediaPage = lazy(async () => import('./pages/MediaPage').then((module) => ({ default: module.MediaPage })));
+const LogStreamPage = lazy(async () => import('./pages/LogStreamPage').then((module) => ({ default: module.LogStreamPage })));
 
 /**
  * Checks if dashboard auth is enabled on the server. When it is and the user
@@ -92,6 +93,7 @@ export default function App() {
               <Route path="/templates" element={<RouteErrorBoundary><TemplatesPage /></RouteErrorBoundary>} />
               <Route path="/proxy" element={<RouteErrorBoundary><ProxyPage /></RouteErrorBoundary>} />
               <Route path="/activity" element={<RouteErrorBoundary><ActivityPage /></RouteErrorBoundary>} />
+              <Route path="/logstream" element={<RouteErrorBoundary><LogStreamPage /></RouteErrorBoundary>} />
               <Route path="/settings" element={<RouteErrorBoundary><SettingsPage /></RouteErrorBoundary>} />
               <Route path="/smart-engagement" element={<RouteErrorBoundary><SmartEngagementPage /></RouteErrorBoundary>} />
               <Route path="/operator-copilot" element={<RouteErrorBoundary><OperatorCopilotPage /></RouteErrorBoundary>} />

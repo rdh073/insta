@@ -64,7 +64,7 @@ function StatusBadge({ status }: { status: PostJob['status'] }) {
 
 // ── Job card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job, onUpdate }: { job: PostJob; onUpdate: (j: PostJob) => void }) {
+function JobCard({ job }: { job: PostJob }) {
   const [expanded, setExpanded] = useState(false);
   const [actionLoading, setActionLoading] = useState<'stop' | 'pause' | 'resume' | null>(null);
 
@@ -82,11 +82,8 @@ function JobCard({ job, onUpdate }: { job: PostJob; onUpdate: (j: PostJob) => vo
     setActionLoading(action);
     try {
       await postsApi[action](job.id);
-      const updated = await postsApi.list();
-      const fresh = updated.find((j) => j.id === job.id);
-      if (fresh) onUpdate(fresh);
     } catch {
-      // ignore — next poll will sync
+      // SSE stream will sync next state
     } finally {
       setActionLoading(null);
     }
@@ -252,7 +249,6 @@ function JobCard({ job, onUpdate }: { job: PostJob; onUpdate: (j: PostJob) => vo
 
 export function CampaignPage() {
   const jobs = usePostStore((s) => s.jobs);
-  const updateJob = usePostStore((s) => s.updateJob);
   const [filter, setFilter] = useState<StatusFilter>('all');
 
   // Real-time updates via SSE — replaces polling.
@@ -331,7 +327,7 @@ export function CampaignPage() {
       ) : (
         <div className="space-y-3">
           {sorted.map((job) => (
-            <JobCard key={job.id} job={job} onUpdate={updateJob} />
+            <JobCard key={job.id} job={job} />
           ))}
         </div>
       )}

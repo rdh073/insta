@@ -12,14 +12,27 @@ ARCHITECTURE NOTE:
 
 from __future__ import annotations
 
+import logging
 import sys
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, wait as wait_futures
 from pathlib import Path
 from typing import Callable, Optional
 
-# Max seconds allowed per account upload before marking as failed
-_ACCOUNT_UPLOAD_TIMEOUT = 180
+logger = logging.getLogger(__name__)
+
+# Per-media-type upload timeouts (seconds).
+# Photos are fast; videos require transcoding + chunked upload so get more time.
+# These are hard per-account deadlines — each account gets its own independent timer.
+_UPLOAD_TIMEOUT_BY_TYPE: dict[str, int] = {
+    "photo": 90,
+    "album": 240,
+    "reels": 360,
+    "video": 360,
+    "igtv": 360,
+}
+_UPLOAD_TIMEOUT_DEFAULT = 240  # fallback for unknown media types
 
 from state import (
     IGClient,
@@ -44,6 +57,94 @@ from state import (
 )
 from app.adapters.instagram.exception_handler import instagram_exception_handler
 from app.adapters.instagram.device_pool import random_device_profile
+
+
+class SyncCircuitBreaker:
+    """Thread-safe circuit breaker for synchronous (threaded) Instagram uploads.
+
+    Only *retryable* failures (rate limits, transient API errors, timeouts) advance
+    the failure counter. Terminal per-account errors (BadPassword, ChallengeRequired)
+    do NOT trip the circuit — they are account-level problems, not API degradation.
+
+    States:
+        CLOSED    — normal, all requests allowed
+        OPEN      — fast-fail, requests rejected until recovery_timeout elapses
+        HALF_OPEN — one probe call allowed; success → CLOSED, failure → OPEN
+
+    Thread-safety: all state mutations hold ``_lock``; the ``state`` property
+    performs a single atomic read and may promote OPEN→HALF_OPEN without a lock
+    (benign race — at most one extra probe call slips through).
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 120.0,
+    ) -> None:
+        self.name = name
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self._state = self.CLOSED
+        self._failure_count = 0
+        self._last_failure_time: float = 0.0
+        self._lock = threading.Lock()
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            if self._state == self.OPEN:
+                if time.monotonic() - self._last_failure_time >= self.recovery_timeout:
+                    return self.HALF_OPEN
+            return self._state
+
+    def allow_request(self) -> bool:
+        """True when the circuit is CLOSED or entering HALF_OPEN probe."""
+        return self.state != self.OPEN
+
+    def record_success(self) -> None:
+        with self._lock:
+            was_recovering = self._state == self.OPEN
+            self._failure_count = 0
+            self._state = self.CLOSED
+        if was_recovering:
+            logger.info("Circuit %r recovered — CLOSED", self.name)
+
+    def record_failure(self, *, retryable: bool) -> None:
+        """Record a failure; only retryable failures progress toward tripping."""
+        if not retryable:
+            return
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.monotonic()
+            if self._failure_count >= self.failure_threshold and self._state != self.OPEN:
+                self._state = self.OPEN
+                logger.error(
+                    "Circuit %r tripped OPEN after %d retryable failures "
+                    "(auto-recovery in %.0fs)",
+                    self.name, self._failure_count, self.recovery_timeout,
+                )
+
+    def __repr__(self) -> str:
+        return (
+            f"SyncCircuitBreaker({self.name!r}, "
+            f"state={self.state}, failures={self._failure_count})"
+        )
+
+
+# Module-level breaker shared across all jobs in this process.
+# Opens after 5 consecutive retryable failures to stop hammering Instagram
+# when its API is degraded. Recovers automatically after 120 s.
+_upload_circuit_breaker = SyncCircuitBreaker(
+    "instagram_upload",
+    failure_threshold=5,
+    recovery_timeout=120.0,
+)
 
 
 def _new_client(proxy: Optional[str] = None):
@@ -414,94 +515,122 @@ class PostJobExecutor:
     def __init__(
         self,
         store: ThreadSafeJobStore | None = None,
-        upload_timeout: int = _ACCOUNT_UPLOAD_TIMEOUT,
+        upload_timeout: int | None = None,
     ) -> None:
         self._store = store or job_store
+        # None = use per-media-type defaults from _UPLOAD_TIMEOUT_BY_TYPE.
+        # Pass an int to override all types (useful in tests).
         self._upload_timeout = upload_timeout
 
+    def _get_upload_timeout(self, media_type: str) -> int:
+        if self._upload_timeout is not None:
+            return self._upload_timeout
+        return _UPLOAD_TIMEOUT_BY_TYPE.get(media_type, _UPLOAD_TIMEOUT_DEFAULT)
+
     # ── public entry point ────────────────────────────────────────────────
+
+    @staticmethod
+    def _notify_sse() -> None:
+        """Fire an SSE push from a worker thread (best-effort, never raises)."""
+        try:
+            from app.adapters.scheduler.event_bus import post_job_event_bus
+            post_job_event_bus.notify("job_update")
+        except Exception:
+            pass
 
     def run(self, job_id: str) -> None:
         """Execute all account uploads for *job_id* concurrently."""
         job = self._store.get(job_id)
         self._store.set_job_status(job_id, "running")
+        self._notify_sse()
 
-        media_paths: list[str] = job["_media_paths"]
-        caption: str = job["caption"]
-        media_type: str = job.get("mediaType", "photo")
-        thumbnail_path: str | None = job.get("_thumbnail_path")
-        igtv_title: str | None = job.get("_igtv_title")
-        usertags_raw: list[dict] = job.get("_usertags") or []
-        location_raw: dict | None = job.get("_location")
-        extra_data: dict = job.get("_extra_data") or {}
+        try:
+            media_paths: list[str] = job["_media_paths"]
+            caption: str = job["caption"]
+            media_type: str = job.get("mediaType", "photo")
+            thumbnail_path: str | None = job.get("_thumbnail_path")
+            igtv_title: str | None = job.get("_igtv_title")
+            usertags_raw: list[dict] = job.get("_usertags") or []
+            location_raw: dict | None = job.get("_location")
+            extra_data: dict = job.get("_extra_data") or {}
 
-        accounts = job["results"]
-        if not accounts:
-            self._store.set_job_status(job_id, "completed")
+            accounts = job["results"]
+            if not accounts:
+                self._store.set_job_status(job_id, "completed")
+                self._store.clear_control(job_id)
+                return
+
+            # One thread per account — all uploads start simultaneously.
+            # Each _upload_one enforces its own per-account, per-media-type
+            # timeout internally (see _upload_one), so no batch deadline is needed.
+            executor = ThreadPoolExecutor(max_workers=len(accounts))
+            futures = {
+                executor.submit(
+                    self._upload_one,
+                    job_id=job_id,
+                    account_id=result["accountId"],
+                    username=result["username"],
+                    media_paths=media_paths,
+                    caption=caption,
+                    media_type=media_type,
+                    thumbnail_path=thumbnail_path,
+                    igtv_title=igtv_title,
+                    usertags_raw=usertags_raw,
+                    location_raw=location_raw,
+                    extra_data=extra_data,
+                ): result
+                for result in accounts
+            }
+
+            # Outer safety-net timeout: per-account timeout + generous slack.
+            # This should never fire in practice — _upload_one returns within its
+            # own deadline. It guards against unforeseen hangs (e.g. OS-level I/O stall).
+            outer_timeout = self._get_upload_timeout(media_type) + 60
+            done, not_done = wait_futures(futures.keys(), timeout=outer_timeout)
+            executor.shutdown(wait=False)
+
+            # Safety net: mark any futures that didn't complete within the outer deadline.
+            for future in not_done:
+                result = futures[future]
+                account_id = result["accountId"]
+                current = self._store.get_result_status(job_id, account_id)
+                if current not in ("success", "failed", "skipped"):
+                    self._store.update_result(
+                        job_id, account_id,
+                        status="failed",
+                        error="Upload worker stalled — killed by outer deadline",
+                        error_code="worker_stall",
+                    )
+                    self._notify_sse()
+
+            # Determine final job status from per-account tally.
+            tally = self._store.tally_results(job_id)
             self._store.clear_control(job_id)
-            return
 
-        # One thread per account — all upload simultaneously.
-        executor = ThreadPoolExecutor(max_workers=len(accounts))
-        futures = [
-            executor.submit(
-                self._upload_one,
-                job_id=job_id,
-                account_id=result["accountId"],
-                username=result["username"],
-                media_paths=media_paths,
-                caption=caption,
-                media_type=media_type,
-                thumbnail_path=thumbnail_path,
-                igtv_title=igtv_title,
-                usertags_raw=usertags_raw,
-                location_raw=location_raw,
-                extra_data=extra_data,
-            )
-            for result in accounts
-        ]
+            if tally["skipped"] > 0 and tally["success"] == 0 and tally["failed"] == 0:
+                final = "stopped"
+            elif tally["skipped"] > 0:
+                final = "partial"
+            elif tally["failed"] == 0:
+                final = "completed"
+            elif tally["success"] == 0:
+                final = "failed"
+            else:
+                final = "partial"
+            self._store.set_job_status(job_id, final)
+            self._notify_sse()
 
-        # Total wall-clock timeout for all concurrent uploads.
-        wait_futures(futures, timeout=self._upload_timeout)
-        executor.shutdown(wait=False)
+        except Exception:
+            try:
+                self._store.clear_control(job_id)
+                self._store.set_job_status(job_id, "failed")
+                self._notify_sse()
+            except Exception:
+                pass
+            raise
 
-        # Mark accounts that are still uploading after timeout.
-        for result in accounts:
-            account_id = result["accountId"]
-            status = self._store.get_result_status(job_id, account_id)
-            if status == "uploading":
-                self._store.update_result(
-                    job_id,
-                    account_id,
-                    status="failed",
-                    error=f"Upload timed out after {self._upload_timeout}s",
-                    error_code="upload_timeout",
-                )
-                log_event(
-                    account_id,
-                    result.get("username", ""),
-                    "post_failed",
-                    detail="upload_timeout",
-                )
-
-        # Determine final job status.
-        tally = self._store.tally_results(job_id)
-        self._store.clear_control(job_id)
-
-        if tally["skipped"] > 0 and tally["success"] == 0 and tally["failed"] == 0:
-            final = "stopped"
-        elif tally["skipped"] > 0:
-            final = "partial"
-        elif tally["failed"] == 0:
-            final = "completed"
-        elif tally["success"] == 0:
-            final = "failed"
-        else:
-            final = "partial"
-        self._store.set_job_status(job_id, final)
-
-        # Clean up temp files.
-        self._cleanup_temp_files(job)
+        finally:
+            self._cleanup_temp_files(job)
 
     # ── single-account worker (runs in thread) ────────────────────────────
 
@@ -522,6 +651,8 @@ class PostJobExecutor:
     ) -> None:
         store = self._store
 
+        # ── pre-flight checks ─────────────────────────────────────────────
+
         if store.is_stop_requested(job_id):
             store.update_result(job_id, account_id, status="skipped")
             return
@@ -532,56 +663,98 @@ class PostJobExecutor:
             store.update_result(job_id, account_id, status="skipped")
             return
 
+        # Circuit breaker: fast-fail if the Instagram API is currently degraded.
+        # Only retryable failures (rate limits, timeouts, 5xx) trip the circuit;
+        # account-level errors (bad password, challenge) do not.
+        if not _upload_circuit_breaker.allow_request():
+            store.update_result(
+                job_id, account_id,
+                status="failed",
+                error="Instagram API circuit open — too many recent failures, will retry later",
+                error_code="circuit_open",
+            )
+            self._notify_sse()
+            logger.warning(
+                "Circuit open: skipping upload for @%s (job=%s)", username, job_id
+            )
+            return
+
         cl = get_client(account_id)
         if not cl:
             store.update_result(
                 job_id, account_id, status="failed", error="Account not logged in"
             )
+            self._notify_sse()
             return
 
         store.update_result(job_id, account_id, status="uploading")
+        self._notify_sse()
         print(
-            f"[POST] Uploading for @{username}: type={media_type} caption={repr(caption[:100])}",
+            f"[POST] Uploading for @{username}: "
+            f"type={media_type} caption={repr(caption[:100])}",
             file=sys.stderr,
         )
 
         usertags = _build_usertags(usertags_raw)
         location = _build_location(location_raw)
+        upload_timeout = self._get_upload_timeout(media_type)
+
+        # ── per-account timed upload ──────────────────────────────────────
+        #
+        # Run _dispatch_upload (blocking instagrapi I/O) in a dedicated thread
+        # so we can enforce a hard per-account deadline via Future.result(timeout=).
+        # On TimeoutError we return immediately; the abandoned thread dies naturally
+        # when instagrapi's own request_timeout fires (~60 s later).
+        # _dispatch_upload has no reference to the store, so it cannot corrupt state.
+
+        upload_exec = ThreadPoolExecutor(max_workers=1)
+        upload_future = upload_exec.submit(
+            _dispatch_upload,
+            cl, media_type, media_paths, caption,
+            thumbnail_path, igtv_title, usertags, location, extra_data,
+        )
 
         try:
-            _dispatch_upload(
-                cl,
-                media_type=media_type,
-                media_paths=media_paths,
-                caption=caption,
-                thumbnail_path=thumbnail_path,
-                igtv_title=igtv_title,
-                usertags=usertags,
-                location=location,
-                extra_data=extra_data,
+            upload_future.result(timeout=upload_timeout)
+
+        except FuturesTimeoutError:
+            store.update_result(
+                job_id, account_id,
+                status="failed",
+                error=f"Upload timed out after {upload_timeout}s",
+                error_code="upload_timeout",
             )
-            store.update_result(job_id, account_id, status="success")
-            log_event(account_id, username, "post_success", detail=f"job={job_id}")
+            self._notify_sse()
+            _upload_circuit_breaker.record_failure(retryable=True)
+            log_event(account_id, username, "post_failed", detail="upload_timeout")
+            return
+
         except Exception as e:
             failure = _classify_exception(
-                e,
-                operation="post_media",
-                account_id=account_id,
-                username=username,
+                e, operation="post_media", account_id=account_id, username=username,
             )
             store.update_result(
-                job_id,
-                account_id,
+                job_id, account_id,
                 status="failed",
                 error=failure.user_message,
                 error_code=failure.code,
             )
-            log_event(
-                account_id,
-                username,
-                "post_failed",
-                detail=failure.detail or failure.user_message,
-            )
+            self._notify_sse()
+            _upload_circuit_breaker.record_failure(retryable=failure.retryable)
+            log_event(account_id, username, "post_failed",
+                      detail=failure.detail or failure.user_message)
+            return
+
+        finally:
+            # Non-blocking: let any still-running upload thread die on its own.
+            upload_exec.shutdown(wait=False)
+
+        # ── success ───────────────────────────────────────────────────────
+
+        store.update_result(job_id, account_id, status="success")
+        self._notify_sse()
+        _upload_circuit_breaker.record_success()
+        log_event(account_id, username, "post_success", detail=f"job={job_id}")
 
     # ── temp file cleanup ─────────────────────────────────────────────────
 

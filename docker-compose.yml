@@ -57,8 +57,9 @@ services:
       # Override persistence to use the postgres container
       PERSISTENCE_BACKEND: sql
       PERSISTENCE_DATABASE_URL: postgresql+psycopg://instauser:${POSTGRES_PASSWORD:-instapass}@postgres:5432/instamanager
-      # LangGraph checkpoints — in-memory (AsyncSqliteSaver requires async init)
-      LANGGRAPH_CHECKPOINTER_BACKEND: memory
+      # LangGraph checkpoints — durable SQLite in the checkpoints volume
+      LANGGRAPH_CHECKPOINTER_BACKEND: sqlite
+      LANGGRAPH_CHECKPOINTER_SQLITE_PATH: /app/checkpoints/langgraph_checkpoints.sqlite3
       # CORS — only the nginx frontend container needs access
       APP_CORS_ORIGINS: http://frontend
     volumes:

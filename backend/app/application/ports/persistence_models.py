@@ -171,6 +171,10 @@ class JobRecord:
             raise KeyError(key)
         return getattr(self, key)
 
+    def items(self):
+        """Dict-like items() — delegates to to_dict() for caller compatibility."""
+        return self.to_dict().items()
+
 
 @dataclass
 class ProxyRecord:

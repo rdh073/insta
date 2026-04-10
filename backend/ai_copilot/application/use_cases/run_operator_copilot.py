@@ -76,6 +76,7 @@ class RunOperatorCopilotUseCase:
         approval_port: ApprovalPort,
         audit_log: AuditLogPort,
         checkpoint_factory: CheckpointFactoryPort | None = None,
+        checkpointer=None,
         policy_registry: ToolPolicyRegistry | None = None,
         copilot_memory: CopilotMemoryPort | None = None,
         store=None,
@@ -89,8 +90,12 @@ class RunOperatorCopilotUseCase:
             approval_port: Approval submission port (not used directly by graph;
                            the graph uses LangGraph interrupt instead).
             audit_log: Audit logging port.
-            checkpoint_factory: If provided, creates a durable checkpointer.
-                                 If None, MemorySaver is used (in-process only).
+            checkpointer: Pre-created LangGraph checkpointer (takes precedence over
+                          checkpoint_factory). Use when the checkpointer requires
+                          async initialisation (e.g. AsyncSqliteSaver).
+            checkpoint_factory: If provided and checkpointer is None, calls
+                                 create_checkpointer() synchronously.
+                                 If both are None, MemorySaver is used.
             policy_registry: Tool classification registry.
                              Defaults to ToolPolicyRegistry() if not supplied.
             copilot_memory: Cross-thread copilot memory (optional).
@@ -102,7 +107,9 @@ class RunOperatorCopilotUseCase:
         self.approval_port = approval_port
         self.audit_log = audit_log
 
-        if checkpoint_factory is not None:
+        if checkpointer is not None:
+            self._checkpointer = checkpointer
+        elif checkpoint_factory is not None:
             self._checkpointer = checkpoint_factory.create_checkpointer()
         else:
             from langgraph.checkpoint.memory import MemorySaver

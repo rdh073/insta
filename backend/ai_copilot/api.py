@@ -18,9 +18,9 @@ No business logic here — only HTTP concerns.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-from functools import lru_cache
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -171,23 +171,45 @@ class GraphResumeRequest(BaseModel):
 
 
 # ── Dependency injection ───────────────────────────────────────────────────────
+# All five factories use an async double-checked-locking singleton pattern.
+# @lru_cache cannot be used because AsyncSqliteSaver (needed for await graph.ainvoke())
+# requires async initialisation via aiosqlite.connect(), which in turn calls
+# asyncio.get_running_loop() — incompatible with a sync factory.
+
+_copilot_lock = asyncio.Lock()
+_copilot_instance = None
+
+_campaign_monitor_lock = asyncio.Lock()
+_campaign_monitor_instance = None
+
+_risk_control_lock = asyncio.Lock()
+_risk_control_instance = None
+
+_account_recovery_lock = asyncio.Lock()
+_account_recovery_instance = None
+
+_content_pipeline_lock = asyncio.Lock()
+_content_pipeline_instance = None
 
 
-@lru_cache(maxsize=1)
-def get_operator_copilot_usecase():
-    """Wire adapters and return a RunOperatorCopilotUseCase instance.
-
-    Called once per process via lru_cache. Creates all adapters and compiles
-    the graph. Fails fast at startup if dependencies are unavailable.
+async def get_operator_copilot_usecase():
+    """Wire adapters and return a RunOperatorCopilotUseCase instance (async singleton).
 
     Dependency direction:
         api (this function) → RunOperatorCopilotUseCase
                             → OperatorCopilotNodes (graph)
                             → ports ← adapters (wired here)
-
-    Returns:
-        RunOperatorCopilotUseCase
     """
+    global _copilot_instance
+    if _copilot_instance is not None:
+        return _copilot_instance
+    async with _copilot_lock:
+        if _copilot_instance is None:
+            _copilot_instance = await _build_operator_copilot_usecase()
+    return _copilot_instance
+
+
+async def _build_operator_copilot_usecase():
     from langgraph.store.memory import InMemoryStore
 
     from app.bootstrap.container import create_services
@@ -206,19 +228,15 @@ def get_operator_copilot_usecase():
 
     services = create_services()
 
-    # Get LLM gateway from services (provider-routed)
     llm_gateway = services.get("llm_gateway_port")
     if llm_gateway is None:
         raise RuntimeError("Missing llm_gateway_port in container services")
 
-    # ToolRegistryBridgeAdapter maps app tool names to policy classifications
-    # and annotates schemas with approval hints for the LLM planner.
     tool_executor = ToolRegistryBridgeAdapter(services["tool_registry"])
     approval_port = InMemoryOperatorApprovalAdapter()
     audit_log = FileOperatorAuditLogAdapter()
-    checkpoint_factory = ConfigurableCheckpointFactory.from_env()
+    checkpointer = await ConfigurableCheckpointFactory.from_env().create_async()
 
-    # Cross-thread copilot memory
     copilot_store = InMemoryStore()
     copilot_memory = LangGraphCopilotMemoryAdapter(copilot_store)
 
@@ -227,7 +245,7 @@ def get_operator_copilot_usecase():
         tool_executor=tool_executor,
         approval_port=approval_port,
         audit_log=audit_log,
-        checkpoint_factory=checkpoint_factory,
+        checkpointer=checkpointer,
         copilot_memory=copilot_memory,
         store=copilot_store,
     )
@@ -447,9 +465,18 @@ async def operator_copilot_resume(
 # =============================================================================
 
 
-@lru_cache(maxsize=1)
-def get_campaign_monitor_usecase():
-    """Wire and return RunCampaignMonitorUseCase (cached per process)."""
+async def get_campaign_monitor_usecase():
+    """Wire and return RunCampaignMonitorUseCase (async singleton)."""
+    global _campaign_monitor_instance
+    if _campaign_monitor_instance is not None:
+        return _campaign_monitor_instance
+    async with _campaign_monitor_lock:
+        if _campaign_monitor_instance is None:
+            _campaign_monitor_instance = await _build_campaign_monitor_usecase()
+    return _campaign_monitor_instance
+
+
+async def _build_campaign_monitor_usecase():
     from app.bootstrap.container import create_services
     from app.adapters.ai.checkpoint_factory_adapter import ConfigurableCheckpointFactory
     from ai_copilot.adapters.job_monitor_adapter import JobMonitorAdapter
@@ -469,12 +496,12 @@ def get_campaign_monitor_usecase():
         insight_usecases=insight_usecases,
     )
     followup_creator = FollowupCreatorAdapter(postjob_usecases=postjob_usecases)
-    checkpoint_factory = ConfigurableCheckpointFactory.from_env()
+    checkpointer = await ConfigurableCheckpointFactory.from_env().create_async()
 
     return RunCampaignMonitorUseCase(
         job_monitor=job_monitor,
         followup_creator=followup_creator,
-        checkpointer=checkpoint_factory.create(),
+        checkpointer=checkpointer,
     )
 
 
@@ -545,8 +572,17 @@ async def campaign_monitor_resume(
 # =============================================================================
 
 
-@lru_cache(maxsize=1)
-def get_risk_control_usecase():
+async def get_risk_control_usecase():
+    global _risk_control_instance
+    if _risk_control_instance is not None:
+        return _risk_control_instance
+    async with _risk_control_lock:
+        if _risk_control_instance is None:
+            _risk_control_instance = await _build_risk_control_usecase()
+    return _risk_control_instance
+
+
+async def _build_risk_control_usecase():
     from app.bootstrap.container import create_services
     from app.adapters.ai.checkpoint_factory_adapter import ConfigurableCheckpointFactory
     from ai_copilot.adapters.account_signal_adapter import AccountSignalAdapter
@@ -562,7 +598,7 @@ def get_risk_control_usecase():
         account_signal=AccountSignalAdapter(account_usecases, logs_usecases),
         policy_decision=PolicyDecisionAdapter(account_usecases),
         proxy_rotation=ProxyRotationAdapter(account_usecases),
-        checkpointer=ConfigurableCheckpointFactory.from_env().create(),
+        checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
 
 
@@ -631,8 +667,17 @@ async def risk_control_resume(
 # =============================================================================
 
 
-@lru_cache(maxsize=1)
-def get_account_recovery_usecase():
+async def get_account_recovery_usecase():
+    global _account_recovery_instance
+    if _account_recovery_instance is not None:
+        return _account_recovery_instance
+    async with _account_recovery_lock:
+        if _account_recovery_instance is None:
+            _account_recovery_instance = await _build_account_recovery_usecase()
+    return _account_recovery_instance
+
+
+async def _build_account_recovery_usecase():
     from app.bootstrap.container import create_services
     from app.adapters.ai.checkpoint_factory_adapter import ConfigurableCheckpointFactory
     from ai_copilot.adapters.account_diagnostics_adapter import (
@@ -650,7 +695,7 @@ def get_account_recovery_usecase():
     return RunAccountRecoveryUseCase(
         diagnostics=AccountDiagnosticsAdapter(account_usecases, connectivity_usecases),
         executor=RecoveryExecutorAdapter(account_usecases),
-        checkpointer=ConfigurableCheckpointFactory.from_env().create(),
+        checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
 
 
@@ -721,8 +766,17 @@ async def account_recovery_resume(
 # =============================================================================
 
 
-@lru_cache(maxsize=1)
-def get_content_pipeline_usecase():
+async def get_content_pipeline_usecase():
+    global _content_pipeline_instance
+    if _content_pipeline_instance is not None:
+        return _content_pipeline_instance
+    async with _content_pipeline_lock:
+        if _content_pipeline_instance is None:
+            _content_pipeline_instance = await _build_content_pipeline_usecase()
+    return _content_pipeline_instance
+
+
+async def _build_content_pipeline_usecase():
     from app.bootstrap.container import create_services
     from app.adapters.ai.checkpoint_factory_adapter import ConfigurableCheckpointFactory
     from ai_copilot.adapters.caption_generator_adapter import CaptionGeneratorAdapter
@@ -741,7 +795,7 @@ def get_content_pipeline_usecase():
         caption_validator=CaptionValidatorAdapter(),
         post_scheduler=PostSchedulerAdapter(postjob_usecases),
         account_usecases=services["accounts"],
-        checkpointer=ConfigurableCheckpointFactory.from_env().create(),
+        checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
 
 

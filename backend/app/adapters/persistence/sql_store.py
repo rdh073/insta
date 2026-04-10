@@ -98,13 +98,6 @@ class ProxyRow(Base):
     url:        Mapped[str]   = mapped_column(Text, nullable=False)
 
 
-class AlembicVersion(Base):
-    """Track Alembic migration version (for startup validation)."""
-
-    __tablename__ = "alembic_version"
-
-    version_num: Mapped[str] = mapped_column(String(32), primary_key=True)
-
 class SqlitePersistenceStore:
     """Owns SQLAlchemy engine/session lifecycle for SQL persistence adapters."""
 
@@ -205,32 +198,32 @@ class SqlitePersistenceStore:
 
     def check_schema_version(self, expected_version: str | None = None) -> str | None:
         """Check if schema is at expected version (optional startup validation).
-        
+
         Args:
             expected_version: If provided, verify schema is at this version.
                              Raises RuntimeError if mismatch detected.
-        
+
         Returns:
             Current alembic_version if it exists, None otherwise.
-        
+
         Raises:
             RuntimeError: If schema version mismatch detected when expected_version is set.
         """
         try:
-            with self.session_scope() as session:
-                result = session.query(AlembicVersion).first()
-                current_version = result.version_num if result else None
-                
+            with self.engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT version_num FROM alembic_version ORDER BY version_num DESC LIMIT 1")
+                ).fetchone()
+                current_version = row[0] if row else None
+
                 if expected_version and current_version != expected_version:
                     raise RuntimeError(
                         f"Schema version mismatch: expected {expected_version}, "
                         f"got {current_version}. Run migrations: alembic upgrade head"
                     )
-                
+
                 return current_version
         except Exception as e:
-            # If alembic_version table doesn't exist yet (fresh db),
-            # it's not an error for optional checks
             if "no such table" in str(e).lower() or "does not exist" in str(e).lower():
                 return None
             raise
@@ -241,7 +234,30 @@ class SqlitePersistenceStore:
             connection.execute(text("SELECT 1"))
 
     def _ensure_schema(self) -> None:
-        Base.metadata.create_all(self.engine)
+        """Apply all pending Alembic migrations (idempotent, safe on startup).
+
+        Uses the programmatic Alembic API so both fresh databases (migrations run
+        from scratch) and existing databases (only pending migrations applied) are
+        handled correctly. Falls back to create_all() if alembic.ini is not found.
+        """
+        from alembic.config import Config
+        from alembic import command
+
+        # sql_store.py lives at backend/app/adapters/persistence/sql_store.py
+        # so 4 levels up resolves to the backend/ root where alembic.ini lives.
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        alembic_ini = backend_root / "alembic.ini"
+
+        if not alembic_ini.exists():
+            # Fallback for unusual deployments (e.g. installed as a package).
+            Base.metadata.create_all(self.engine)
+            return
+
+        cfg = Config(str(alembic_ini))
+        cfg.set_main_option("sqlalchemy.url", self.database_url)
+        # Use absolute script_location so it works regardless of cwd.
+        cfg.set_main_option("script_location", str(backend_root / "alembic"))
+        command.upgrade(cfg, "head")
 
 
 def _env_int(name: str, default: int) -> int:

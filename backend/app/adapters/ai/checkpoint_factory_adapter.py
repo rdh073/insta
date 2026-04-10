@@ -60,7 +60,47 @@ class ConfigurableCheckpointFactory:
     def create_checkpointer(self):
         return self.create()
 
+    async def create_async(self):
+        """Create a checkpointer in an async context.
+
+        For the ``sqlite`` backend this creates an ``AsyncSqliteSaver`` (aiosqlite)
+        which supports async LangGraph graph calls (``await graph.ainvoke()``).
+        The returned saver holds an open aiosqlite connection for the lifetime
+        of the process.
+
+        For ``memory`` the result is identical to ``create()``.
+        """
+        if self.backend == "memory":
+            return MemorySaver()
+        if self.backend == "sqlite":
+            return await self._create_async_sqlite()
+        raise RuntimeError(
+            "Unsupported LANGGRAPH_CHECKPOINTER_BACKEND. "
+            f"Expected 'memory' or 'sqlite', got {self.backend!r}"
+        )
+
+    async def _create_async_sqlite(self):
+        try:
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        except ImportError as exc:
+            raise RuntimeError(
+                "SQLite async checkpointer requested but dependency is missing. "
+                "Install: langgraph-checkpoint-sqlite aiosqlite"
+            ) from exc
+
+        db_path = self.sqlite_path or self._default_sqlite_path()
+        db_file = Path(db_path)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        conn = await aiosqlite.connect(str(db_file))
+        return AsyncSqliteSaver(conn)
+
     def _create_sqlite(self):
+        """Sync SQLite checkpointer — only for use cases that run graph.invoke() (sync).
+
+        Note: SqliteSaver does NOT implement async checkpoint methods.
+        For async graphs (graph.ainvoke), use create_async() instead.
+        """
         try:
             from langgraph.checkpoint.sqlite import SqliteSaver
         except ImportError as exc:

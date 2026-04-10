@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Settings,
   Sparkles,
+  Terminal,
   Users,
   Waves,
   X,
@@ -41,6 +42,7 @@ const navGroups = [
       { to: '/relationships', label: 'Relationships', icon: ArrowLeftRight },
       { to: '/operator-copilot', label: 'Copilot', icon: Bot },
       { to: '/activity', label: 'Activity', icon: Activity },
+      { to: '/logstream', label: 'Log Stream', icon: Terminal },
     ],
   },
   {

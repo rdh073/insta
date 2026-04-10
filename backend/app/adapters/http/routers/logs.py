@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.adapters.http.dependencies import get_logs_usecases
 from app.adapters.http.utils import format_error
@@ -26,3 +29,45 @@ def get_logs(
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=500, detail=format_error(exc, "Failed to read logs"))
+
+
+@router.get("/stream")
+async def stream_logs():
+    """SSE stream of live Python log records.
+
+    Each event is a JSON object::
+
+        {
+          "ts":      "2026-04-10T12:34:56.789+00:00",
+          "level":   "DEBUG",
+          "levelno": 10,
+          "name":    "instagrapi.private",
+          "msg":     "POST /api/v1/..."
+        }
+
+    A ``: heartbeat`` comment is sent every 15 s to keep the connection alive.
+    The stream requires ``INSTAGRAPI_LOG_LEVEL=DEBUG`` (or ``INSTAGRAPI_VERBOSE=1``)
+    for instagrapi/httpx records to appear.
+    """
+    from app.adapters.http.log_stream_bus import log_stream_bus
+
+    q = log_stream_bus.subscribe()
+
+    async def generate():
+        try:
+            while True:
+                try:
+                    record = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(record)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            log_stream_bus.unsubscribe(q)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

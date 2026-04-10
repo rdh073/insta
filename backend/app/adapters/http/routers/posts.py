@@ -120,7 +120,11 @@ def stop_post_job(job_id: str, control=Depends(get_post_job_control)):
     if job["status"] not in ("running", "paused", "pending", "scheduled"):
         raise HTTPException(status_code=400, detail=f"Cannot stop job with status '{job['status']}'")
     control.request_stop(job_id)
-    if job["status"] in ("pending", "scheduled"):
+    # Immediately mark terminal for jobs that aren't actively uploading.
+    # Running jobs stay "running" until the executor finishes the current upload
+    # and processes the stop flag — the executor's try/finally guarantees it will
+    # reach a terminal status.
+    if job["status"] in ("pending", "scheduled", "paused"):
         control.set_job_status(job_id, "stopped")
     post_job_event_bus.notify("job_stopped")
     return {"status": job["status"]}

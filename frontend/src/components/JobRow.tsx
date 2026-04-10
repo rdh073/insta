@@ -1,11 +1,26 @@
-import { Check, AlertCircle, Loader, Clock } from 'lucide-react';
+import { useState } from 'react';
+import { Check, AlertCircle, Loader, Clock, Pause, Play, Square } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Card } from './ui/Card';
 import { Badge } from './ui/Badge';
+import { postsApi } from '../api/posts';
 import type { PostJob } from '../types';
 
 export function JobRow({ job }: { job: PostJob }) {
   const successCount = job.results.filter((r) => r.status === 'success').length;
   const failCount = job.results.filter((r) => r.status === 'failed').length;
+  const [busy, setBusy] = useState(false);
+
+  const act = async (fn: () => Promise<unknown>, label: string) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch {
+      toast.error(`Failed to ${label} job`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Card glow className="space-y-4">
@@ -18,9 +33,69 @@ export function JobRow({ job }: { job: PostJob }) {
           {job.status === 'completed'   && <Badge variant="green"><Check className="w-3 h-3" />Done</Badge>}
           {job.status === 'partial'     && <Badge variant="yellow"><AlertCircle className="w-3 h-3" />Partial</Badge>}
           {job.status === 'failed'      && <Badge variant="red"><AlertCircle className="w-3 h-3" />Failed</Badge>}
+          {job.status === 'stopped'     && <Badge variant="red"><Square className="w-3 h-3" />Stopped</Badge>}
           {job.status === 'scheduled'   && <Badge variant="blue"><Clock className="w-3 h-3" />Scheduled</Badge>}
           {job.status === 'pending'     && <Badge variant="gray"><Clock className="w-3 h-3" />Pending</Badge>}
+          {job.status === 'paused'      && <Badge variant="yellow"><Pause className="w-3 h-3" />Paused</Badge>}
           {job.status === 'needs_media' && <Badge variant="yellow"><AlertCircle className="w-3 h-3" />Needs Media</Badge>}
+
+          {job.status === 'running' && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => act(() => postsApi.pause(job.id), 'pause')}
+                className="cursor-pointer rounded-lg border border-[rgba(224,175,104,0.24)] bg-[rgba(224,175,104,0.1)] px-2 py-1 text-[11px] text-[#e0af68] transition-colors hover:bg-[rgba(224,175,104,0.18)] disabled:opacity-50"
+                title="Pause job"
+              >
+                <Pause className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => act(() => postsApi.stop(job.id), 'stop')}
+                className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+                title="Stop job"
+              >
+                <Square className="h-3 w-3" />
+              </button>
+            </>
+          )}
+
+          {job.status === 'paused' && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => act(() => postsApi.resume(job.id), 'resume')}
+                className="cursor-pointer rounded-lg border border-[rgba(158,206,106,0.24)] bg-[rgba(158,206,106,0.1)] px-2 py-1 text-[11px] text-[#9ece6a] transition-colors hover:bg-[rgba(158,206,106,0.18)] disabled:opacity-50"
+                title="Resume job"
+              >
+                <Play className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => act(() => postsApi.stop(job.id), 'stop')}
+                className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+                title="Stop job"
+              >
+                <Square className="h-3 w-3" />
+              </button>
+            </>
+          )}
+
+          {(job.status === 'pending' || job.status === 'scheduled') && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => act(() => postsApi.stop(job.id), 'stop')}
+              className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+              title="Cancel job"
+            >
+              <Square className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -39,6 +114,7 @@ export function JobRow({ job }: { job: PostJob }) {
             <Badge
               key={r.accountId}
               variant={r.status === 'success' ? 'green' : r.status === 'failed' ? 'red' : 'gray'}
+              title={r.error}
             >
               @{r.username}
             </Badge>
