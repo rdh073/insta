@@ -85,12 +85,14 @@ async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: async
             logger.warning("job_restore.skip job_id=%s reason=%s", job.id, exc)
 
 
-async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_event: asyncio.Event | None = None) -> None:
+async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_event: asyncio.Event | None = None, event_bus=None) -> None:
     """Background task: relogin all persisted accounts on startup.
 
     After each successful relogin, fires profile hydration (followers/following)
     so the frontend receives account_updated SSE events without needing to poll.
     Sets done_event when all accounts are processed so job restore can proceed.
+    Publishes status changes via event_bus so the Accounts page stays in sync
+    without polling.
     """
     ids = account_repo.list_all_ids()
     if not ids:
@@ -104,6 +106,8 @@ async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_even
         try:
             await asyncio.to_thread(relogin_fn, account_id)
             logger.info("session_restore.ok account_id=%s", account_id)
+            if event_bus:
+                event_bus.publish("account_updated", {"id": account_id, "status": "active"})
             if hydrate_fn:
                 try:
                     await asyncio.to_thread(hydrate_fn, account_id)
@@ -111,6 +115,8 @@ async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_even
                     logger.debug("session_restore.hydrate_skipped account_id=%s reason=%s", account_id, exc)
         except Exception as exc:
             logger.warning("session_restore.failed account_id=%s reason=%s", account_id, exc)
+            if event_bus:
+                event_bus.publish("account_updated", {"id": account_id, "status": "error"})
 
     # Sequential with delay — avoids rate-limiting when restoring many accounts.
     for aid in ids:
@@ -171,6 +177,7 @@ def create_app() -> FastAPI:
                 relogin_fn=services["_relogin_fn"],
                 hydrate_fn=lambda aid: _hydrate_and_publish(account_auth, aid),
                 done_event=sessions_ready,
+                event_bus=account_event_bus,
             )
         )
         asyncio.ensure_future(

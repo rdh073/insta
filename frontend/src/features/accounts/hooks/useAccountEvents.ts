@@ -3,10 +3,13 @@ import { resolveApiBaseUrl } from '../../../lib/api-base';
 import { useSettingsStore } from '../../../store/settings';
 import { useAccountStore } from '../../../store/accounts';
 import { buildSseUrl } from '../../../api/sse-token';
+import type { Account } from '../../../types';
 
 interface AccountUpdatedEvent {
   type: 'account_updated';
   id: string;
+  status?: Account['status'];
+  error?: string;
   full_name?: string;
   profile_pic_url?: string;
   followers?: number;
@@ -50,6 +53,8 @@ export function useAccountEvents(): void {
             const data = JSON.parse(evt.data) as AccountUpdatedEvent;
             if (data.type === 'account_updated' && data.id) {
               const patch: Record<string, unknown> = {};
+              if (data.status !== undefined) patch.status = data.status;
+              if (data.error !== undefined) patch.error = data.error;
               if (data.followers !== undefined) patch.followers = data.followers;
               if (data.following !== undefined) patch.following = data.following;
               if (data.full_name !== undefined) patch.fullName = data.full_name;
