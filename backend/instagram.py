@@ -308,19 +308,19 @@ def complete_2fa_client(
 _MAX_RELOGIN_ATTEMPTS = 3
 
 
-def relogin_account_sync(account_id: str) -> dict:
-    """Synchronous relogin with retry for transient failures."""
-    if not has_account(account_id):
-        raise ValueError("Account not found")
-    meta = get_account(account_id) or {}
-    username = meta.get("username", "")
-    password = meta.get("password")
-    if not password:
-        raise ValueError(
-            f"No stored password for @{username}. Login manually via the Accounts page."
-        )
-    proxy = meta.get("proxy")
-    totp_secret = meta.get("totp_secret")
+def relogin_account_sync(
+    account_id: str,
+    *,
+    username: str,
+    password: str,
+    proxy: str | None = None,
+    totp_secret: str | None = None,
+) -> dict:
+    """Synchronous relogin with retry for transient failures.
+
+    Credentials are passed in by the caller (fetched from the persistent store)
+    so this function does not depend on the legacy state.py _accounts dict.
+    """
 
     # Drop stale client reference without invalidating the server-side session.
     # Calling logout() here would invalidate the session file that

@@ -35,9 +35,23 @@ class InstagramClientAdapter:
         """Complete 2FA authentication."""
         return instagram_module.complete_2fa_client(username, password, code, proxy)
 
-    def relogin_account(self, account_id: str) -> dict:
-        """Relogin account and return account dict."""
-        return instagram_module.relogin_account_sync(account_id)
+    def relogin_account(
+        self,
+        account_id: str,
+        *,
+        username: str,
+        password: str,
+        proxy: Optional[str] = None,
+        totp_secret: Optional[str] = None,
+    ) -> dict:
+        """Relogin account using stored credentials. Returns account dict."""
+        return instagram_module.relogin_account_sync(
+            account_id,
+            username=username,
+            password=password,
+            proxy=proxy,
+            totp_secret=totp_secret,
+        )
 
     def run_post_job(self, job_id: str) -> None:
         """Execute a post job (upload media to all target accounts)."""

@@ -345,16 +345,27 @@ class AccountAuthUseCases:
     def relogin_account(self, account_id: str) -> AccountResponse:
         """Relogin an account."""
         with self._uow_scope():
+            account = self.account_repo.get(account_id) or {}
+            username = account.get("username", account_id)
+            password = account.get("password", "")
+            if not password:
+                raise ValueError(
+                    f"No stored password for @{username}. Login manually via the Accounts page."
+                )
             try:
-                result = self.instagram.relogin_account(account_id)
+                result = self.instagram.relogin_account(
+                    account_id,
+                    username=username,
+                    password=password,
+                    proxy=account.get("proxy"),
+                    totp_secret=account.get("totp_secret"),
+                )
                 return AccountResponse(
                     id=result.get("id", account_id),
                     username=result.get("username", ""),
                     status=result.get("status", "active"),
                 )
             except Exception as exc:
-                account = self.account_repo.get(account_id) or {}
-                username = account.get("username", account_id)
                 failure = self.error_handler.handle(
                     exc,
                     operation="relogin",
@@ -417,9 +428,24 @@ class AccountAuthUseCases:
 
         async def _relogin_one(account_id: str) -> AccountResponse:
             async with semaphore:
+                account = self.account_repo.get(account_id) or {}
+                username = account.get("username", account_id)
+                password = account.get("password", "")
+                if not password:
+                    return AccountResponse(
+                        id=account_id,
+                        username=username,
+                        status="error",
+                        last_error=f"No stored password for @{username}. Login manually.",
+                    )
                 try:
                     result = await asyncio.to_thread(
-                        self.instagram.relogin_account, account_id
+                        self.instagram.relogin_account,
+                        account_id,
+                        username=username,
+                        password=password,
+                        proxy=account.get("proxy"),
+                        totp_secret=account.get("totp_secret"),
                     )
                     return AccountResponse(
                         id=result.get("id", account_id),
@@ -427,8 +453,6 @@ class AccountAuthUseCases:
                         status=result.get("status", "active"),
                     )
                 except Exception as exc:
-                    account = self.account_repo.get(account_id) or {}
-                    username = account.get("username", account_id)
                     failure = self.error_handler.handle(
                         exc,
                         operation="relogin",

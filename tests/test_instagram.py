@@ -90,7 +90,12 @@ def test_relogin_account_sync_replaces_stale_client_and_updates_state(monkeypatc
     })
     state.set_client("acct-1", stale_client)
 
-    result = instagram.relogin_account_sync("acct-1")
+    result = instagram.relogin_account_sync(
+        "acct-1",
+        username="alice",
+        password="secret",
+        proxy="http://proxy:8080",
+    )
 
     # stale client reference is dropped (pop_client) but NOT logged out —
     # calling logout() would invalidate the server-side session file we reuse.
