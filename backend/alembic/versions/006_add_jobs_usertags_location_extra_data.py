@@ -11,7 +11,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
-revision = "006_add_jobs_usertags_location_extra_data"
+revision = "006_jobs_extra_fields"
 down_revision = "005_add_jobs_thumbnail_igtv"
 branch_labels = None
 depends_on = None
