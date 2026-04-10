@@ -133,18 +133,14 @@ def create_app() -> FastAPI:
                     sys.stderr.write(f"[LIFESPAN] emit exception: {_e}\n")
                     sys.stderr.flush()
 
-        logger.info(
-            "InstaManager started version=%s persistence_backend=%s cors_origins=%s",
-            APP_VERSION,
-            app.state.persistence_backend,
-            len(settings.cors_origins),
-        )
-        print("[LIFESPAN] logger.info fired OK", file=sys.stderr, flush=True)
-        # Check if uvicorn dictConfig ran AFTER us and reset the root logger
-        print(
-            f"[LIFESPAN AFTER] root level={_root.level} handlers={_root.handlers}",
-            file=sys.stderr, flush=True,
-        )
+        # Test root logger directly
+        logging.warning("ROOT WARNING TEST - should appear")
+        logging.info("ROOT INFO TEST - should appear")
+        _root.warning("ROOT.warning TEST - should appear")
+        _root.info("ROOT.info TEST - should appear")
+        logger.warning("LOGGER WARNING TEST - should appear")
+        logger.info("LOGGER INFO TEST - should appear")
+        print("[LIFESPAN] all logger calls done", file=sys.stderr, flush=True)
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
 
