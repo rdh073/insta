@@ -348,7 +348,7 @@ function AccountDetail({
   onClearRateLimit?: (accountId: string) => void;
 }) {
   const removeAccount = useAccountStore((s) => s.removeAccount);
-  const upsertAccount = useAccountStore((s) => s.upsertAccount);
+  const patchAccount = useAccountStore((s) => s.patchAccount);
   const updateStatus = useAccountStore((s) => s.updateStatus);
   const [relogging, setRelogging] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -392,7 +392,7 @@ function AccountDetail({
       if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
       try {
         const updated = await accountsApi.relogin(account.id);
-        upsertAccount(updated);
+        patchAccount(account.id, { status: updated.status, lastError: updated.lastError ?? undefined, lastErrorCode: updated.lastErrorCode ?? undefined });
         toast.success(`@${account.username} relogged in`);
         setRelogging(false);
         return;
@@ -1025,8 +1025,7 @@ export function AccountsPage() {
   const accounts = useAccountStore((s) => s.accounts);
   const setAccounts = useAccountStore((s) => s.setAccounts);
   const removeAccount = useAccountStore((s) => s.removeAccount);
-  const upsertPageAccount = useAccountStore((s) => s.upsertAccount);
-  const patchAccount = useAccountStore((s) => s.patchAccount);
+  const patchPageAccount = useAccountStore((s) => s.patchAccount);
   const updatePageStatus = useAccountStore((s) => s.updateStatus);
   const activeId = useAccountStore((s) => s.activeId);
   const setActive = useAccountStore((s) => s.setActive);
@@ -1074,7 +1073,7 @@ export function AccountsPage() {
     updatePageStatus(account.id, 'logging_in');
     try {
       const updated = await accountsApi.relogin(account.id);
-      upsertPageAccount(updated);
+      patchPageAccount(account.id, { status: updated.status, lastError: updated.lastError ?? undefined, lastErrorCode: updated.lastErrorCode ?? undefined });
       toast.success(`@${account.username} re-authenticated`);
     } catch (err) {
       const e = err as ApiError;
@@ -1172,7 +1171,7 @@ export function AccountsPage() {
         if (!id) break;
         try {
           const updated = await accountsApi.relogin(id);
-          upsertPageAccount(updated);
+          patchPageAccount(id, { status: updated.status, lastError: updated.lastError ?? undefined, lastErrorCode: updated.lastErrorCode ?? undefined });
           ok++;
         } catch {
           updatePageStatus(id, 'error');

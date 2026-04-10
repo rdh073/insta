@@ -414,10 +414,13 @@ class AccountAuthUseCases:
                 self.account_repo.update(
                     account_id, last_error=None, last_error_code=None
                 )
+                # Use the username from the repo (not from result) — result comes
+                # from instagram.py's account_to_dict which reads legacy state._accounts.
+                # On SQL backends that dict is empty → username would be "".
                 return AccountResponse(
-                    id=result.get("id", account_id),
-                    username=result.get("username", ""),
-                    status=result.get("status", "active"),
+                    id=account_id,
+                    username=username,
+                    status="active",
                 )
             except Exception as exc:
                 failure = self.error_handler.handle(
