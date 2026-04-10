@@ -208,12 +208,17 @@ def create_authenticated_client(
          - other          → fall through to fresh login
 
     FRESH LOGIN PATH (no session file, or session path failed non-terminally):
-      1. new client
+      1. new client, restoring device UUIDs from the saved session file when
+         available (avoids "new device" detection that triggers challenges)
       2. login(verification_code=totp) — TOTP passed upfront in first call
          - TwoFactorRequired (no TOTP secret) → store pending, raise
       3. dump_settings, return
     """
     session_file = SESSIONS_DIR / f"{username}.json"
+    # Device UUIDs captured from the session file before the login attempt.
+    # Re-applied to the fresh client when the session-restore path falls
+    # through, so Instagram sees the same device fingerprint on re-auth.
+    _saved_uuids: dict | None = None
 
     def _totp_code() -> str:
         """Generate a fresh TOTP code, or empty string if no secret."""
@@ -225,6 +230,10 @@ def create_authenticated_client(
     if session_file.exists():
         client = _new_client(proxy)
         client.load_settings(session_file)
+        try:
+            _saved_uuids = (client.get_settings() or {}).get("uuids")
+        except Exception:
+            pass
         try:
             # Session restore — login() uses cookies, not credentials.
             client.login(username, password)
@@ -279,8 +288,16 @@ def create_authenticated_client(
             client.dump_settings(session_file)
             return client
 
-    # Fresh login — new client, no stale session state.
+    # Fresh login — new client, stale cookies discarded.
+    # Restore device UUIDs from the prior session (captured above) so
+    # Instagram recognises the same device fingerprint and does not flag
+    # this as a new-device login, which would trigger security challenges.
     client = _new_client(proxy)
+    if _saved_uuids:
+        try:
+            client.set_uuids(_saved_uuids)
+        except Exception:
+            pass  # unexpected UUID shape — continue with fresh fingerprint
     try:
         # TOTP passed upfront in the initial login() call — the correct
         # instagrapi pattern for TOTP (avoids the two-step TwoFactorRequired flow).
@@ -356,8 +373,13 @@ def _relogin_fresh_credentials(
 ):
     """Relogin with fresh credentials, bypassing the existing session file.
 
-    Creates a new client and authenticates directly.  The resulting session is
-    persisted over any stale file so subsequent restores use the fresh token.
+    Authenticates with stored username + password + TOTP directly.  The
+    resulting session is persisted over any stale file so subsequent restores
+    use the fresh token.
+
+    Device UUIDs from the existing session file (if present) are restored onto
+    the new client before login so Instagram sees the same device fingerprint
+    and does not trigger "new device" security checks or challenges.
     """
     session_file = SESSIONS_DIR / f"{username}.json"
 
@@ -368,6 +390,18 @@ def _relogin_fresh_credentials(
         return pyotp.TOTP(totp_secret).now()
 
     client = _new_client(proxy)
+    # Preserve device fingerprint — load UUIDs from any existing session so
+    # Instagram recognises the same device on fresh-credential logins.
+    if session_file.exists():
+        try:
+            client.load_settings(session_file)
+            old = client.get_settings() or {}
+            client.set_settings({})              # discard stale cookies
+            if old.get("uuids"):
+                client.set_uuids(old["uuids"])   # restore device fingerprint
+        except Exception:
+            pass  # malformed session file — proceed with fresh device fingerprint
+
     try:
         client.login(username, password, verification_code=_totp_code())
     except TwoFactorRequired:
