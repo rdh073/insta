@@ -309,6 +309,50 @@ class PostJobUseCases:
                 message=message,
             )
 
+    def retry_job(self, job_id: str) -> JobRecord:
+        """Reset a failed/stopped/partial job so it can be re-executed.
+
+        Only failed or pending (not-yet-attempted) results are reset back to
+        pending — successful results are preserved so accounts that already
+        posted are not posted to again.
+        """
+        job_record = self.job_repo.get(job_id)
+        if job_record is None:
+            raise ValueError(f"Job {job_id!r} not found")
+        retryable = {"failed", "stopped", "partial"}
+        if job_record.status not in retryable:
+            raise ValueError(
+                f"Cannot retry job with status '{job_record.status}'. "
+                f"Only {retryable} jobs can be retried."
+            )
+
+        reset_results = []
+        for r in job_record.results:
+            if r.get("status") in ("failed", "pending", "skipped"):
+                reset_results.append({**r, "status": "pending", "error": None})
+            else:
+                reset_results.append(r)
+
+        updated = JobRecord(
+            id=job_record.id,
+            caption=job_record.caption,
+            status="pending",
+            targets=job_record.targets,
+            results=reset_results,
+            created_at=job_record.created_at,
+            media_urls=job_record.media_urls,
+            media_type=job_record.media_type,
+            media_paths=job_record.media_paths,
+            scheduled_at=None,
+            thumbnail_path=job_record.thumbnail_path,
+            igtv_title=job_record.igtv_title,
+            usertags=job_record.usertags,
+            location=job_record.location,
+            extra_data=job_record.extra_data,
+        )
+        self.job_repo.set(job_id, updated)
+        return updated
+
     def delete_job(self, job_id: str) -> None:
         """Delete a job.  Raises ValueError if not found or still active."""
         job_record = self.job_repo.get(job_id)

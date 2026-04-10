@@ -124,6 +124,22 @@ def delete_post_job(job_id: str, usecases=Depends(get_postjob_usecases)):
     return {"deleted": job_id}
 
 
+@router.post("/{job_id}/retry")
+def retry_post_job(
+    job_id: str,
+    usecases=Depends(get_postjob_usecases),
+    scheduler=Depends(get_scheduler),
+):
+    """Reset a failed/stopped/partial job and re-enqueue it."""
+    try:
+        usecases.retry_job(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    scheduler.enqueue(job_id, scheduled_at=None)
+    post_job_event_bus.notify("job_retried")
+    return {"status": "pending"}
+
+
 @router.post("/{job_id}/stop")
 def stop_post_job(job_id: str, control=Depends(get_post_job_control)):
     """Stop a running or paused job after the current account finishes."""

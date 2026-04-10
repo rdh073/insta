@@ -9,6 +9,7 @@ import {
   Loader,
   Pause,
   Play,
+  RotateCcw,
   Send,
   Square,
   Trash2,
@@ -67,7 +68,7 @@ function StatusBadge({ status }: { status: PostJob['status'] }) {
 
 function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const [actionLoading, setActionLoading] = useState<'stop' | 'pause' | 'resume' | 'delete' | null>(null);
+  const [actionLoading, setActionLoading] = useState<'stop' | 'pause' | 'resume' | 'retry' | 'delete' | null>(null);
 
   const successCount  = job.results.filter((r) => r.status === 'success').length;
   const failCount     = job.results.filter((r) => r.status === 'failed').length;
@@ -78,6 +79,7 @@ function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => vo
   const canPause  = job.status === 'running';
   const canResume = job.status === 'paused';
   const canStop   = job.status === 'running' || job.status === 'paused' || job.status === 'pending' || job.status === 'scheduled';
+  const canRetry  = job.status === 'failed' || job.status === 'stopped' || job.status === 'partial';
   const canDelete = ['completed', 'failed', 'stopped', 'partial', 'needs_media'].includes(job.status);
 
   async function handleAction(action: 'stop' | 'pause' | 'resume') {
@@ -86,6 +88,17 @@ function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => vo
       await postsApi[action](job.id);
     } catch {
       // SSE stream will sync next state
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleRetry() {
+    setActionLoading('retry');
+    try {
+      await postsApi.retry(job.id);
+    } catch {
+      // SSE stream will reflect real state
     } finally {
       setActionLoading(null);
     }
@@ -165,6 +178,17 @@ function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => vo
                 className="flex h-7 w-7 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.3)] bg-[rgba(247,118,142,0.1)] text-[#f7768e] transition-all hover:bg-[rgba(247,118,142,0.2)] disabled:opacity-50"
               >
                 {actionLoading === 'stop' ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            {canRetry && (
+              <button
+                type="button"
+                onClick={() => void handleRetry()}
+                disabled={actionLoading !== null}
+                title="Retry failed accounts"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[rgba(122,162,247,0.3)] bg-[rgba(122,162,247,0.1)] text-[#7aa2f7] transition-all hover:bg-[rgba(122,162,247,0.2)] disabled:opacity-50"
+              >
+                {actionLoading === 'retry' ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
               </button>
             )}
             {canDelete && (
