@@ -513,6 +513,23 @@ function AccountDetail({
         </div>
       )}
 
+      {/* Challenge instruction banner */}
+      {account.status === 'challenge' && (
+        <div className="flex items-start gap-3 rounded-[1rem] border border-[rgba(224,175,104,0.28)] bg-[rgba(224,175,104,0.07)] px-3 py-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#e0af68]" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-xs font-semibold text-[#f5d08a]">Security challenge required</p>
+            <p className="text-[11px] leading-relaxed text-[#b8a060]">
+              Instagram is blocking automated login for this account. Open{' '}
+              <span className="font-mono text-[#e0af68]">instagram.com</span> in a browser,
+              log in as <span className="font-mono text-[#e0af68]">@{account.username}</span>,
+              and complete any verification Instagram asks for.
+              Then click <strong className="text-[#f5d08a]">Activate</strong> below.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2 border-t border-[rgba(162,179,229,0.10)] pt-4">
         {(account.status === 'idle' || account.status === 'error' || account.status === 'challenge' || account.status === '2fa_required') && (

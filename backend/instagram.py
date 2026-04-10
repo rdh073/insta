@@ -37,6 +37,7 @@ _UPLOAD_TIMEOUT_DEFAULT = 240  # fallback for unknown media types
 from state import (
     IGClient,
     BadPassword,
+    ChallengeRequired,
     LoginRequired,
     TwoFactorRequired,
     SESSIONS_DIR,
@@ -245,8 +246,14 @@ def create_authenticated_client(
                 raise
             except BadPassword:
                 raise
+            except ChallengeRequired:
+                # Challenge cannot be resolved by retrying — propagate immediately
+                # so the caller can mark the account as "challenge" and stop.
+                # Falling through to fresh login would only trigger the same
+                # challenge again and waste an API call.
+                raise
             except Exception:
-                pass  # fall through to fresh login
+                pass  # other transient failures → fall through to fresh login
             else:
                 client.dump_settings(session_file)
                 return client
@@ -259,8 +266,12 @@ def create_authenticated_client(
         except BadPassword:
             raise  # wrong credential — a fresh client won't help
 
+        except ChallengeRequired:
+            # Challenge required on initial session restore — propagate directly.
+            raise
+
         except Exception:
-            # Non-terminal failure (ChallengeRequired, corruption, timeout …).
+            # Non-terminal failure (corruption, timeout, etc.).
             # Fall through to a completely fresh login below.
             pass
 

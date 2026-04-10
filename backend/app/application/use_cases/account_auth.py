@@ -203,16 +203,20 @@ class AccountAuthUseCases:
     def _select_relogin_mode(account: dict) -> ReloginMode:
         """Choose the relogin strategy based on the account's persisted state.
 
-        ``FRESH_CREDENTIALS`` is selected when the account is in an error state
-        caused by a server-side force-logout (Instagram logout_reason:8, mapped
-        to ``last_error_code="login_required"``).  Those session files are
-        permanently invalidated by Instagram and attempting a session restore
-        just wastes an API call before falling back to fresh credentials anyway.
+        ``FRESH_CREDENTIALS`` is selected when:
+        - ``last_error_code="login_required"`` — server-side force-logout
+          (Instagram logout_reason:8).  Session file is permanently invalid.
+        - ``last_error_code`` starts with ``"challenge"`` — Instagram issued a
+          security challenge during the previous auth attempt.  Retrying with
+          the stale session will just trigger the same challenge again; a fresh
+          credential login is the correct first step after the operator has
+          manually resolved the challenge on instagram.com.
 
         All other accounts use ``SESSION_RESTORE`` — the faster path that reuses
         the saved session token when the session is still valid.
         """
-        if account.get("last_error_code") == "login_required":
+        code = account.get("last_error_code") or ""
+        if code == "login_required" or code.startswith("challenge"):
             return ReloginMode.FRESH_CREDENTIALS
         return ReloginMode.SESSION_RESTORE
 
@@ -302,7 +306,7 @@ class AccountAuthUseCases:
                 status="error",
             )
             self.account_repo.remove(account_id)
-            raise
+            raise InstagramAdapterError(failure) from exc
 
     def complete_2fa_login(
         self, account_id: str, code: str, is_totp: bool = False
@@ -351,7 +355,7 @@ class AccountAuthUseCases:
                 detail=failure.user_message,
                 status="error",
             )
-            raise
+            raise InstagramAdapterError(failure) from exc
 
     def logout_account(self, account_id: str, detail: str = "") -> AccountResponse:
         """Logout an account."""
@@ -427,6 +431,14 @@ class AccountAuthUseCases:
                 if new_status is not None:
                     self.status_repo.set(account_id, new_status)
 
+                # Persist error details so the frontend can display context and
+                # _select_relogin_mode can choose the right strategy next time.
+                self.account_repo.update(
+                    account_id,
+                    last_error=failure.user_message,
+                    last_error_code=failure.code,
+                )
+
                 self.logger.log_event(
                     account_id,
                     username,
@@ -434,7 +446,7 @@ class AccountAuthUseCases:
                     detail=failure.user_message,
                     status=new_status or account.get("status", "unknown"),
                 )
-                raise
+                raise InstagramAdapterError(failure) from exc
 
     def relogin_account_by_username(self, username: str) -> dict:
         """Relogin account by username, returning summary for AI tools."""
@@ -519,6 +531,11 @@ class AccountAuthUseCases:
                     # so the response always has an actionable status.
                     error_status = self._relogin_failure_status(failure) or "error"
                     self.status_repo.set(account_id, error_status)
+                    self.account_repo.update(
+                        account_id,
+                        last_error=failure.user_message,
+                        last_error_code=failure.code,
+                    )
                     self.logger.log_event(
                         account_id,
                         username,

@@ -32,18 +32,22 @@ def format_error(error: Exception, context: str = "Error") -> str:
 def format_instagram_failure(failure) -> dict:
     """
     Format an InstagramFailure into an HTTP-friendly response dict.
-    
+
     Returns dict with 'status_code' and 'detail' keys.
     """
-    from app.domain.instagram_failures import InstagramFailure
-    
+    from app.domain.instagram_failures import InstagramFailure, InstagramAdapterError
+
+    # Unwrap adapter errors so their inner failure is formatted correctly.
+    if isinstance(failure, InstagramAdapterError):
+        failure = failure.failure
+
     if not isinstance(failure, InstagramFailure):
         # Fallback for non-failure exceptions
         return {
             "status_code": 500,
             "detail": str(failure) or "An error occurred",
         }
-    
+
     return {
         "status_code": failure.http_hint or 400,
         "detail": failure.user_message,
