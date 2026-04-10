@@ -5,7 +5,11 @@ InstagramRelationshipWriter port.
 """
 
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    translate_instagram_error,
+    check_rate_limit,
+    InstagramRateLimitError,
+)
 
 
 class InstagramRelationshipWriterAdapter:
@@ -16,6 +20,7 @@ class InstagramRelationshipWriterAdapter:
 
     def follow_user(self, account_id: str, user_id: int) -> bool:
         """Follow a user via instagrapi."""
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")
@@ -28,10 +33,13 @@ class InstagramRelationshipWriterAdapter:
                 operation="user_follow",
                 account_id=account_id,
             )
+            if failure.http_hint == 429:
+                raise InstagramRateLimitError(failure.user_message)
             raise ValueError(failure.user_message)
 
     def unfollow_user(self, account_id: str, user_id: int) -> bool:
         """Unfollow a user via instagrapi."""
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")
@@ -44,10 +52,13 @@ class InstagramRelationshipWriterAdapter:
                 operation="user_unfollow",
                 account_id=account_id,
             )
+            if failure.http_hint == 429:
+                raise InstagramRateLimitError(failure.user_message)
             raise ValueError(failure.user_message)
 
     def remove_follower(self, account_id: str, user_id: int) -> bool:
         """Remove a follower via instagrapi."""
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")
@@ -60,10 +71,13 @@ class InstagramRelationshipWriterAdapter:
                 operation="user_remove_follower",
                 account_id=account_id,
             )
+            if failure.http_hint == 429:
+                raise InstagramRateLimitError(failure.user_message)
             raise ValueError(failure.user_message)
 
     def close_friend_add(self, account_id: str, user_id: int) -> bool:
         """Add a user to Close Friends list via instagrapi."""
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")
@@ -76,6 +90,8 @@ class InstagramRelationshipWriterAdapter:
                 operation="close_friend_add",
                 account_id=account_id,
             )
+            if failure.http_hint == 429:
+                raise InstagramRateLimitError(failure.user_message)
             raise ValueError(failure.user_message)
 
     def close_friend_remove(self, account_id: str, user_id: int) -> bool:

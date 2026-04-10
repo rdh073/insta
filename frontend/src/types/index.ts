@@ -1,7 +1,6 @@
 export interface Account {
   id: string;
   username: string;
-  sessionFile?: string;
   proxy?: string;
   status: 'idle' | 'logging_in' | 'active' | 'error' | 'challenge' | '2fa_required';
   error?: string;

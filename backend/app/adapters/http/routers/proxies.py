@@ -76,11 +76,11 @@ async def check_proxy(body: CheckProxyRequest, usecases=Depends(get_proxy_pool_u
     checker = usecases._checker
     result = await checker.check(body.url)
     return {
-        "proxyUrl":  result.proxy_url,
-        "reachable": result.reachable,
-        "latencyMs": result.latency_ms,
-        "ipAddress": result.ip_address,
-        "protocol":  result.protocol,
-        "anonymity": result.anonymity,
-        "error":     result.error,
+        "proxy_url":  result.proxy_url,
+        "reachable":  result.reachable,
+        "latency_ms": result.latency_ms,
+        "ip_address": result.ip_address,
+        "protocol":   result.protocol,
+        "anonymity":  result.anonymity,
+        "error":      result.error,
     }

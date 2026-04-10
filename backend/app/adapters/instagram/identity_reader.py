@@ -12,6 +12,7 @@ from app.application.dto.instagram_identity_dto import (
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.error_utils import (
     translate_instagram_error,
+    check_rate_limit,
     InstagramRateLimitError,
     InstagramAdapterError,
 )
@@ -52,6 +53,7 @@ class InstagramIdentityReaderAdapter:
                 translated ``InstagramFailure`` with preserved metadata so callers
                 can distinguish auth/challenge/2FA/transient failures.
         """
+        check_rate_limit(account_id)
         client = self.client_repo.get(account_id)
         if not client:
             raise ValueError(f"Account {account_id} not found or not authenticated")

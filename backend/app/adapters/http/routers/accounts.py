@@ -35,10 +35,21 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
 def _hydrate_and_publish(usecases, account_id: str) -> None:
-    """Fetch profile data for one account and push an SSE event."""
+    """Fetch full profile (name, pic, followers, following) and push SSE events.
+
+    Makes two sequential Instagram API calls:
+    1. account_info() — validates session, gets full_name + profile_pic_url
+    2. user_info(pk)  — gets follower_count + following_count
+
+    Both results are published independently so the frontend updates as each
+    call completes rather than waiting for both.
+    """
     result = usecases.hydrate_account_profile(account_id)
     if result:
         account_event_bus.publish("account_updated", result)
+    counts = usecases.refresh_follower_counts(account_id)
+    if counts:
+        account_event_bus.publish("account_updated", counts)
 
 
 def _refresh_counts_and_publish(usecases, account_id: str) -> None:
@@ -339,11 +350,13 @@ async def check_proxy(
     """Test if a proxy URL is reachable and measure latency."""
     result = await usecases.check_proxy(body.proxy)
     return {
-        "proxy_url": result.proxy_url,
-        "reachable": result.reachable,
+        "proxy_url":  result.proxy_url,
+        "reachable":  result.reachable,
         "latency_ms": result.latency_ms,
         "ip_address": result.ip_address,
-        "error": result.error,
+        "protocol":   result.protocol,
+        "anonymity":  result.anonymity,
+        "error":      result.error,
     }
 
 
@@ -360,17 +373,21 @@ async def check_account_proxy(
         raise HTTPException(status_code=404, detail="Account not found")
     if not account.proxy:
         return {
-            "proxy_url": None,
-            "reachable": False,
-            "error": "No proxy assigned to this account",
+            "proxy_url":  None,
+            "reachable":  False,
+            "protocol":   None,
+            "anonymity":  None,
+            "error":      "No proxy assigned to this account",
         }
     result = await proxy_usecases.check_proxy(account.proxy)
     return {
-        "proxy_url": result.proxy_url,
-        "reachable": result.reachable,
+        "proxy_url":  result.proxy_url,
+        "reachable":  result.reachable,
         "latency_ms": result.latency_ms,
         "ip_address": result.ip_address,
-        "error": result.error,
+        "protocol":   result.protocol,
+        "anonymity":  result.anonymity,
+        "error":      result.error,
     }
 
 
@@ -554,3 +571,39 @@ async def verify_account(
     except Exception as e:
         status_code, detail = _format_error_from_failure(e)
         raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/rate-limited")
+def get_rate_limited_accounts():
+    """Return all accounts currently in Instagram rate-limit cooldown.
+
+    Response::
+
+        [
+          {"account_id": "abc", "retry_after": 3547.2, "reason": "rate_limit"},
+          ...
+        ]
+    """
+    from app.adapters.instagram.rate_limit_guard import rate_limit_guard
+
+    limited = rate_limit_guard.get_all_limited()
+    return [
+        {
+            "account_id": aid,
+            "retry_after": round(info["retry_after"], 1),
+            "reason": info["reason"],
+        }
+        for aid, info in limited.items()
+    ]
+
+
+@router.delete("/rate-limited/{account_id}")
+def clear_rate_limit(account_id: str):
+    """Manually clear the rate-limit cooldown for an account.
+
+    Useful after re-authentication or proxy rotation.
+    """
+    from app.adapters.instagram.rate_limit_guard import rate_limit_guard
+
+    rate_limit_guard.clear(account_id)
+    return {"cleared": account_id}

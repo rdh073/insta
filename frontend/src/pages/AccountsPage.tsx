@@ -1,8 +1,9 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import {
   AlertCircle,
   CheckCircle,
   CheckSquare,
+  Clock,
   Download,
   Globe,
   Loader,
@@ -19,7 +20,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { accountsApi } from '../api/accounts';
+import type { RateLimitEntry } from '../api/accounts';
 import { ApiError } from '../api/client';
+import { logsApi } from '../api/logs';
+import type { ActivityLogEntry } from '../types';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -29,6 +33,13 @@ import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
 import type { Account } from '../types';
+
+/** Format remaining cooldown seconds into a compact human string. */
+function formatCooldown(sec: number): string {
+  if (sec < 60) return `${Math.ceil(sec)}s`;
+  if (sec < 3600) return `~${Math.ceil(sec / 60)}min`;
+  return `~${(sec / 3600).toFixed(1)}h`;
+}
 
 /** Format relative time like "2m ago", "1h ago", "3d ago" */
 function formatRelativeTime(isoString: string | undefined): string | null {
@@ -114,6 +125,7 @@ function AccountRow({
   selected,
   onToggle,
   onClick,
+  rateLimitInfo,
 }: {
   account: Account;
   isActive: boolean;
@@ -121,6 +133,7 @@ function AccountRow({
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
+  rateLimitInfo?: RateLimitEntry;
 }) {
   const handleClick = () => {
     if (selectMode) onToggle();
@@ -155,11 +168,41 @@ function AccountRow({
         )}
       </div>
 
-      <div className="shrink-0">
+      <div className="flex shrink-0 flex-col items-end gap-1">
         {statusBadge(account, true)}
+        {rateLimitInfo && (
+          <span className="flex items-center gap-1 rounded-full border border-[rgba(255,158,100,0.24)] bg-[rgba(255,158,100,0.10)] px-1.5 py-0.5 text-[10px] font-medium text-[#ffb07a]">
+            <Clock className="h-2.5 w-2.5" />
+            {formatCooldown(rateLimitInfo.retry_after)}
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+/* ── Audit trail helpers ─────────────────────────────────────────────────── */
+
+const AUDIT_META: Record<string, { label: string; color: string }> = {
+  login_success:         { label: 'Login OK',         color: '#9ece6a' },
+  login_failed:          { label: 'Login failed',      color: '#f7768e' },
+  relogin_success:       { label: 'Relogin OK',        color: '#9ece6a' },
+  relogin_failed:        { label: 'Relogin failed',    color: '#f7768e' },
+  logout:                { label: 'Logout',            color: '#7f8bb3' },
+  proxy_changed:         { label: 'Proxy changed',     color: '#7dcfff' },
+  post_success:          { label: 'Post OK',           color: '#9ece6a' },
+  post_failed:           { label: 'Post failed',       color: '#f7768e' },
+  session_expired:       { label: 'Session expired',   color: '#e0af68' },
+  challenge:             { label: 'Challenge',         color: '#e0af68' },
+  upload_timeout:        { label: 'Upload timeout',    color: '#f7768e' },
+  circuit_open:          { label: 'Circuit open',      color: '#f7768e' },
+  rate_limited:          { label: 'Rate limited',      color: '#ff9e64' },
+  connectivity_verified: { label: 'Health OK',         color: '#9ece6a' },
+  connectivity_failed:   { label: 'Health failed',     color: '#f7768e' },
+};
+
+function auditMeta(event: string) {
+  return AUDIT_META[event] ?? { label: event.replace(/_/g, ' '), color: '#7f8bb3' };
 }
 
 /* ── Detail panel (right column) ─────────────────────────────────────────── */
@@ -167,15 +210,41 @@ function AccountRow({
 function AccountDetail({
   account,
   onSetupTOTP,
+  rateLimitInfo,
+  onClearRateLimit,
 }: {
   account: Account;
   onSetupTOTP?: (accountId: string) => void;
+  rateLimitInfo?: RateLimitEntry;
+  onClearRateLimit?: (accountId: string) => void;
 }) {
   const removeAccount = useAccountStore((s) => s.removeAccount);
   const upsertAccount = useAccountStore((s) => s.upsertAccount);
   const updateStatus = useAccountStore((s) => s.updateStatus);
   const [relogging, setRelogging] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [clearingLimit, setClearingLimit] = useState(false);
+  const [auditLog, setAuditLog] = useState<ActivityLogEntry[]>([]);
+
+  useEffect(() => {
+    logsApi.get({ username: account.username, limit: 6 }).then((res) => {
+      setAuditLog(res.entries);
+    }).catch(() => {});
+  }, [account.username]);
+
+  const handleClearRateLimit = async () => {
+    if (clearingLimit) return;
+    setClearingLimit(true);
+    try {
+      await accountsApi.clearRateLimit(account.id);
+      onClearRateLimit?.(account.id);
+      toast.success(`Rate limit cleared for @${account.username}`);
+    } catch {
+      toast.error('Failed to clear rate limit');
+    } finally {
+      setClearingLimit(false);
+    }
+  };
 
   const TRANSIENT_CODES = new Set([
     'connection_error', 'request_error', 'json_decode_error', 'graphql_error',
@@ -293,6 +362,27 @@ function AccountDetail({
         )}
       </div>
 
+      {/* Rate limit cooldown banner */}
+      {rateLimitInfo && (
+        <div className="flex items-start gap-3 rounded-[1rem] border border-[rgba(255,158,100,0.22)] bg-[rgba(255,158,100,0.07)] px-3 py-3">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[#ffb07a]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-[#ffd0a0]">Rate limited</p>
+            <p className="mt-0.5 text-[11px] text-[#b8a090]">
+              {rateLimitInfo.reason === 'feedback_required'
+                ? 'Action blocked by Instagram'
+                : 'Too many requests — Instagram cooldown active'}
+            </p>
+            <p className="mt-1 font-mono text-xs text-[#ffb07a]">
+              Retry in {formatCooldown(rateLimitInfo.retry_after)}
+            </p>
+          </div>
+          <Button size="sm" variant="secondary" loading={clearingLimit} onClick={handleClearRateLimit}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2 border-t border-[rgba(162,179,229,0.10)] pt-4">
         {(account.status === 'idle' || account.status === 'error' || account.status === 'challenge' || account.status === '2fa_required') && (
@@ -312,6 +402,45 @@ function AccountDetail({
           Remove
         </Button>
       </div>
+
+      {/* Audit trail */}
+      {auditLog.length > 0 && (
+        <div className="border-t border-[rgba(162,179,229,0.10)] pt-4">
+          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#5a6a90]">Recent Activity</p>
+          <div className="space-y-0">
+            {auditLog.map((entry, i) => {
+              const meta = auditMeta(entry.event);
+              const ts = new Date(entry.ts);
+              const relTime = formatRelativeTime(entry.ts) ?? ts.toLocaleTimeString();
+              return (
+                <div key={i} className="flex items-start gap-2.5 py-1.5">
+                  {/* Timeline connector */}
+                  <div className="flex flex-col items-center pt-1">
+                    <div
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: meta.color }}
+                    />
+                    {i < auditLog.length - 1 && (
+                      <div className="mt-0.5 w-px flex-1 bg-[rgba(162,179,229,0.10)]" style={{ minHeight: '12px' }} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 pb-0.5">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs font-medium" style={{ color: meta.color }}>
+                        {meta.label}
+                      </span>
+                      <span className="text-[10px] text-[#4a5578]">{relTime}</span>
+                    </div>
+                    {entry.detail && (
+                      <p className="mt-0.5 truncate text-[11px] text-[#7f8bb3]">{entry.detail}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -756,7 +885,28 @@ export function AccountsPage() {
   const [showTOTPSetup, setShowTOTPSetup] = useState(false);
   const [totpAccountId, setTOTPAccountId] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
+  const [rateLimitMap, setRateLimitMap] = useState<Map<string, RateLimitEntry>>(new Map());
   const sessionInputRef = useRef<HTMLInputElement>(null);
+
+  // Poll rate-limited accounts every 15 s
+  useEffect(() => {
+    const fetchLimited = () => {
+      accountsApi.rateLimited().then((entries) => {
+        setRateLimitMap(new Map(entries.map((e) => [e.account_id, e])));
+      }).catch(() => {});
+    };
+    fetchLimited();
+    const id = setInterval(fetchLimited, 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleClearRateLimit = (accountId: string) => {
+    setRateLimitMap((prev) => {
+      const next = new Map(prev);
+      next.delete(accountId);
+      return next;
+    });
+  };
 
   const errorAccounts = accounts.filter((a) => a.status === 'error' || a.status === 'challenge');
   const activeAccounts = accounts.filter((a) => a.status === 'active').length;
@@ -938,7 +1088,7 @@ export function AccountsPage() {
           <HeaderStat label="Connected" value={accounts.length} tone="cyan" />
           <HeaderStat label="Active" value={activeAccounts} tone="green" />
           <HeaderStat label="Needs Attention" value={errorAccounts.length} tone="rose" />
-          <HeaderStat label="Selection" value={selectMode ? selectedIds.length : 'Off'} tone="violet" />
+          <HeaderStat label="Rate Limited" value={rateLimitMap.size} tone={rateLimitMap.size > 0 ? 'rose' : 'cyan'} />
         </div>
       </PageHeader>
 
@@ -1035,6 +1185,7 @@ export function AccountsPage() {
                         setActive(next);
                         if (next) accountsApi.refreshCounts(next).catch(() => {});
                       }}
+                      rateLimitInfo={rateLimitMap.get(account.id)}
                     />
                   ))
                 )}
@@ -1057,6 +1208,8 @@ export function AccountsPage() {
                   setTOTPAccountId(id);
                   setShowTOTPSetup(true);
                 }}
+                rateLimitInfo={rateLimitMap.get(focusedAccount.id)}
+                onClearRateLimit={handleClearRateLimit}
               />
             ) : (
               <Card className="flex flex-col items-center justify-center py-16 text-center">
@@ -1080,6 +1233,8 @@ export function AccountsPage() {
               setTOTPAccountId(id);
               setShowTOTPSetup(true);
             }}
+            rateLimitInfo={rateLimitMap.get(focusedAccount.id)}
+            onClearRateLimit={handleClearRateLimit}
           />
         </div>
       )}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  CheckCircle,
+  Clock,
   Download,
   Globe,
   ImagePlus,
@@ -30,18 +32,21 @@ const EVENT_META: Record<
   string,
   { label: string; level: Level; Icon: React.FC<{ className?: string }> }
 > = {
-  login_success:    { label: 'LOGIN_OK',       level: 'success', Icon: LogIn },
-  login_failed:     { label: 'LOGIN_FAIL',      level: 'error',   Icon: LogIn },
-  relogin_success:  { label: 'RELOGIN_OK',      level: 'success', Icon: RefreshCw },
-  relogin_failed:   { label: 'RELOGIN_FAIL',    level: 'error',   Icon: RefreshCw },
-  logout:           { label: 'LOGOUT',          level: 'muted',   Icon: LogOut },
-  proxy_changed:    { label: 'PROXY_CHANGED',   level: 'info',    Icon: Globe },
-  post_success:     { label: 'POST_OK',         level: 'success', Icon: ImagePlus },
-  post_failed:      { label: 'POST_FAIL',       level: 'error',   Icon: ImagePlus },
-  session_expired:  { label: 'SESSION_EXPIRED', level: 'warn',    Icon: AlertTriangle },
-  challenge:        { label: 'CHALLENGE',       level: 'warn',    Icon: ShieldOff },
-  upload_timeout:   { label: 'UPLOAD_TIMEOUT',  level: 'error',   Icon: Timer },
-  circuit_open:     { label: 'CIRCUIT_OPEN',    level: 'error',   Icon: Zap },
+  login_success:          { label: 'LOGIN_OK',       level: 'success', Icon: LogIn },
+  login_failed:           { label: 'LOGIN_FAIL',      level: 'error',   Icon: LogIn },
+  relogin_success:        { label: 'RELOGIN_OK',      level: 'success', Icon: RefreshCw },
+  relogin_failed:         { label: 'RELOGIN_FAIL',    level: 'error',   Icon: RefreshCw },
+  logout:                 { label: 'LOGOUT',          level: 'muted',   Icon: LogOut },
+  proxy_changed:          { label: 'PROXY_CHANGED',   level: 'info',    Icon: Globe },
+  post_success:           { label: 'POST_OK',         level: 'success', Icon: ImagePlus },
+  post_failed:            { label: 'POST_FAIL',       level: 'error',   Icon: ImagePlus },
+  session_expired:        { label: 'SESSION_EXPIRED', level: 'warn',    Icon: AlertTriangle },
+  challenge:              { label: 'CHALLENGE',       level: 'warn',    Icon: ShieldOff },
+  upload_timeout:         { label: 'UPLOAD_TIMEOUT',  level: 'error',   Icon: Timer },
+  circuit_open:           { label: 'CIRCUIT_OPEN',    level: 'error',   Icon: Zap },
+  rate_limited:           { label: 'RATE_LIMITED',    level: 'warn',    Icon: Clock },
+  connectivity_verified:  { label: 'HEALTH_OK',       level: 'success', Icon: CheckCircle },
+  connectivity_failed:    { label: 'HEALTH_FAIL',     level: 'error',   Icon: AlertTriangle },
 };
 
 const LEVEL_STYLES: Record<Level, { badge: string; dot: string; icon: string }> = {

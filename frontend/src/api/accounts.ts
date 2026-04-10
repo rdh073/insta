@@ -1,6 +1,12 @@
 import { api } from './client';
 import type { Account, BulkAccountResult, ProxyCheckResult } from '../types';
 
+export interface RateLimitEntry {
+  account_id: string;
+  retry_after: number;
+  reason: string;
+}
+
 export const accountsApi = {
   list: () => api.get<Account[]>('/accounts').then((r) => r.data),
   bulkHydrateProfiles: () => api.post<{ queued: number }>('/accounts/bulk/hydrate-profiles').then((r) => r.data),
@@ -60,4 +66,10 @@ export const accountsApi = {
 
   checkAccountProxy: (id: string) =>
     api.get<ProxyCheckResult>(`/accounts/${id}/proxy/check`).then((r) => r.data),
+
+  rateLimited: () =>
+    api.get<RateLimitEntry[]>('/accounts/rate-limited').then((r) => r.data),
+
+  clearRateLimit: (id: string) =>
+    api.delete<{ cleared: string }>(`/accounts/rate-limited/${id}`).then((r) => r.data),
 };
