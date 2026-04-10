@@ -133,13 +133,14 @@ def create_app() -> FastAPI:
                     sys.stderr.write(f"[LIFESPAN] emit exception: {_e}\n")
                     sys.stderr.flush()
 
-        # Test root logger directly
-        logging.warning("ROOT WARNING TEST - should appear")
-        logging.info("ROOT INFO TEST - should appear")
-        _root.warning("ROOT.warning TEST - should appear")
-        _root.info("ROOT.info TEST - should appear")
-        logger.warning("LOGGER WARNING TEST - should appear")
-        logger.info("LOGGER INFO TEST - should appear")
+        # Check intermediate instamanager logger
+        _im = logging.getLogger("instamanager")
+        print(
+            f"[LIFESPAN] instamanager level={_im.level} effective={_im.getEffectiveLevel()} propagate={_im.propagate} handlers={_im.handlers}",
+            file=sys.stderr, flush=True,
+        )
+        logging.warning("ROOT WARNING TEST")
+        logger.warning("LOGGER WARNING TEST")
         print("[LIFESPAN] all logger calls done", file=sys.stderr, flush=True)
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
