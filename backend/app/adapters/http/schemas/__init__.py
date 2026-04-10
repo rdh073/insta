@@ -25,6 +25,7 @@ from .instagram import (
     DirectSendThreadEnvelope,
     DirectSendUsersEnvelope,
     DirectDeleteMessageEnvelope,
+    DirectThreadActionEnvelope,
 )
 
 __all__ = [
@@ -50,4 +51,5 @@ __all__ = [
     "DirectSendThreadEnvelope",
     "DirectSendUsersEnvelope",
     "DirectDeleteMessageEnvelope",
+    "DirectThreadActionEnvelope",
 ]

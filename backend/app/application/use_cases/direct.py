@@ -429,3 +429,55 @@ class DirectUseCases:
             raise ValueError(
                 f"direct_thread_id must not be empty, got {direct_thread_id!r}"
             ) from e
+
+    def approve_pending_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Approve a pending DM request, moving it to the main inbox.
+
+        Args:
+            account_id: Application account ID.
+            direct_thread_id: Pending thread ID (must not be empty).
+
+        Returns:
+            DirectActionReceipt with result.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or thread ID empty.
+        """
+        self._require_authenticated(account_id)
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.approve_pending_thread(account_id, str(tid))
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )
+
+    def mark_thread_seen(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mark the most recent message in a thread as seen.
+
+        Args:
+            account_id: Application account ID.
+            direct_thread_id: Thread ID (must not be empty).
+
+        Returns:
+            DirectActionReceipt with result.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or thread ID empty.
+        """
+        self._require_authenticated(account_id)
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.mark_thread_seen(account_id, str(tid))
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )

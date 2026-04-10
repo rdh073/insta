@@ -11,6 +11,7 @@ import {
   Play,
   Send,
   Square,
+  Trash2,
 } from 'lucide-react';
 import { postsApi } from '../api/posts';
 import { Badge } from '../components/ui/Badge';
@@ -64,9 +65,9 @@ function StatusBadge({ status }: { status: PostJob['status'] }) {
 
 // ── Job card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job }: { job: PostJob }) {
+function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const [actionLoading, setActionLoading] = useState<'stop' | 'pause' | 'resume' | null>(null);
+  const [actionLoading, setActionLoading] = useState<'stop' | 'pause' | 'resume' | 'delete' | null>(null);
 
   const successCount  = job.results.filter((r) => r.status === 'success').length;
   const failCount     = job.results.filter((r) => r.status === 'failed').length;
@@ -77,6 +78,7 @@ function JobCard({ job }: { job: PostJob }) {
   const canPause  = job.status === 'running';
   const canResume = job.status === 'paused';
   const canStop   = job.status === 'running' || job.status === 'paused' || job.status === 'pending' || job.status === 'scheduled';
+  const canDelete = ['completed', 'failed', 'stopped', 'partial', 'needs_media'].includes(job.status);
 
   async function handleAction(action: 'stop' | 'pause' | 'resume') {
     setActionLoading(action);
@@ -84,6 +86,18 @@ function JobCard({ job }: { job: PostJob }) {
       await postsApi[action](job.id);
     } catch {
       // SSE stream will sync next state
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleDelete() {
+    setActionLoading('delete');
+    try {
+      await postsApi.delete(job.id);
+      onDelete(job.id);
+    } catch {
+      // ignore — SSE will reflect real state
     } finally {
       setActionLoading(null);
     }
@@ -151,6 +165,17 @@ function JobCard({ job }: { job: PostJob }) {
                 className="flex h-7 w-7 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.3)] bg-[rgba(247,118,142,0.1)] text-[#f7768e] transition-all hover:bg-[rgba(247,118,142,0.2)] disabled:opacity-50"
               >
                 {actionLoading === 'stop' ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={actionLoading !== null}
+                title="Delete job"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.16)] bg-transparent text-[#4a5578] transition-all hover:border-[rgba(247,118,142,0.4)] hover:bg-[rgba(247,118,142,0.08)] hover:text-[#f7768e] disabled:opacity-50"
+              >
+                {actionLoading === 'delete' ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
               </button>
             )}
             <button
@@ -248,7 +273,8 @@ function JobCard({ job }: { job: PostJob }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function CampaignPage() {
-  const jobs = usePostStore((s) => s.jobs);
+  const jobs      = usePostStore((s) => s.jobs);
+  const removeJob = usePostStore((s) => s.removeJob);
   const [filter, setFilter] = useState<StatusFilter>('all');
 
   // Real-time updates via SSE — replaces polling.
@@ -327,7 +353,7 @@ export function CampaignPage() {
       ) : (
         <div className="space-y-3">
           {sorted.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onDelete={removeJob} />
           ))}
         </div>
       )}

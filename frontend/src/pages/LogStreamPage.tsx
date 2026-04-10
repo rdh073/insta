@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   ArrowDown,
   Terminal,
@@ -12,25 +12,16 @@ import { Button } from '../components/ui/Button';
 import { buildSseUrl } from '../api/sse-token';
 import { resolveApiBaseUrl } from '../lib/api-base';
 import { useSettingsStore } from '../store/settings';
+import { useLogStreamStore, nextLogId } from '../store/logStream';
+import type { LogRecord } from '../store/logStream';
 import { cn } from '../lib/cn';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface LogRecord {
-  id: number;
-  ts: string;       // ISO-8601 ms
-  level: string;    // DEBUG / INFO / WARNING / ERROR / CRITICAL
-  levelno: number;  // 10 / 20 / 30 / 40 / 50
-  name: string;     // logger name
-  msg: string;      // formatted message
-}
 
 // ─── Level config ─────────────────────────────────────────────────────────────
 
 interface LevelStyle {
   label: string;
-  line: string;      // text color for the whole row on match
-  badge: string;     // inline level tag
+  line: string;
+  badge: string;
   minno: number;
 }
 
@@ -53,12 +44,7 @@ const MIN_LEVEL_OPTIONS = [
   { label: 'ERROR', value: 40 },
 ];
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MAX_LINES = 2000;
-
-let _nextId = 0;
-function nextId() { return ++_nextId; }
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTs(iso: string): string {
   const d = new Date(iso);
@@ -80,24 +66,32 @@ function downloadNdjson(lines: LogRecord[]) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function LogStreamPage() {
-  const backendUrl   = useSettingsStore((s) => s.backendUrl);
+  const backendUrl    = useSettingsStore((s) => s.backendUrl);
   const backendApiKey = useSettingsStore((s) => s.backendApiKey);
 
-  const [lines, setLines] = useState<LogRecord[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [minLevel, setMinLevel] = useState(10);       // DEBUG by default
-  const [nameFilter, setNameFilter] = useState('');
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [total, setTotal] = useState(0);              // cumulative records received
+  const lines      = useLogStreamStore((s) => s.lines);
+  const total      = useLogStreamStore((s) => s.total);
+  const connected  = useLogStreamStore((s) => s.connected);
+  const paused     = useLogStreamStore((s) => s.paused);
+  const minLevel   = useLogStreamStore((s) => s.minLevel);
+  const nameFilter = useLogStreamStore((s) => s.nameFilter);
+  const autoScroll = useLogStreamStore((s) => s.autoScroll);
 
-  const termRef   = useRef<HTMLDivElement>(null);
-  const esRef     = useRef<EventSource | null>(null);
-  const pausedRef = useRef(false);
+  const addLine      = useLogStreamStore((s) => s.addLine);
+  const clearLines   = useLogStreamStore((s) => s.clearLines);
+  const setConnected = useLogStreamStore((s) => s.setConnected);
+  const setPaused    = useLogStreamStore((s) => s.setPaused);
+  const setMinLevel  = useLogStreamStore((s) => s.setMinLevel);
+  const setNameFilter = useLogStreamStore((s) => s.setNameFilter);
+  const setAutoScroll = useLogStreamStore((s) => s.setAutoScroll);
+
+  const termRef    = useRef<HTMLDivElement>(null);
+  const esRef      = useRef<EventSource | null>(null);
+  const pausedRef  = useRef(false);
   const mountedRef = useRef(true);
-  const retryRef  = useRef(0);
+  const retryRef   = useRef(0);
 
-  // Keep ref in sync with state so the SSE callback can read it without stale closure
+  // Keep ref in sync so SSE callback reads current paused state without stale closure
   pausedRef.current = paused;
 
   // ── SSE connection ────────────────────────────────────────────────────────
@@ -124,12 +118,7 @@ export function LogStreamPage() {
           if (pausedRef.current) return;
           try {
             const raw = JSON.parse(evt.data as string) as Omit<LogRecord, 'id'>;
-            const record: LogRecord = { ...raw, id: nextId() };
-            setTotal((t) => t + 1);
-            setLines((prev) => {
-              const next = [...prev, record];
-              return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
-            });
+            addLine({ ...raw, id: nextLogId() });
           } catch {
             // malformed — ignore
           }
@@ -209,7 +198,7 @@ export function LogStreamPage() {
             <Button
               variant={paused ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => setPaused((v) => !v)}
+              onClick={() => setPaused(!paused)}
             >
               {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
               {paused ? 'Resume' : 'Pause'}
@@ -218,7 +207,7 @@ export function LogStreamPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => { setLines([]); setTotal(0); }}
+              onClick={clearLines}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -267,7 +256,7 @@ export function LogStreamPage() {
             type="button"
             role="checkbox"
             aria-checked={autoScroll}
-            onClick={() => setAutoScroll((v) => !v)}
+            onClick={() => setAutoScroll(!autoScroll)}
             className={cn(
               'flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors cursor-pointer',
               autoScroll

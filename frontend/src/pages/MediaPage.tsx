@@ -22,6 +22,7 @@ import { AccountPicker, useAccountPicker } from '../components/instagram/Account
 import type { MediaSummary } from '../types/instagram/media';
 import type { CommentPage } from '../types/instagram/comment';
 import { Button } from '../components/ui/Button';
+import { useMediaStore } from '../store/media';
 import { cn } from '../lib/cn';
 
 type DrawerTab = 'detail' | 'comments';
@@ -126,11 +127,7 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
               ...prev,
               comments: prev.comments.map((c) =>
                 c.pk === pk
-                  ? {
-                      ...c,
-                      hasLiked: !hasLiked,
-                      likeCount: (c.likeCount ?? 0) + (hasLiked ? -1 : 1),
-                    }
+                  ? { ...c, hasLiked: !hasLiked, likeCount: (c.likeCount ?? 0) + (hasLiked ? -1 : 1) }
                   : c,
               ),
             }
@@ -222,7 +219,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {/* Like / Unlike */}
                     <button
                       type="button"
                       disabled={busy[c.pk]}
@@ -237,7 +233,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
                     >
                       <Heart className={cn('h-3 w-3', c.hasLiked && 'fill-current')} />
                     </button>
-                    {/* Reply */}
                     <button
                       type="button"
                       onClick={() => setReplyTo({ pk: c.pk, author: c.author })}
@@ -246,7 +241,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
                     >
                       <Reply className="h-3 w-3" />
                     </button>
-                    {/* Pin */}
                     <button
                       type="button"
                       disabled={busy[c.pk]}
@@ -256,7 +250,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
                     >
                       <Pin className="h-3 w-3" />
                     </button>
-                    {/* Unpin */}
                     <button
                       type="button"
                       disabled={busy[c.pk]}
@@ -266,7 +259,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
                     >
                       <PinOff className="h-3 w-3" />
                     </button>
-                    {/* Delete */}
                     <button
                       type="button"
                       disabled={busy[c.pk]}
@@ -282,7 +274,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
             ))}
           </div>
 
-          {/* Reply context banner */}
           {replyTo && (
             <div className="flex items-center justify-between rounded-lg border border-[rgba(125,207,255,0.16)] bg-[rgba(125,207,255,0.06)] px-3 py-1.5">
               <p className="text-[11px] text-[#7dcfff]">
@@ -316,7 +307,6 @@ function CommentsPanel({ accountId, mediaId }: { accountId: string; mediaId: str
   );
 }
 
-/** Extract shortcode from a full Instagram URL or return the input as-is. */
 function extractShortcode(input: string): string {
   const match = /instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/.exec(input);
   return match ? match[1] : input.trim();
@@ -324,19 +314,26 @@ function extractShortcode(input: string): string {
 
 export function MediaPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const [userId, setUserId] = useState('');
+
+  const userId     = useMediaStore((s) => s.userId);
+  const media      = useMediaStore((s) => s.media);
+  const selected   = useMediaStore((s) => s.selected);
+  const drawerTab  = useMediaStore((s) => s.drawerTab);
+
+  const setUserId    = useMediaStore((s) => s.setUserId);
+  const setMedia     = useMediaStore((s) => s.setMedia);
+  const prependMedia = useMediaStore((s) => s.prependMedia);
+  const setSelected  = useMediaStore((s) => s.setSelected);
+  const setDrawerTab = useMediaStore((s) => s.setDrawerTab);
+
   const [postUrl, setPostUrl] = useState('');
-  const [media, setMedia] = useState<MediaSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [urlLoading, setUrlLoading] = useState(false);
-  const [selected, setSelected] = useState<MediaSummary | null>(null);
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>('detail');
 
   async function handleLoad() {
     const raw = userId.trim();
     if (!accountId || !raw) return;
     setLoading(true);
-    setSelected(null);
     try {
       let numericId: number;
       if (/^\d+$/.test(raw)) {
@@ -361,9 +358,7 @@ export function MediaPage() {
     setUrlLoading(true);
     try {
       const m = await mediaApi.getByCode(accountId, code);
-      // Prepend to grid if not already there
-      setMedia((prev) => (prev.find((x) => x.pk === m.pk) ? prev : [m, ...prev]));
-      setSelected(m);
+      prependMedia(m);
       setDrawerTab('comments');
       setPostUrl('');
     } catch (e) {
@@ -373,16 +368,10 @@ export function MediaPage() {
     }
   }
 
-  function selectCard(m: MediaSummary) {
-    setSelected(m);
-    setDrawerTab('detail');
-  }
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-5 py-3 space-y-2">
-        {/* Row 1: browse by username */}
         <div className="flex flex-wrap items-center gap-3">
           <AccountPicker value={accountId} onChange={setAccountId} className="w-48" />
           <input
@@ -399,7 +388,6 @@ export function MediaPage() {
             <span className="glass-chip text-[#7aa2f7]">{media.length} posts</span>
           )}
         </div>
-        {/* Row 2: go directly to a post by URL / shortcode */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-[11px] text-[#4a5578]">
             <Link2 className="h-3 w-3" />
@@ -438,7 +426,7 @@ export function MediaPage() {
                 key={m.pk}
                 media={m}
                 selected={selected?.pk === m.pk}
-                onClick={() => selectCard(m)}
+                onClick={() => { setSelected(m); setDrawerTab('detail'); }}
               />
             ))}
           </div>

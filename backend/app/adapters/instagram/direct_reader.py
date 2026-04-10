@@ -137,8 +137,8 @@ class InstagramDirectReaderAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to get thread
-            thread = client.direct_thread(direct_thread_id, amount=amount)
+            # instagrapi expects int thread ID
+            thread = client.direct_thread(int(direct_thread_id), amount=amount)
 
             # Map thread summary
             summary = self._map_thread_to_summary(thread, is_pending=False)
@@ -181,8 +181,8 @@ class InstagramDirectReaderAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to get messages
-            messages = client.direct_messages(direct_thread_id, amount=amount)
+            # instagrapi expects int thread ID
+            messages = client.direct_messages(int(direct_thread_id), amount=amount)
 
             # Map each message to DTO
             return [self._map_message_to_summary(m, direct_thread_id) for m in messages]

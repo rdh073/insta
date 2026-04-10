@@ -58,6 +58,10 @@ class SqlAccountRepository:
             full_name=row.full_name,
             followers=row.followers,
             following=row.following,
+            profile_pic_url=row.profile_pic_url,
+            last_verified_at=row.last_verified_at,
+            last_error=row.last_error,
+            last_error_code=row.last_error_code,
         )
 
     @staticmethod
@@ -70,6 +74,10 @@ class SqlAccountRepository:
         row.full_name = record.full_name
         row.followers = record.followers
         row.following = record.following
+        row.profile_pic_url = record.profile_pic_url
+        row.last_verified_at = record.last_verified_at
+        row.last_error = record.last_error
+        row.last_error_code = record.last_error_code
 
     @_wrap_sql_error
     def get(self, account_id: str) -> Optional[AccountRecord]:
@@ -201,6 +209,9 @@ class SqlJobRepository:
             scheduled_at=row.scheduled_at,
             thumbnail_path=row.thumbnail_path,
             igtv_title=row.igtv_title,
+            usertags=list(row.usertags or []),
+            location=row.location,
+            extra_data=dict(row.extra_data or {}),
         )
 
     @staticmethod
@@ -216,6 +227,9 @@ class SqlJobRepository:
         row.scheduled_at = record.scheduled_at
         row.thumbnail_path = record.thumbnail_path
         row.igtv_title = record.igtv_title
+        row.usertags = list(record.usertags)
+        row.location = record.location
+        row.extra_data = dict(record.extra_data)
 
     @_wrap_sql_error
     def get(self, job_id: str) -> Optional[JobRecord]:
@@ -239,6 +253,19 @@ class SqlJobRepository:
         # Dual-write to in-memory state so run_post_job (which reads state._jobs
         # directly) can find the job regardless of persistence backend.
         self.gateway.set_job(job_id, record.to_dict())
+
+    @_wrap_sql_error
+    def delete(self, job_id: str) -> bool:
+        with self.store.session_scope() as session:
+            row = session.get(JobRow, job_id)
+            if row is None:
+                return False
+            session.delete(row)
+            if self.store.get_active_session() is None:
+                session.commit()
+        # Also remove from in-memory state so the job disappears immediately.
+        self.gateway.delete_job(job_id)
+        return True
 
     @_wrap_sql_error
     def list_all(self) -> list[JobRecord]:

@@ -66,4 +66,5 @@ export const postsApi = {
   stop:   (id: string) => api.post(`/posts/${id}/stop`).then((r) => r.data),
   pause:  (id: string) => api.post(`/posts/${id}/pause`).then((r) => r.data),
   resume: (id: string) => api.post(`/posts/${id}/resume`).then((r) => r.data),
+  delete: (id: string) => api.delete(`/posts/${id}`).then((r) => r.data),
 };

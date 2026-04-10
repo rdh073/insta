@@ -39,6 +39,7 @@ __all__ = [
     "clear_account_status",
     "get_job",
     "set_job",
+    "delete_job",
     "iter_jobs_values",
     "clear_state",
     "log_event",
@@ -190,6 +191,14 @@ class ThreadSafeJobStore:
             self._pause_events.pop(job_id, None)
 
     # ── bulk ──────────────────────────────────────────────────────────────
+
+    def delete(self, job_id: str) -> bool:
+        """Remove a job and its control state.  Returns True if it existed."""
+        with self._lock:
+            existed = self._jobs.pop(job_id, None) is not None
+            self._stop_flags.pop(job_id, None)
+            self._pause_events.pop(job_id, None)
+        return existed
 
     def clear(self) -> None:
         with self._lock:
@@ -352,6 +361,11 @@ def get_job(job_id: str) -> dict:
 
 def set_job(job_id: str, job: dict) -> None:
     job_store.put(job_id, job)
+
+
+def delete_job(job_id: str) -> bool:
+    """Remove a job from the in-memory store.  Returns True if it existed."""
+    return job_store.delete(job_id)
 
 
 def iter_jobs_values():

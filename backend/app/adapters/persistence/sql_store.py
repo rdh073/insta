@@ -52,6 +52,10 @@ class AccountRow(Base):
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     followers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     following: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    profile_pic_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_verified_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class AccountStatusRow(Base):
@@ -80,7 +84,9 @@ class JobRow(Base):
     media_paths: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     thumbnail_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     igtv_title: Mapped[str | None] = mapped_column(Text, nullable=True)
-
+    usertags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    location: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    extra_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
 class ProxyRow(Base):

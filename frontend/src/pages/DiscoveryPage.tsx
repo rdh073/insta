@@ -16,6 +16,7 @@ import { AccountPicker, useAccountPicker } from '../components/instagram/Account
 import type { HashtagSummary } from '../types/instagram/discovery';
 import type { MediaSummary } from '../types/instagram/media';
 import { Button } from '../components/ui/Button';
+import { useDiscoveryStore } from '../store/discovery';
 import { cn } from '../lib/cn';
 
 type Feed = 'top' | 'recent';
@@ -84,11 +85,20 @@ function HashtagCard({ hashtag }: { hashtag: HashtagSummary }) {
 
 export function DiscoveryPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const [hashtagInput, setHashtagInput] = useState('');
-  const [feed, setFeed] = useState<Feed>('top');
-  const [amount, setAmount] = useState(24);
-  const [hashtag, setHashtag] = useState<HashtagSummary | null>(null);
-  const [posts, setPosts] = useState<MediaSummary[]>([]);
+
+  const hashtagInput = useDiscoveryStore((s) => s.hashtagInput);
+  const feed         = useDiscoveryStore((s) => s.feed);
+  const amount       = useDiscoveryStore((s) => s.amount);
+  const hashtag      = useDiscoveryStore((s) => s.hashtag);
+  const posts        = useDiscoveryStore((s) => s.posts);
+
+  const setHashtagInput = useDiscoveryStore((s) => s.setHashtagInput);
+  const setFeed         = useDiscoveryStore((s) => s.setFeed);
+  const setAmount       = useDiscoveryStore((s) => s.setAmount);
+  const setHashtag      = useDiscoveryStore((s) => s.setHashtag);
+  const setPosts        = useDiscoveryStore((s) => s.setPosts);
+  const clearResults    = useDiscoveryStore((s) => s.clearResults);
+
   const [loading, setLoading] = useState(false);
 
   async function handleLoad() {
@@ -96,8 +106,7 @@ export function DiscoveryPage() {
     if (!accountId || !name) return;
 
     setLoading(true);
-    setHashtag(null);
-    setPosts([]);
+    clearResults();
 
     try {
       const [meta, feed_result] = await Promise.all([
@@ -169,7 +178,6 @@ export function DiscoveryPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        {/* Empty state */}
         {!hashtag && !loading && (
           <div className="flex h-full items-center justify-center text-sm text-[#4a5578]">
             Enter a hashtag name and click Search
@@ -184,10 +192,8 @@ export function DiscoveryPage() {
 
         {hashtag && (
           <div className="mx-auto max-w-4xl space-y-5">
-            {/* Hashtag meta card */}
             <HashtagCard hashtag={hashtag} />
 
-            {/* Feed toggle */}
             <div className="flex items-center justify-between">
               <div className="flex gap-1 rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.02)] p-1">
                 <button
@@ -220,7 +226,6 @@ export function DiscoveryPage() {
               )}
             </div>
 
-            {/* Media grid */}
             {loading && (
               <div className="flex h-24 items-center justify-center">
                 <Loader className="h-4 w-4 animate-spin text-[#7dcfff]" />

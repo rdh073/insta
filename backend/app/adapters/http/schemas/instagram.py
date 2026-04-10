@@ -148,3 +148,9 @@ class DirectDeleteMessageEnvelope(InstagramWriteEnvelope):
 
     direct_thread_id: str = Field(..., description="Direct thread ID")
     direct_message_id: str = Field(..., description="Direct message ID")
+
+
+class DirectThreadActionEnvelope(InstagramWriteEnvelope):
+    """Write envelope for single-thread actions (approve, mark seen)."""
+
+    direct_thread_id: str = Field(..., description="Direct thread ID")

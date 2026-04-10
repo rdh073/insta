@@ -4,8 +4,9 @@ import { BarChart2, ChevronDown, ChevronRight, Loader } from 'lucide-react';
 import { insightsApi } from '../api/instagram/insights';
 import type { InsightPostType, InsightTimeFrame, InsightOrdering } from '../api/instagram/insights';
 import { AccountPicker, useAccountPicker } from '../components/instagram/AccountPicker';
-import type { MediaInsightSummary, MediaInsightListResult } from '../types/instagram/insight';
+import type { MediaInsightSummary } from '../types/instagram/insight';
 import { Button } from '../components/ui/Button';
+import { useInsightsStore } from '../store/insights';
 import { cn } from '../lib/cn';
 
 const POST_TYPES: InsightPostType[] = ['ALL', 'PHOTO', 'VIDEO', 'CAROUSEL'];
@@ -48,12 +49,12 @@ function InsightRow({ insight }: { insight: MediaInsightSummary }) {
         <span className="font-mono text-xs text-[#4a5578]">{insight.mediaPk}</span>
         <div className="flex flex-1 flex-wrap gap-x-6 gap-y-1">
           {[
-            { label: 'Reach', value: insight.reachCount, tone: 'text-[#7dcfff]' },
+            { label: 'Reach',       value: insight.reachCount,      tone: 'text-[#7dcfff]' },
             { label: 'Impressions', value: insight.impressionCount, tone: 'text-[#7aa2f7]' },
-            { label: 'Likes', value: insight.likeCount, tone: 'text-[#f7768e]' },
-            { label: 'Comments', value: insight.commentCount, tone: 'text-[#bb9af7]' },
-            { label: 'Shares', value: insight.shareCount, tone: 'text-[#9ece6a]' },
-            { label: 'Saves', value: insight.saveCount, tone: 'text-[#e0af68]' },
+            { label: 'Likes',       value: insight.likeCount,       tone: 'text-[#f7768e]' },
+            { label: 'Comments',    value: insight.commentCount,    tone: 'text-[#bb9af7]' },
+            { label: 'Shares',      value: insight.shareCount,      tone: 'text-[#9ece6a]' },
+            { label: 'Saves',       value: insight.saveCount,       tone: 'text-[#e0af68]' },
           ].map(({ label, value, tone }) => (
             <span key={label} className="flex items-center gap-1 text-[11px]">
               <span className="text-[#4a5578]">{label}</span>
@@ -92,10 +93,17 @@ function sumMetric(items: MediaInsightSummary[], key: keyof MediaInsightSummary)
 
 export function InsightsPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const [postType, setPostType] = useState<InsightPostType>('ALL');
-  const [timeFrame, setTimeFrame] = useState<InsightTimeFrame>('TWO_YEARS');
-  const [ordering, setOrdering] = useState<InsightOrdering>('REACH_COUNT');
-  const [result, setResult] = useState<MediaInsightListResult | null>(null);
+
+  const postType  = useInsightsStore((s) => s.postType);
+  const timeFrame = useInsightsStore((s) => s.timeFrame);
+  const ordering  = useInsightsStore((s) => s.ordering);
+  const result    = useInsightsStore((s) => s.result);
+
+  const setPostType  = useInsightsStore((s) => s.setPostType);
+  const setTimeFrame = useInsightsStore((s) => s.setTimeFrame);
+  const setOrdering  = useInsightsStore((s) => s.setOrdering);
+  const setResult    = useInsightsStore((s) => s.setResult);
+
   const [loading, setLoading] = useState(false);
 
   async function handleLoad() {

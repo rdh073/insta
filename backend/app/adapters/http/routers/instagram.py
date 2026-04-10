@@ -42,6 +42,7 @@ from app.adapters.http.schemas.instagram import (
     DirectSendThreadEnvelope,
     DirectSendUsersEnvelope,
     DirectDeleteMessageEnvelope,
+    DirectThreadActionEnvelope,
 )
 from app.adapters.http.utils import format_error
 from app.application.dto.instagram_story_dto import StoryPublishRequest
@@ -1381,6 +1382,50 @@ def delete_direct_message(
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=format_error(exc, "Delete DM failed")
+        )
+
+
+@router.post("/direct/approve-pending")
+def approve_pending_direct_thread(
+    body: DirectThreadActionEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Approve a pending DM request, moving it to the main inbox."""
+    try:
+        receipt = usecases.approve_pending_thread(
+            account_id=body.account_id,
+            direct_thread_id=body.direct_thread_id,
+        )
+        return _to_direct_receipt(receipt)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Approve pending thread failed")
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Approve pending thread failed")
+        )
+
+
+@router.post("/direct/mark-seen")
+def mark_direct_thread_seen(
+    body: DirectThreadActionEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Mark the most recent message in a thread as seen."""
+    try:
+        receipt = usecases.mark_thread_seen(
+            account_id=body.account_id,
+            direct_thread_id=body.direct_thread_id,
+        )
+        return _to_direct_receipt(receipt)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Mark thread seen failed")
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Mark thread seen failed")
         )
 
 

@@ -69,6 +69,9 @@ class StateGateway:
     def set_job(self, job_id: str, job: dict) -> None:
         state_module.set_job(job_id, job)
 
+    def delete_job(self, job_id: str) -> bool:
+        return state_module.delete_job(job_id)
+
     def iter_jobs_values(self):
         return state_module.iter_jobs_values()
 

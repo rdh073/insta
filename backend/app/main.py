@@ -39,6 +39,36 @@ def _resolve_oauth_state_secret() -> str:
     )
 
 
+async def _restore_pending_jobs(job_repo, scheduler) -> None:
+    """Re-queue pending/scheduled jobs from persistent storage on startup.
+
+    Required for SQL backends (sqlite/postgres) where the in-memory job store
+    (state._jobs) is empty after a restart even though the DB still holds the
+    job records.  Calling job_repo.set() for each job triggers the dual-write
+    that repopulates state._jobs so PostJobExecutor can find the job by ID.
+    """
+    try:
+        jobs = job_repo.list_all()
+    except Exception as exc:
+        logger.warning("job_restore.list_failed reason=%s", exc)
+        return
+
+    pending = [j for j in jobs if j.status in ("pending", "scheduled")]
+    if not pending:
+        return
+
+    logger.info("job_restore.start count=%d", len(pending))
+    for job in pending:
+        try:
+            # Dual-write back to in-memory state so PostJobExecutor can find it.
+            job_repo.set(job.id, job)
+            # Re-enqueue on the scheduler (respects scheduled_at delay).
+            scheduler.enqueue(job.id, job.scheduled_at)
+            logger.info("job_restore.queued job_id=%s status=%s", job.id, job.status)
+        except Exception as exc:
+            logger.warning("job_restore.skip job_id=%s reason=%s", job.id, exc)
+
+
 async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None) -> None:
     """Background task: relogin all persisted accounts on startup.
 
@@ -87,6 +117,14 @@ def create_app() -> FastAPI:
         job_queue = services["scheduler"]
         if hasattr(job_queue, "start"):
             job_queue.start()
+
+        # Restore pending jobs from persistent storage (no-op for memory backend).
+        asyncio.ensure_future(
+            _restore_pending_jobs(
+                job_repo=services["_job_repo"],
+                scheduler=job_queue,
+            )
+        )
 
         # Wire event buses to the running event loop for SSE push.
         from app.adapters.scheduler.event_bus import post_job_event_bus

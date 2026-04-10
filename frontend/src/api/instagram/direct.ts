@@ -77,4 +77,20 @@ export const directApi = {
         dry_run: dryRun,
       })
       .then((r) => r.data),
+
+  approvePending: (accountId: string, threadId: string) =>
+    api
+      .post<DirectActionReceipt>('/instagram/direct/approve-pending', {
+        account_id: accountId,
+        direct_thread_id: threadId,
+      })
+      .then((r) => r.data),
+
+  markSeen: (accountId: string, threadId: string) =>
+    api
+      .post<DirectActionReceipt>('/instagram/direct/mark-seen', {
+        account_id: accountId,
+        direct_thread_id: threadId,
+      })
+      .then((r) => r.data),
 };

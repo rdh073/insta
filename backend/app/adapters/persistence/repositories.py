@@ -104,6 +104,9 @@ class InMemoryJobRepository:
         else:
             self.gateway.set_job(job_id, JobRecord.from_dict(job).to_dict())
 
+    def delete(self, job_id: str) -> bool:
+        return self.gateway.delete_job(job_id)
+
     def list_all(self) -> list[JobRecord]:
         return [JobRecord.from_dict(job) for job in self.gateway.iter_jobs_values()]
 

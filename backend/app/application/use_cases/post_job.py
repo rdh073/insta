@@ -309,6 +309,18 @@ class PostJobUseCases:
                 message=message,
             )
 
+    def delete_job(self, job_id: str) -> None:
+        """Delete a job.  Raises ValueError if not found or still active."""
+        job_record = self.job_repo.get(job_id)
+        if job_record is None:
+            raise ValueError(f"Job {job_id!r} not found")
+        active = {"pending", "scheduled", "running", "paused"}
+        if job_record.status in active:
+            raise ValueError(
+                f"Cannot delete job with status '{job_record.status}'. Stop it first."
+            )
+        self.job_repo.delete(job_id)
+
     def list_posts(self) -> list[PostJobDTO]:
         """List all posts (jobs)."""
         jobs = [self._job_record(job) for job in self.job_repo.list_all()]

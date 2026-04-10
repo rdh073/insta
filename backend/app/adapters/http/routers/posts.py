@@ -113,6 +113,17 @@ def _get_job_or_404(job_id: str, control) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
 
+@router.delete("/{job_id}")
+def delete_post_job(job_id: str, usecases=Depends(get_postjob_usecases)):
+    """Delete a completed/failed/stopped job from the list."""
+    try:
+        usecases.delete_job(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    post_job_event_bus.notify("job_deleted")
+    return {"deleted": job_id}
+
+
 @router.post("/{job_id}/stop")
 def stop_post_job(job_id: str, control=Depends(get_post_job_control)):
     """Stop a running or paused job after the current account finishes."""

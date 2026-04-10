@@ -226,3 +226,43 @@ class InstagramDirectWriter(Protocol):
             Exception: If deletion fails.
         """
         ...
+
+    def approve_pending_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """
+        Approve a pending DM request so it moves to the main inbox.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The pending thread ID to approve.
+
+        Returns:
+            DirectActionReceipt with result.
+
+        Raises:
+            Exception: If approval fails.
+        """
+        ...
+
+    def mark_thread_seen(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """
+        Mark the most recent message in a thread as seen.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The thread ID to mark as seen.
+
+        Returns:
+            DirectActionReceipt with result.
+
+        Raises:
+            Exception: If the operation fails.
+        """
+        ...

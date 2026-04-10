@@ -477,8 +477,31 @@ def create_services():
 
     # ── 3. Job scheduling ─────────────────────────────────────────────────
     post_job_control = PostJobControlAdapter()
+
+    def _run_and_sync_job(job_id: str) -> None:
+        """Run the job then sync final state from in-memory store back to the DB.
+
+        PostJobExecutor writes status/results directly to state._jobs (ThreadSafeJobStore)
+        for speed, but never calls job_repo.set(). On SQL backends this means execution
+        results are lost on restart. This wrapper does the sync after every job finishes
+        (success, failure, or exception) — a no-op for the memory backend.
+        """
+        import logging
+        import state as _state
+        from app.application.ports.persistence_models import JobRecord as _JobRecord
+
+        _sync_logger = logging.getLogger("instamanager.bootstrap")
+        try:
+            instagram.run_post_job(job_id)
+        finally:
+            try:
+                job_dict = _state.get_job(job_id)
+                job_repo.set(job_id, _JobRecord.from_dict(job_dict))
+            except Exception as exc:
+                _sync_logger.warning("job_sync.failed job_id=%s reason=%s", job_id, exc)
+
     scheduler = PostJobQueue(
-        run_fn=instagram.run_post_job,
+        run_fn=_run_and_sync_job,
         mark_scheduled_fn=lambda jid: post_job_control.set_job_status(jid, "scheduled"),
     )
 
@@ -562,6 +585,7 @@ def create_services():
         "post_job_control": post_job_control,
         "oauth_token_store": oauth_token_store,
         "_account_repo": account_repo,
+        "_job_repo": job_repo,
         "_relogin_fn": acct["auth"].relogin_account,
         "ai_gateway": ai["ai_gateway"],
         "tool_registry": ai["tool_registry"],

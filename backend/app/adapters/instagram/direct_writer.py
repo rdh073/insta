@@ -94,8 +94,8 @@ class InstagramDirectWriterAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to send to thread
-            message = client.direct_answer(direct_thread_id, text)
+            # instagrapi expects int thread ID
+            message = client.direct_answer(int(direct_thread_id), text)
 
             # Map to DTO
             return InstagramDirectReaderAdapter._map_message_to_summary(
@@ -170,8 +170,8 @@ class InstagramDirectWriterAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to delete message
-            client.direct_message_delete(direct_thread_id, direct_message_id)
+            # instagrapi expects int IDs for both thread and message
+            client.direct_message_delete(int(direct_thread_id), int(direct_message_id))
 
             return DirectActionReceipt(
                 action_id=direct_message_id,
@@ -185,6 +185,60 @@ class InstagramDirectWriterAdapter:
             )
             return DirectActionReceipt(
                 action_id=direct_message_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def approve_pending_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Approve a pending DM request, moving it to the main inbox."""
+        client = self.client_repo.get(account_id)
+        if not client:
+            raise ValueError(f"Account {account_id} not found or not authenticated")
+
+        try:
+            client.direct_pending_approve(int(direct_thread_id))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Pending thread approved",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="approve_pending_thread", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def mark_thread_seen(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mark the most recent message in a thread as seen."""
+        client = self.client_repo.get(account_id)
+        if not client:
+            raise ValueError(f"Account {account_id} not found or not authenticated")
+
+        try:
+            client.direct_send_seen(int(direct_thread_id))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Thread marked as seen",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="mark_thread_seen", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
                 success=False,
                 reason=failure.user_message,
             )
