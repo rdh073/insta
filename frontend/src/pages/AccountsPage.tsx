@@ -1348,7 +1348,16 @@ export function AccountsPage() {
                       onClick={() => {
                         const next = activeId === account.id ? null : account.id;
                         setActive(next);
-                        if (next) accountsApi.refreshCounts(next).catch(() => {});
+                        // Only refresh counts if not verified within the last 10 minutes —
+                        // avoids hammering user_info() on every account click.
+                        if (next) {
+                          const acc = filteredAccounts.find((a) => a.id === next);
+                          const verifiedMs = acc?.lastVerifiedAt ? new Date(acc.lastVerifiedAt).getTime() : 0;
+                          const staleSec = (Date.now() - verifiedMs) / 1000;
+                          if (staleSec > 600) {
+                            accountsApi.refreshCounts(next).catch(() => {});
+                          }
+                        }
                       }}
                       onRelogin={() => void handleQuickRelogin(account)}
                       relogging={reloggingIds.has(account.id)}

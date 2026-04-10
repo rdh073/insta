@@ -90,7 +90,13 @@ export function AppLayout() {
 
         // Fire-and-forget: hydrate follower/following counts for all active accounts.
         // Results arrive via SSE account_updated events — no need to await.
-        accountsApi.bulkHydrateProfiles().catch(() => {/* best-effort */});
+        // Guard: only call once per session tab to avoid hammering Instagram on
+        // rapid reconnects or navigation (server also enforces a 5-min cooldown).
+        const SESSION_KEY = 'insta_bulk_hydrated';
+        if (!sessionStorage.getItem(SESSION_KEY)) {
+          sessionStorage.setItem(SESSION_KEY, Date.now().toString());
+          accountsApi.bulkHydrateProfiles().catch(() => {/* best-effort */});
+        }
       }
 
       setSyncing(false);

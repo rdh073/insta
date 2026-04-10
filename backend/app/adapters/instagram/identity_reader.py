@@ -93,8 +93,18 @@ class InstagramIdentityReaderAdapter:
         needs. Avoids the separate account_info() call entirely.
 
         Returns a dict with the available fields, or None if the client is
-        missing or the call fails.
+        missing or the call fails.  Skips the call entirely when the account
+        is already in a rate-limit cooldown window and translates any vendor
+        exception through the catalog so that new rate-limit events are
+        registered in the guard for future cycles.
         """
+        # Short-circuit if already known to be rate-limited — avoids burning
+        # more API quota and compounding the 401 storm.
+        try:
+            check_rate_limit(account_id)
+        except InstagramRateLimitError:
+            return None
+
         client = self.client_repo.get(account_id)
         if not client:
             return None
@@ -110,7 +120,14 @@ class InstagramIdentityReaderAdapter:
             if user.following_count is not None:
                 result["following_count"] = user.following_count
             return result or None
-        except Exception:
+        except Exception as exc:
+            # Translate through the catalog so PleaseWaitFewMinutes / RateLimitError
+            # sets the rate-limit guard — preventing blind retries next cycle.
+            translate_instagram_error(
+                exc,
+                operation="get_profile_for_hydration",
+                account_id=account_id,
+            )
             return None
 
     def get_public_user_by_id(self, account_id: str, user_id: int) -> PublicUserProfile:

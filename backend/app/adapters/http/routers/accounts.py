@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
+
+# Server-side cooldown for bulk profile hydration — prevents the frontend from
+# accidentally triggering a burst of user_info() calls on every reconnect.
+_BULK_HYDRATE_COOLDOWN_SEC = 300  # 5 minutes
+_last_bulk_hydrate_ts: float = 0.0
 
 from app.adapters.http.event_bus import account_event_bus
 from pydantic import BaseModel
@@ -66,16 +72,29 @@ def _refresh_counts_and_publish(usecases, account_id: str) -> None:
         account_event_bus.publish("account_updated", result)
 
 
-def _bulk_hydrate_sequential(usecases, account_ids: list, delay: float = 1.5) -> None:
+def _bulk_hydrate_sequential(usecases, account_ids: list, delay: float = 3.0) -> None:
     """Refresh follower/following counts one-by-one with delay between calls.
 
     Uses user_info() (not account_info) — session is already validated at
     login time. Sequential + delay avoids Instagram rate-limiting from
     concurrent requests on the same IP.
+
+    Skips accounts that are currently in a rate-limit cooldown window so the
+    bulk job does not hammer Instagram while an account is already blocked.
+    Delay increased to 3 s (from 1.5 s) to be conservative.
     """
     import time
+    from app.adapters.instagram.rate_limit_guard import rate_limit_guard
+
     for i, account_id in enumerate(account_ids):
-        _refresh_counts_and_publish(usecases, account_id)
+        limited, retry_after = rate_limit_guard.is_limited(account_id)
+        if limited:
+            import logging
+            logging.getLogger(__name__).debug(
+                "bulk_hydrate: skipping %s — rate-limited for %.0fs", account_id, retry_after
+            )
+        else:
+            _refresh_counts_and_publish(usecases, account_id)
         if i < len(account_ids) - 1:
             time.sleep(delay)
 
@@ -510,10 +529,20 @@ async def bulk_hydrate_profiles(
     Schedules background tasks that fetch follower/following counts from
     Instagram and publish account_updated SSE events. Returns immediately.
     Used on app startup to populate profile data for pre-existing accounts.
+
+    Protected by a server-side 5-minute cooldown to prevent the frontend from
+    triggering a burst of user_info() calls on rapid reconnects or page reloads.
     """
+    global _last_bulk_hydrate_ts
+    now = time.time()
+    remaining = _BULK_HYDRATE_COOLDOWN_SEC - (now - _last_bulk_hydrate_ts)
+    if remaining > 0:
+        return {"queued": 0, "cooldown_remaining": int(remaining)}
+
     accounts = profile_usecases.list_accounts()
     active_ids = [acc.id for acc in accounts if acc.status == "active"]
     if active_ids:
+        _last_bulk_hydrate_ts = now
         background_tasks.add_task(_bulk_hydrate_sequential, usecases, active_ids)
     return {"queued": len(active_ids)}
 
