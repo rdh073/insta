@@ -116,6 +116,7 @@ def create_app() -> FastAPI:
             app.state.persistence_backend,
             len(settings.cors_origins),
         )
+        print("[LIFESPAN] logger.info fired OK", file=sys.stderr, flush=True)
         from app.adapters.http.routers.accounts import _hydrate_and_publish
         account_auth = services["account_auth"]
 
