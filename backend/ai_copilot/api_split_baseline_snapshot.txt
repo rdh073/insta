@@ -1,0 +1,80 @@
+Step 0 baseline snapshot (captured on 2026-04-11)
+
+Note: `python` alias is unavailable in this environment, so equivalent `python3` commands were used.
+
+1) Route surface
+Command:
+cd backend && python3 -c 'from ai_copilot.api import router; print(len(router.routes)); [print(r.path, sorted(r.methods)) for r in router.routes]'
+
+Output:
+13
+/api/ai/providers/models ['POST']
+/api/ai/graph-chat ['POST']
+/api/ai/chat/graph ['POST']
+/api/ai/graph-chat/resume ['POST']
+/api/ai/chat/graph/resume ['POST']
+/api/ai/campaign-monitor/run ['POST']
+/api/ai/campaign-monitor/resume ['POST']
+/api/ai/risk-control/run ['POST']
+/api/ai/risk-control/resume ['POST']
+/api/ai/account-recovery/run ['POST']
+/api/ai/account-recovery/resume ['POST']
+/api/ai/content-pipeline/run ['POST']
+/api/ai/content-pipeline/resume ['POST']
+
+2) ai_copilot.api public names
+Command:
+cd backend && python3 -c 'from ai_copilot import api; print(sorted([s for s in dir(api) if not s.startswith("_")]))'
+
+Output:
+['APIRouter', 'AccountRecoveryResumeRequest', 'AccountRecoveryRunRequest', 'BaseModel', 'CampaignMonitorResumeRequest', 'CampaignMonitorRunRequest', 'ContentPipelineResumeRequest', 'ContentPipelineRunRequest', 'Depends', 'Field', 'GraphChatRequest', 'GraphResumeRequest', 'HTTPException', 'LLMFailure', 'LLMFailureFamily', 'Literal', 'ProviderModelsRequest', 'RiskControlResumeRequest', 'RiskControlRunRequest', 'StreamingResponse', 'account_recovery_resume', 'account_recovery_run', 'annotations', 'asyncio', 'campaign_monitor_resume', 'campaign_monitor_run', 'content_pipeline_resume', 'content_pipeline_run', 'get_account_recovery_usecase', 'get_campaign_monitor_usecase', 'get_content_pipeline_usecase', 'get_operator_copilot_usecase', 'get_provider_spec', 'get_risk_control_usecase', 'is_operator_copilot_enabled', 'json', 'list_provider_models', 'operator_copilot_resume', 'operator_copilot_run', 'os', 'risk_control_resume', 'risk_control_run', 'router']
+
+3) Consumer import surface
+Command:
+rg "from ai_copilot\\.api import" -n
+
+Output:
+tests/test_ai_copilot_endpoint.py:20:        from ai_copilot.api import router
+tests/test_ai_copilot_endpoint.py:29:    from ai_copilot.api import router
+tests/test_ai_copilot_endpoint.py:38:    from ai_copilot.api import router
+tests/test_ai_copilot_endpoint.py:51:    from ai_copilot.api import get_operator_copilot_usecase
+tests/test_ai_copilot_endpoint.py:77:        from ai_copilot.api import router
+tests/test_ai_copilot_endpoint.py:97:    from ai_copilot.api import operator_copilot_run
+tests/test_ai_copilot_endpoint.py:113:    from ai_copilot.api import operator_copilot_run
+tests/test_ai_copilot_endpoint.py:133:    from ai_copilot.api import router as new_router
+tests/test_ai_copilot_endpoint.py:144:    from ai_copilot.api import get_operator_copilot_usecase, _copilot_lock
+tests/test_ai_tools.py:49:    from ai_copilot.api import router
+tests/test_ai_graph_http_integration.py:49:    from ai_copilot.api import get_operator_copilot_usecase
+tests/test_ai_graph_http_integration.py:80:    from ai_copilot.api import get_operator_copilot_usecase
+backend/tests/test_phase6_provider_api_contract.py:12:from ai_copilot.api import get_operator_copilot_usecase
+backend/tests/test_phase_c_graph_purge.py:10:from ai_copilot.api import get_operator_copilot_usecase
+backend/tests/test_phase_c_graph_purge.py:84:        from ai_copilot.api import get_operator_copilot_usecase
+backend/tests/test_phase_a_route_consolidation.py:51:        from ai_copilot.api import router as copilot_router
+backend/tests/test_phase_a_route_consolidation.py:91:        from ai_copilot.api import router as copilot_router
+backend/app/main.py:270:    from ai_copilot.api import router as ai_copilot_router
+
+4) Test collection snapshot
+Command:
+pytest tests/ -q --co 2>&1 | tail -20
+
+Output:
+___________________ ERROR collecting tests/test_services.py ____________________
+ImportError while importing test module '/home/xtrzy/.cline/worktrees/29149/instax/tests/test_services.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_services.py:6: in <module>
+    import instagram
+backend/instagram.py:37: in <module>
+    from state import (
+backend/state.py:14: in <module>
+    from instagrapi.exceptions import LoginRequired, BadPassword, ChallengeRequired, ReloginAttemptExceeded, TwoFactorRequired
+E   ImportError: cannot import name 'ChallengeRequired' from 'instagrapi.exceptions' (unknown location)
+=========================== short test summary info ============================
+ERROR tests/test_characterization/test_accounts.py
+ERROR tests/test_instagram.py
+ERROR tests/test_services.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+488 tests collected, 3 errors in 1.72s
