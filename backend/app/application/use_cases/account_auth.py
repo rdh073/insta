@@ -410,7 +410,11 @@ class AccountAuthUseCases:
                     totp_secret=account.get("totp_secret"),
                     mode=mode,
                 )
-                # Clear any stale error state from the previous force-logout.
+                # Mark active and clear any stale error state.
+                # status_repo must be updated explicitly — instagram.py's
+                # activate_account_client only writes the legacy in-memory
+                # state._account_statuses, not the SQL-backed status_repo.
+                self.status_repo.set(account_id, "active")
                 self.account_repo.update(
                     account_id, last_error=None, last_error_code=None
                 )
@@ -495,32 +499,16 @@ class AccountAuthUseCases:
             async with semaphore:
                 account = self.account_repo.get(account_id) or {}
                 username = account.get("username", account_id)
-                password = account.get("password", "")
-                if not password:
+                if not account.get("password"):
                     return AccountResponse(
                         id=account_id,
                         username=username,
                         status="error",
                         last_error=f"No stored password for @{username}. Login manually.",
                     )
-                mode = self._select_relogin_mode(account)
                 try:
-                    result = await asyncio.to_thread(
-                        self.instagram.relogin_account,
-                        account_id,
-                        username=username,
-                        password=password,
-                        proxy=account.get("proxy"),
-                        totp_secret=account.get("totp_secret"),
-                        mode=mode,
-                    )
-                    self.account_repo.update(
-                        account_id, last_error=None, last_error_code=None
-                    )
-                    return AccountResponse(
-                        id=result.get("id", account_id),
-                        username=result.get("username", ""),
-                        status=result.get("status", "active"),
+                    return await asyncio.to_thread(
+                        self.relogin_account, account_id
                     )
                 except Exception as exc:
                     failure = self.error_handler.handle(
@@ -529,23 +517,9 @@ class AccountAuthUseCases:
                         account_id=account_id,
                         username=username,
                     )
-                    # Use the same status-determination logic as single relogin.
-                    # Bulk relogin never leaves status unchanged — fall back to "error"
-                    # so the response always has an actionable status.
+                    # relogin_account already set status and logged,
+                    # but re-raise as a non-exception response for bulk.
                     error_status = self._relogin_failure_status(failure) or "error"
-                    self.status_repo.set(account_id, error_status)
-                    self.account_repo.update(
-                        account_id,
-                        last_error=failure.user_message,
-                        last_error_code=failure.code,
-                    )
-                    self.logger.log_event(
-                        account_id,
-                        username,
-                        "relogin_failed",
-                        detail=failure.user_message,
-                        status=error_status,
-                    )
                     return AccountResponse(
                         id=account_id,
                         username=username,
