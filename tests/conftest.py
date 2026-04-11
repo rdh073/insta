@@ -42,6 +42,9 @@ if "instagrapi" not in sys.modules:
     class TwoFactorRequired(Exception):
         pass
 
+    class ChallengeRequired(Exception):
+        pass
+
     # Minimal type stubs used in instagram adapters
     class _StubType:
         def __init__(self, *args, **kwargs):
@@ -60,6 +63,9 @@ if "instagrapi" not in sys.modules:
     exceptions.BadPassword = BadPassword
     exceptions.ReloginAttemptExceeded = ReloginAttemptExceeded
     exceptions.TwoFactorRequired = TwoFactorRequired
+    exceptions.ChallengeRequired = ChallengeRequired
+    instagrapi.exceptions = exceptions
+    instagrapi.types = ig_types
 
     sys.modules["instagrapi"] = instagrapi
     sys.modules["instagrapi.exceptions"] = exceptions

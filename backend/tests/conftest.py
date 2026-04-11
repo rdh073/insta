@@ -21,7 +21,9 @@ if _env_test.exists():
 
 if "instagrapi" not in sys.modules:
     instagrapi = types.ModuleType("instagrapi")
+    instagrapi.__path__ = []  # make it look like a package
     exceptions = types.ModuleType("instagrapi.exceptions")
+    ig_types = types.ModuleType("instagrapi.types")
 
     class Client:
         pass
@@ -38,14 +40,43 @@ if "instagrapi" not in sys.modules:
     class TwoFactorRequired(Exception):
         pass
 
+    class ChallengeRequired(Exception):
+        pass
+
+    # Minimal type stubs used in instagram adapters
+    for _name in (
+        "StoryHashtag",
+        "StoryLink",
+        "StoryMedia",
+        "StoryMention",
+        "StoryPoll",
+        "StorySticker",
+        "StoryLocation",
+        "UserShort",
+        "Usertag",
+        "Location",
+        "Media",
+        "User",
+        "Story",
+        "DirectThread",
+        "Track",
+        "Highlight",
+        "Account",
+    ):
+        setattr(ig_types, _name, type(_name, (), {}))
+
     instagrapi.Client = Client
     exceptions.LoginRequired = LoginRequired
     exceptions.BadPassword = BadPassword
     exceptions.ReloginAttemptExceeded = ReloginAttemptExceeded
     exceptions.TwoFactorRequired = TwoFactorRequired
+    exceptions.ChallengeRequired = ChallengeRequired
+    instagrapi.exceptions = exceptions
+    instagrapi.types = ig_types
 
     sys.modules["instagrapi"] = instagrapi
     sys.modules["instagrapi.exceptions"] = exceptions
+    sys.modules["instagrapi.types"] = ig_types
 
 if "pyotp" not in sys.modules:
     pyotp = types.ModuleType("pyotp")
