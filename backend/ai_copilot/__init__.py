@@ -12,7 +12,7 @@ Module structure:
   - llm_gateway.py: LLM interaction (wraps app's AIGateway)
   - tool_executor.py: Tool execution with read-only access control
   - checkpoint.py: State persistence
-- api.py: HTTP transport layer (FastAPI router)
+- api/: HTTP transport layer package (FastAPI router + endpoint modules)
 
 Dependency direction: api → use_cases → graphs → ports ← adapters
 
