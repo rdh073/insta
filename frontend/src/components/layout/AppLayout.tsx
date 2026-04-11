@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { Waves, Zap } from 'lucide-react';
+import { AlertTriangle, Waves, Zap } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { accountsApi } from '../../api/accounts';
 import { postsApi } from '../../api/posts';
@@ -37,7 +37,7 @@ const routeMeta: Array<{
 export function AppLayout() {
   const location = useLocation();
   const setAccounts = useAccountStore((state) => state.setAccounts);
-  useAccountEvents();
+  const { connectionLost } = useAccountEvents();
   const setJobs = usePostStore((state) => state.setJobs);
   const jobs = usePostStore((state) => state.jobs);
   const backendUrl = useSettingsStore((state) => state.backendUrl);
@@ -160,6 +160,25 @@ export function AppLayout() {
               </div>
             </div>
           </header>
+
+          {connectionLost && (
+            <div
+              role="alert"
+              className="shrink-0 flex items-center gap-2 border-b border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.08)] px-4 py-2 text-sm text-[#f7768e]"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Live connection lost — account updates may be stale.{' '}
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="cursor-pointer underline underline-offset-2 hover:text-[#ff9db0]"
+                >
+                  Reload
+                </button>
+              </span>
+            </div>
+          )}
 
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             <Outlet />

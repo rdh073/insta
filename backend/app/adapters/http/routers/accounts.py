@@ -41,7 +41,7 @@ from app.application.dto.account_dto import LoginRequest as DTOLoginRequest
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
-def _hydrate_and_publish(usecases, account_id: str) -> None:
+def _hydrate_and_publish(usecases: "AccountAuthUseCases", account_id: str) -> None:
     """Fetch full profile (name, pic, followers, following) and push SSE events.
 
     Makes two sequential Instagram API calls:
@@ -60,9 +60,14 @@ def _hydrate_and_publish(usecases, account_id: str) -> None:
         account_event_bus.publish("account_updated", result)
         if pic_url := result.get("profile_pic_url"):
             warm_image_cache(pic_url)
-    # On failure (result is None), hydrate_account_profile already sets status="error"
-    # in the DB for hard session failures (login_required etc.).  The frontend will
-    # reflect the change on next GET /api/accounts or verify call — no SSE needed here.
+    elif not usecases.client_repo.exists(account_id):
+        # Hard session failure: hydrate_account_profile evicted the client and
+        # set status="error" in the DB (login_required / logout_reason:8 etc.).
+        # Push an SSE event immediately so the frontend reflects reality —
+        # without this, the frontend shows "active" (from the relogin HTTP
+        # response patch) until the user manually refreshes or clicks Sync.
+        account_event_bus.publish("account_updated", {"id": account_id, "status": "error"})
+        return  # No point fetching follower counts if the session is dead.
 
     counts = usecases.refresh_follower_counts(account_id)
     if counts:
@@ -87,14 +92,13 @@ def _bulk_hydrate_sequential(usecases, account_ids: list, delay: float = 3.0) ->
     bulk job does not hammer Instagram while an account is already blocked.
     Delay increased to 3 s (from 1.5 s) to be conservative.
     """
-    import time
     from app.adapters.instagram.rate_limit_guard import rate_limit_guard
+    _log = __import__("logging").getLogger(__name__)
 
     for i, account_id in enumerate(account_ids):
         limited, retry_after = rate_limit_guard.is_limited(account_id)
         if limited:
-            import logging
-            logging.getLogger(__name__).debug(
+            _log.debug(
                 "bulk_hydrate: skipping %s — rate-limited for %.0fs", account_id, retry_after
             )
         else:
@@ -591,7 +595,7 @@ async def verify_account(
         if result.full_name is not None:
             event_payload["full_name"] = result.full_name
         if result.avatar is not None:
-            event_payload["profile_pic_url"] = result.avatar
+            event_payload["avatar"] = result.avatar
         if len(event_payload) > 1:
             account_event_bus.publish("account_updated", event_payload)
         # Pre-warm avatar cache while the fresh CDN URL is still valid

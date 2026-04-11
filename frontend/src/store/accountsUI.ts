@@ -1,22 +1,17 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 interface AccountsUIStore {
-  // Persisted
   searchQuery: string;
-
-  // Actions
   setSearchQuery: (v: string) => void;
 }
 
-export const useAccountsUIStore = create<AccountsUIStore>()(
-  persist(
-    (set) => ({
-      searchQuery: '',
-      setSearchQuery: (searchQuery) => set({ searchQuery }),
-    }),
-    {
-      name: 'insta-accounts-ui',
-    },
-  ),
-);
+/**
+ * Ephemeral UI state for the accounts page.
+ *
+ * NOT persisted — search queries are transient and should not survive
+ * page reloads or browser restarts.
+ */
+export const useAccountsUIStore = create<AccountsUIStore>()((set) => ({
+  searchQuery: '',
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+}));

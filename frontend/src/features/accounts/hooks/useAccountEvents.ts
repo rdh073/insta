@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resolveApiBaseUrl } from '../../../lib/api-base';
 import { useSettingsStore } from '../../../store/settings';
 import { useAccountStore } from '../../../store/accounts';
@@ -12,9 +12,12 @@ interface AccountUpdatedEvent {
   error?: string;
   full_name?: string;
   profile_pic_url?: string;
+  avatar?: string;
   followers?: number;
   following?: number;
 }
+
+const MAX_RETRIES = 10;
 
 /**
  * Subscribes to the backend SSE stream at GET /api/accounts/events and
@@ -23,18 +26,24 @@ interface AccountUpdatedEvent {
  *
  * Mount this hook once at the accounts page level — it opens a single
  * EventSource for the lifetime of the component.
+ *
+ * Reconnects with exponential backoff up to {@link MAX_RETRIES} times.
+ * After exhausting retries, stops reconnecting and sets `connectionLost`
+ * so the caller can display a banner.
  */
-export function useAccountEvents(): void {
+export function useAccountEvents(): { connectionLost: boolean } {
   const backendUrl = useSettingsStore((s) => s.backendUrl);
   const backendApiKey = useSettingsStore((s) => s.backendApiKey);
   const patchAccount = useAccountStore((s) => s.patchAccount);
   const esRef = useRef<EventSource | null>(null);
   const mountedRef = useRef(true);
   const retryRef = useRef(0);
+  const [connectionLost, setConnectionLost] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
     retryRef.current = 0;
+    setConnectionLost(false);
     const apiBase = resolveApiBaseUrl(backendUrl);
 
     function connect() {
@@ -49,6 +58,7 @@ export function useAccountEvents(): void {
 
         es.onmessage = (evt) => {
           retryRef.current = 0; // reset backoff on successful message
+          setConnectionLost(false);
           try {
             const data = JSON.parse(evt.data) as AccountUpdatedEvent;
             if (data.type === 'account_updated' && data.id) {
@@ -58,33 +68,36 @@ export function useAccountEvents(): void {
               if (data.followers !== undefined) patch.followers = data.followers;
               if (data.following !== undefined) patch.following = data.following;
               if (data.full_name !== undefined) patch.fullName = data.full_name;
-              if (data.profile_pic_url !== undefined) patch.avatar = data.profile_pic_url;
+              // Accept both keys for backward compatibility during deployments
+              const avatarUrl = data.avatar ?? data.profile_pic_url;
+              if (avatarUrl !== undefined) patch.avatar = avatarUrl;
               patchAccount(data.id, patch);
             }
           } catch {
-            // malformed event — ignore
+            // malformed event — ignore silently
           }
         };
 
         es.onerror = () => {
-          // Close and reconnect with a fresh token (handles both transient
-          // network drops and expired tokens after the 5-minute TTL).
           es.close();
-          if (!mountedRef.current) return;
-          const delay = Math.min(1000 * 2 ** retryRef.current, 30_000);
-          retryRef.current += 1;
-          setTimeout(() => {
-            if (mountedRef.current) connect();
-          }, delay);
+          scheduleReconnect();
         };
       }).catch(() => {
-        if (!mountedRef.current) return;
-        const delay = Math.min(1000 * 2 ** retryRef.current, 30_000);
-        retryRef.current += 1;
-        setTimeout(() => {
-          if (mountedRef.current) connect();
-        }, delay);
+        scheduleReconnect();
       });
+    }
+
+    function scheduleReconnect() {
+      if (!mountedRef.current) return;
+      if (retryRef.current >= MAX_RETRIES) {
+        setConnectionLost(true);
+        return;
+      }
+      const delay = Math.min(1000 * 2 ** retryRef.current, 30_000);
+      retryRef.current += 1;
+      setTimeout(() => {
+        if (mountedRef.current) connect();
+      }, delay);
     }
 
     connect();
@@ -95,4 +108,6 @@ export function useAccountEvents(): void {
       esRef.current = null;
     };
   }, [backendUrl, backendApiKey, patchAccount]);
+
+  return { connectionLost };
 }

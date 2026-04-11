@@ -18,7 +18,7 @@ import { postsApi } from '../api/posts';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
-import { usePostJobStream } from '../hooks/usePostJobStream';
+import { usePostJobStream } from '../features/posts/hooks/usePostJobStream';
 import { usePostStore } from '../store/posts';
 import type { PostJob } from '../types';
 
