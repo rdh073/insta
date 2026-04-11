@@ -5,6 +5,25 @@
   --font-sans: 'Fira Sans', sans-serif;
   --font-display: 'Fira Code', monospace;
   --font-mono: 'Fira Code', monospace;
+
+  /* ── Tokyo Night palette ── */
+  --color-tokyo-bg: #090b16;
+  --color-tokyo-bg-elevated: rgba(20, 26, 43, 0.76);
+  --color-tokyo-surface: rgba(24, 30, 50, 0.72);
+  --color-tokyo-surface-strong: rgba(18, 24, 39, 0.88);
+  --color-tokyo-surface-soft: rgba(39, 49, 78, 0.42);
+  --color-tokyo-border: rgba(162, 179, 229, 0.18);
+  --color-tokyo-border-strong: rgba(170, 189, 245, 0.28);
+  --color-tokyo-text: #c0caf5;
+  --color-tokyo-text-strong: #e6edff;
+  --color-tokyo-muted: #8b93b8;
+  --color-tokyo-subtle: #59658c;
+  --color-tokyo-blue: #7aa2f7;
+  --color-tokyo-cyan: #7dcfff;
+  --color-tokyo-violet: #bb9af7;
+  --color-tokyo-green: #9ece6a;
+  --color-tokyo-amber: #e0af68;
+  --color-tokyo-rose: #f7768e;
 }
 
 :root {

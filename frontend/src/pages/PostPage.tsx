@@ -8,7 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { Modal } from '../components/ui/Modal';
-import { usePostJobStream } from '../hooks/usePostJobStream';
+import { usePostJobStream } from '../features/posts/hooks/usePostJobStream';
 import { useAccountStore } from '../store/accounts';
 import { usePostStore } from '../store/posts';
 import { useTemplateStore } from '../store/templates';
