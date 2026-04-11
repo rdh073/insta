@@ -24,7 +24,7 @@ async def risk_control_run(
             account_id=request.account_id,
             thread_id=request.thread_id,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -47,7 +47,7 @@ async def risk_control_resume(
             override_policy=request.override_policy,
             notes=request.notes,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),

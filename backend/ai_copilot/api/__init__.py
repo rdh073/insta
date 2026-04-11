@@ -96,3 +96,7 @@ __all__ = [
     "risk_control_run",
     "router",
 ]
+
+# Preserve the pre-split public namespace shape from ai_copilot/api.py.
+for _internal_module_name in ("dependencies", "endpoints", "schemas"):
+    globals().pop(_internal_module_name, None)

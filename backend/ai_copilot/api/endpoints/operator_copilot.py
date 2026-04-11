@@ -140,7 +140,7 @@ async def operator_copilot_run(
             api_key=resolved_api_key,
             provider_base_url=resolved_base_url,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -199,7 +199,7 @@ async def operator_copilot_resume(
             approval_result=request.approval_result,
             edited_calls=request.edited_calls,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),

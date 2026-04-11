@@ -25,7 +25,7 @@ async def account_recovery_run(
             username=request.username,
             thread_id=request.thread_id,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -48,7 +48,7 @@ async def account_recovery_resume(
             two_fa_code=request.two_fa_code,
             proxy=request.proxy,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),

@@ -36,7 +36,7 @@ async def content_pipeline_run(
             scheduled_at=request.scheduled_at,
             max_revisions=request.max_revisions,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -59,7 +59,7 @@ async def content_pipeline_resume(
             edited_caption=request.edited_caption,
             reason=request.reason,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),

@@ -26,7 +26,7 @@ async def campaign_monitor_run(
             lookback_days=request.lookback_days,
             request_decision=request.request_decision,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -48,7 +48,7 @@ async def campaign_monitor_resume(
             decision=request.decision,
             parameters=request.parameters,
         ):
-            yield f"data: {json.dumps(event)}\\n\\n"
+            yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         generate(),
