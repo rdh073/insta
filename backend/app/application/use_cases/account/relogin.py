@@ -11,6 +11,12 @@ import asyncio
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
+from ...ports import ReloginMode
+from ..account_status_policy import (
+    should_use_fresh_credentials_relogin,
+    status_from_failure,
+)
+
 if TYPE_CHECKING:
     from ...dto.account_dto import AccountResponse, BulkReloginRequest
     from ...ports import (
@@ -41,6 +47,28 @@ class ReloginUseCases:
         self.error_handler = error_handler
         self.uow = uow
         self._account_locks: dict[str, asyncio.Lock] = {}
+
+    @staticmethod
+    def _select_relogin_mode(account: dict) -> ReloginMode:
+        """Choose relogin strategy from persisted account error metadata."""
+        if should_use_fresh_credentials_relogin(
+            last_error_code=account.get("last_error_code"),
+            last_error_family=account.get("last_error_family"),
+        ):
+            return ReloginMode.FRESH_CREDENTIALS
+        return ReloginMode.SESSION_RESTORE
+
+    def _relogin_context(self, account_id: str) -> tuple[dict, str, str, ReloginMode]:
+        """Load account metadata required by relogin and validate credentials."""
+        account = self.account_repo.get(account_id) or {}
+        username = account.get("username", account_id)
+        password = account.get("password", "")
+        if not password:
+            raise ValueError(
+                f"No stored password for @{username}. Login manually via the Accounts page."
+            )
+        mode = self._select_relogin_mode(account)
+        return account, username, password, mode
 
     def _get_account_lock(self, account_id: str) -> asyncio.Lock:
         """Get or create a per-account async lock to prevent concurrent mutations."""
@@ -109,33 +137,42 @@ class ReloginUseCases:
             Exception with _instagram_failure attribute on Instagram errors.
         """
         with self._uow_scope():
+            account, username, password, mode = self._relogin_context(account_id)
             # Mark as logging_in immediately so frontend sees status change
             self.status_repo.set(account_id, "logging_in")
 
             try:
-                result = self.instagram.relogin_account(account_id)
+                result = self.instagram.relogin_account(
+                    account_id,
+                    username=username,
+                    password=password,
+                    proxy=account.get("proxy"),
+                    totp_secret=account.get("totp_secret"),
+                    mode=mode,
+                )
+                self.status_repo.set(account_id, "active")
                 self._mark_verified(account_id)
                 return self._build_account_response(
                     account_id,
-                    status=result.get("status", "active"),
+                    status=result.get("status") or "active",
                 )
             except Exception as exc:
-                account = self.account_repo.get(account_id) or {}
-                username = account.get("username", account_id)
                 failure = self.error_handler.handle(
                     exc,
                     operation="relogin",
                     account_id=account_id,
                     username=username,
                 )
-                self.status_repo.set(account_id, "error")
+                new_status = status_from_failure(failure, keep_transient=True)
+                if new_status is not None:
+                    self.status_repo.set(account_id, new_status)
                 self._mark_error(account_id, failure.user_message, failure.code)
                 self.logger.log_event(
                     account_id,
                     username,
                     "relogin_failed",
                     detail=failure.user_message,
-                    status="error",
+                    status=new_status or account.get("status", "unknown"),
                 )
                 # Attach translated failure to the exception
                 exc._instagram_failure = failure  # type: ignore[attr-defined]
@@ -150,36 +187,59 @@ class ReloginUseCases:
         semaphore = asyncio.Semaphore(request.concurrency)
 
         async def _relogin_one(account_id: str) -> AccountResponse:
+            from ...dto.account_dto import AccountResponse
+
             lock = self._get_account_lock(account_id)
             async with semaphore, lock:
                 try:
-                    result = await asyncio.to_thread(self.instagram.relogin_account, account_id)
+                    account, username, password, mode = self._relogin_context(account_id)
+                except ValueError as exc:
+                    account = self.account_repo.get(account_id) or {}
+                    return AccountResponse(
+                        id=account_id,
+                        username=account.get("username", account_id),
+                        status="error",
+                        last_error=str(exc),
+                    )
+
+                self.status_repo.set(account_id, "logging_in")
+                try:
+                    result = await asyncio.to_thread(
+                        self.instagram.relogin_account,
+                        account_id,
+                        username=username,
+                        password=password,
+                        proxy=account.get("proxy"),
+                        totp_secret=account.get("totp_secret"),
+                        mode=mode,
+                    )
+                    self.status_repo.set(account_id, "active")
                     self._mark_verified(account_id)
                     return self._build_account_response(
                         account_id,
-                        status=result.get("status", "active"),
+                        status=result.get("status") or "active",
                     )
                 except Exception as exc:
-                    account = self.account_repo.get(account_id) or {}
-                    username = account.get("username", account_id)
                     failure = self.error_handler.handle(
                         exc,
                         operation="relogin",
                         account_id=account_id,
                         username=username,
                     )
-                    self.status_repo.set(account_id, "error")
+                    new_status = status_from_failure(failure, keep_transient=True)
+                    if new_status is not None:
+                        self.status_repo.set(account_id, new_status)
                     self._mark_error(account_id, failure.user_message, failure.code)
                     self.logger.log_event(
                         account_id,
                         username,
                         "relogin_failed",
                         detail=failure.user_message,
-                        status="error",
+                        status=new_status or account.get("status", "unknown"),
                     )
                     return self._build_account_response(
                         account_id,
-                        status="error",
+                        status=new_status or "error",
                     )
 
         # Deduplicate account_ids to prevent concurrent relogin on the same account
@@ -213,5 +273,3 @@ class ReloginUseCases:
                 username=normalized,
             )
             return {"success": False, "username": normalized, "error": failure.user_message}
-
-
