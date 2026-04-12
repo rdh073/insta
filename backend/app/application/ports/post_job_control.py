@@ -32,6 +32,10 @@ class PostJobControlPort(Protocol):
         """Release a paused job so it continues uploading."""
         ...
 
+    def clear_control(self, job_id: str) -> None:
+        """Clear stop/pause runtime flags for a fresh enqueue/retry cycle."""
+        ...
+
 
 class PostJobQueuePort(Protocol):
     """Enqueue a job for background execution."""

@@ -64,6 +64,25 @@ class PostJobExecutor:
     def run(self, job_id: str) -> None:
         """Execute all account uploads for *job_id* concurrently."""
         job = self._store.get(job_id)
+        status = str(job.get("status", "")).lower()
+
+        # Queue retries and stop requests can race. Respect explicit terminal
+        # "stopped" before entering a fresh run cycle, and consume stale
+        # control flags so future retries are not poisoned.
+        if status == "stopped":
+            self._store.clear_control(job_id)
+            self._notify_sse()
+            logger.info("Skipping stopped job before execution (job=%s)", job_id)
+            return
+
+        if status not in ("pending", "scheduled"):
+            logger.info(
+                "Skipping non-runnable job before execution (job=%s status=%s)",
+                job_id,
+                status,
+            )
+            return
+
         self._store.set_job_status(job_id, "running")
         self._notify_sse()
 
@@ -312,4 +331,3 @@ _executor = PostJobExecutor()
 def run_post_job(job_id: str) -> None:
     """Legacy entry point — delegates to PostJobExecutor."""
     _executor.run(job_id)
-

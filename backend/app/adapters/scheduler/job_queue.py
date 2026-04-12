@@ -106,6 +106,54 @@ class PostJobQueue:
 
     # ── worker ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _clear_stopped_control(job_id: str) -> None:
+        try:
+            from state import clear_job_control
+
+            clear_job_control(job_id)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _read_job_status(job_id: str) -> tuple[bool, str | None]:
+        """Return ``(state_available, status_or_none)`` for *job_id*."""
+        try:
+            from state import get_job
+        except Exception:
+            return False, None
+
+        try:
+            job = get_job(job_id)
+        except KeyError:
+            return True, None
+
+        raw = job.get("status")
+        if raw is None:
+            return True, ""
+        return True, str(raw).lower()
+
+    def _is_runnable_before_run(self, job_id: str) -> bool:
+        state_available, status = self._read_job_status(job_id)
+        if not state_available:
+            # Fallback for environments that do not expose state.py.
+            return True
+
+        if status is None:
+            logger.info("Skipping missing queued job %s", job_id)
+            return False
+
+        if status == "stopped":
+            self._clear_stopped_control(job_id)
+            logger.info("Skipping stopped queued job %s", job_id)
+            return False
+
+        if status not in ("pending", "scheduled"):
+            logger.info("Skipping queued job %s with non-runnable status=%s", job_id, status)
+            return False
+
+        return True
+
     def _worker_loop(self) -> None:
         while True:
             item = self._queue.get()
@@ -121,6 +169,9 @@ class PostJobQueue:
                 self._queue.task_done()
 
     def _handle(self, item: _JobItem) -> None:
+        if not self._is_runnable_before_run(item.job_id):
+            return
+
         # Optional delay for scheduled posts.
         if item.scheduled_at:
             try:
@@ -135,6 +186,9 @@ class PostJobQueue:
                     time.sleep(delay)
             except (ValueError, OverflowError):
                 pass  # bad timestamp — run immediately
+
+        if not self._is_runnable_before_run(item.job_id):
+            return
 
         logger.info("Executing job %s", item.job_id)
         self._run_fn(item.job_id)

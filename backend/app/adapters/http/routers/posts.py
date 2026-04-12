@@ -130,9 +130,12 @@ def retry_post_job(
     job_id: str,
     usecases=Depends(get_postjob_usecases),
     scheduler=Depends(get_scheduler),
+    control=Depends(get_post_job_control),
 ):
     """Reset a failed/stopped/partial job and re-enqueue it."""
     try:
+        # Retry is a new queue cycle; stale stop/pause flags must not leak.
+        control.clear_control(job_id)
         usecases.retry_job(job_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

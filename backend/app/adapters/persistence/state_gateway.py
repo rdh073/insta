@@ -89,6 +89,9 @@ class StateGateway:
     def request_job_resume(self, job_id: str) -> None:
         state_module.request_job_resume(job_id)
 
+    def clear_job_control(self, job_id: str) -> None:
+        state_module.clear_job_control(job_id)
+
     def log_event(
         self,
         account_id: str,

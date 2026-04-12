@@ -25,3 +25,6 @@ class PostJobControlAdapter:
 
     def request_resume(self, job_id: str) -> None:
         self._gw.request_job_resume(job_id)
+
+    def clear_control(self, job_id: str) -> None:
+        self._gw.clear_job_control(job_id)
