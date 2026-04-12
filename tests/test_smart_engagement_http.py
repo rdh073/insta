@@ -104,6 +104,41 @@ class _FakeSmartEngagementRec:
             "audit_trail": [],
         }
 
+    async def run_stream(self, **kwargs):
+        thread_id = ((kwargs.get("metadata") or {}).get("thread_id")) or "fake-thread-rec-stream"
+        stop_reason = "recommendation_only"
+        yield {"type": "run_start", "run_id": thread_id, "thread_id": thread_id}
+        yield {
+            "type": "node_update",
+            "node": "ingest_goal",
+            "data": {"step_count": 1},
+        }
+        yield {
+            "type": "final_response",
+            "thread_id": thread_id,
+            "stop_reason": stop_reason,
+            "text": "Recommendation complete.",
+            "result": {"thread_id": thread_id, "status": stop_reason},
+        }
+        yield {"type": "run_finish", "run_id": thread_id, "stop_reason": stop_reason}
+
+    async def resume_stream(self, thread_id: str, decision: dict):
+        stop_reason = "action_executed"
+        yield {"type": "run_start", "run_id": thread_id, "thread_id": thread_id, "resumed": True}
+        yield {
+            "type": "node_update",
+            "node": "execute_action",
+            "data": {"execution_result": {"success": True}},
+        }
+        yield {
+            "type": "final_response",
+            "thread_id": thread_id,
+            "stop_reason": stop_reason,
+            "text": "Action executed successfully.",
+            "result": {"thread_id": thread_id, "status": stop_reason, "decision": decision},
+        }
+        yield {"type": "run_finish", "run_id": thread_id, "stop_reason": stop_reason}
+
 
 class _FakeSmartEngagementExec:
     """Fake execute-mode use case."""
@@ -133,6 +168,42 @@ class _FakeSmartEngagementExec:
             "outcome_reason": "Action executed successfully",
             "audit_trail": [],
         }
+
+    async def run_stream(self, **kwargs):
+        thread_id = "fake-thread-exec"
+        yield {"type": "run_start", "run_id": thread_id, "thread_id": thread_id}
+        yield {
+            "type": "node_update",
+            "node": "request_approval",
+            "data": {"approval_attempted": True},
+        }
+        yield {
+            "type": "approval_required",
+            "thread_id": thread_id,
+            "payload": {
+                "approval_id": "apr_test",
+                "thread_id": thread_id,
+                "account_id": "acc_1",
+                "options": ["approve", "reject", "edit"],
+            },
+        }
+
+    async def resume_stream(self, thread_id: str, decision: dict):
+        stop_reason = "action_executed"
+        yield {"type": "run_start", "run_id": thread_id, "thread_id": thread_id, "resumed": True}
+        yield {
+            "type": "node_update",
+            "node": "execute_action",
+            "data": {"execution_result": {"success": True}},
+        }
+        yield {
+            "type": "final_response",
+            "thread_id": thread_id,
+            "stop_reason": stop_reason,
+            "text": "Action executed successfully.",
+            "result": {"thread_id": thread_id, "status": stop_reason, "decision": decision},
+        }
+        yield {"type": "run_finish", "run_id": thread_id, "stop_reason": stop_reason}
 
 
 class _FakeApprovalAdapter:
@@ -387,8 +458,11 @@ def test_recommend_stream_returns_sse_contract(client):
     types = [e["type"] for e in events]
 
     assert types[0] == "run_start"
+    assert "node_update" in types
     assert "final_response" in types
     assert types[-1] == "run_finish"
+    assert types.index("node_update") < types.index("final_response")
+    assert types.index("final_response") < types.index("run_finish")
 
 
 def test_recommend_stream_execute_mode_emits_approval_interrupt(exec_client):
@@ -401,7 +475,10 @@ def test_recommend_stream_execute_mode_emits_approval_interrupt(exec_client):
     types = [e["type"] for e in events]
 
     assert types[0] == "run_start"
+    assert "node_update" in types
     assert "approval_required" in types
+    assert types.index("node_update") < types.index("approval_required")
+    assert "final_response" not in types
     assert "run_finish" not in types
 
 
@@ -416,8 +493,10 @@ def test_resume_stream_returns_final_sse_events(exec_client):
     types = [e["type"] for e in events]
 
     assert types[0] == "run_start"
+    assert "node_update" in types
     assert "final_response" in types
     assert types[-1] == "run_finish"
+    assert types.index("node_update") < types.index("final_response")
 
 
 # ===========================================================================

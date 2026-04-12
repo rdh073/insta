@@ -83,6 +83,42 @@ class _FakeSmartGraph:
         return item
 
 
+class _FakeSmartStreamingGraph:
+    def __init__(
+        self,
+        *,
+        chunk_sequences: list[list[dict]],
+        state_values: list[dict] | None = None,
+    ):
+        self._chunk_sequences = list(chunk_sequences)
+        self._state_values = list(state_values or [])
+        self.astream_calls: list[dict] = []
+        self.aget_state_calls: list[dict] = []
+
+    async def astream(
+        self,
+        graph_input,
+        *,
+        config=None,
+        stream_mode=None,
+        version=None,
+    ):
+        self.astream_calls.append({
+            "graph_input": graph_input,
+            "config": config,
+            "stream_mode": stream_mode,
+            "version": version,
+        })
+        chunks = self._chunk_sequences.pop(0)
+        for chunk in chunks:
+            yield chunk
+
+    async def aget_state(self, config):
+        self.aget_state_calls.append({"config": config})
+        values = self._state_values.pop(0) if self._state_values else {}
+        return SimpleNamespace(values=values)
+
+
 class _LegacyInvokeOnlyGraph:
     def __init__(self, result):
         self.result = result
@@ -300,3 +336,109 @@ async def test_smart_engagement_resume_detects_legacy_invoke_interrupt():
     assert result["interrupted"] is True
     assert result["interrupt_payload"] == payload
     assert result["thread_id"] == "t-se-resume-legacy"
+
+
+@pytest.mark.asyncio
+async def test_smart_engagement_run_stream_orders_updates_then_terminal_events():
+    graph = _FakeSmartStreamingGraph(
+        chunk_sequences=[[
+            {"type": "updates", "ns": (), "data": {"ingest_goal": {"step_count": 1}}},
+            {"type": "updates", "ns": (), "data": {"log_outcome": {"stop_reason": "recommendation_only"}}},
+        ]],
+        state_values=[{
+            "mode": "recommendation",
+            "stop_reason": "recommendation_only",
+            "outcome_reason": "Recommendation complete.",
+            "audit_trail": [],
+        }],
+    )
+    use_case = _make_smart_use_case()
+    use_case.graph = graph
+
+    events = await _collect(
+        use_case.run_stream(
+            execution_mode="recommendation",
+            goal="follow relevant users",
+            metadata={"thread_id": "t-se-stream-final"},
+        ),
+    )
+
+    assert [event["type"] for event in events] == [
+        "run_start",
+        "node_update",
+        "node_update",
+        "final_response",
+        "run_finish",
+    ]
+    assert events[3]["stop_reason"] == "recommendation_only"
+    assert events[4]["stop_reason"] == "recommendation_only"
+    assert graph.astream_calls[0]["version"] == "v2"
+
+
+@pytest.mark.asyncio
+async def test_smart_engagement_run_stream_emits_approval_required_on_interrupt():
+    payload = {"approval_id": "apr_stream", "options": ["approve", "reject", "edit"]}
+    graph = _FakeSmartStreamingGraph(
+        chunk_sequences=[[
+            {
+                "type": "updates",
+                "ns": (),
+                "data": {
+                    "request_approval": {"approval_attempted": True},
+                    "__interrupt__": [SimpleNamespace(value=payload)],
+                },
+            },
+        ]],
+    )
+    use_case = _make_smart_use_case()
+    use_case.graph = graph
+
+    events = await _collect(
+        use_case.run_stream(
+            execution_mode="execute",
+            goal="follow relevant users",
+            metadata={"thread_id": "t-se-stream-interrupt"},
+        ),
+    )
+
+    assert [event["type"] for event in events] == [
+        "run_start",
+        "node_update",
+        "approval_required",
+    ]
+    assert events[2]["payload"] == payload
+    assert graph.aget_state_calls == []
+
+
+@pytest.mark.asyncio
+async def test_smart_engagement_resume_stream_orders_updates_then_terminal_events():
+    graph = _FakeSmartStreamingGraph(
+        chunk_sequences=[[
+            {"type": "updates", "ns": (), "data": {"execute_action": {"execution_result": {"success": True}}}},
+        ]],
+        state_values=[{
+            "mode": "execute",
+            "stop_reason": "action_executed",
+            "outcome_reason": "Action executed successfully",
+            "audit_trail": [],
+        }],
+    )
+    use_case = _make_smart_use_case()
+    use_case.graph = graph
+
+    events = await _collect(
+        use_case.resume_stream(
+            thread_id="t-se-stream-resume",
+            decision={"decision": "approved"},
+        ),
+    )
+
+    assert [event["type"] for event in events] == [
+        "run_start",
+        "node_update",
+        "final_response",
+        "run_finish",
+    ]
+    assert events[0]["resumed"] is True
+    assert events[2]["stop_reason"] == "action_executed"
+    assert events[3]["stop_reason"] == "action_executed"

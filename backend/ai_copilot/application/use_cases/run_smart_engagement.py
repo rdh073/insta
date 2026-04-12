@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Any
+from typing import Any, AsyncIterator
 
 from langgraph.types import Command
 
@@ -36,6 +36,7 @@ from ai_copilot.application.smart_engagement.state import SmartEngagementState
 from ai_copilot.application.use_cases.langgraph_runtime_adapter import (
     DEFAULT_LANGGRAPH_VERSION_STRATEGY,
     ainvoke_with_contract,
+    astream_with_contract,
     first_interrupt_payload,
     interrupt_payloads_from_exception,
     normalize_invoke_result,
@@ -188,50 +189,15 @@ class SmartEngagementUseCase:
         await self._ensure_graph()
         thread_id = (metadata or {}).get("thread_id") or str(uuid.uuid4())
         config = {"configurable": {"thread_id": thread_id}}
-
-        initial_state: SmartEngagementState = {
-            # Base state
-            "messages": [],
-            "current_tool_calls": None,
-            "tool_results": {},
-            "stop_reason": None,
-            "step_count": 0,
-            # Resumable execution
-            "thread_id": thread_id,
-            # Execution control
-            "mode": execution_mode,
-            "goal": goal,
-            # Goal parsing (populated by ingest_goal node)
-            "structured_goal": None,
-            # Account context
-            "account_id": account_id,
-            "account_health": None,
-            # Target selection
-            "candidate_targets": [],
-            "selected_target": None,
-            # Action selection
-            "proposed_action": None,
-            "draft_payload": None,
-            # Risk assessment
-            "risk_assessment": None,
-            # Approval
-            "approval_request": None,
-            "approval_result": None,
-            # Execution
-            "execution_result": None,
-            # Audit trail
-            "audit_trail": [],
-            # Failure guards (todo-4)
-            "discovery_attempted": False,
-            "approval_attempted": False,
-            # Outcome
-            "outcome_reason": None,
-            # Approval timeout
-            "approval_timeout": approval_timeout,
-            # Loop control
-            "max_targets": max_targets,
-            "max_actions_per_target": max_actions_per_target,
-        }
+        initial_state = self._build_initial_state(
+            thread_id=thread_id,
+            execution_mode=execution_mode,
+            goal=goal,
+            account_id=account_id,
+            max_targets=max_targets,
+            max_actions_per_target=max_actions_per_target,
+            approval_timeout=approval_timeout,
+        )
 
         try:
             raw_result = await ainvoke_with_contract(
@@ -276,6 +242,38 @@ class SmartEngagementUseCase:
             }
 
         return self._format_response(result.value, execution_mode, thread_id)
+
+    async def run_stream(
+        self,
+        execution_mode: str = "recommendation",
+        goal: str = "engage with relevant accounts",
+        account_id: str = "default_account",
+        max_targets: int = 5,
+        max_actions_per_target: int = 3,
+        approval_timeout: float = 3600.0,
+        metadata: dict | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Start a new run and stream node-level LangGraph updates incrementally."""
+        await self._ensure_graph()
+        thread_id = (metadata or {}).get("thread_id") or str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+        initial_state = self._build_initial_state(
+            thread_id=thread_id,
+            execution_mode=execution_mode,
+            goal=goal,
+            account_id=account_id,
+            max_targets=max_targets,
+            max_actions_per_target=max_actions_per_target,
+            approval_timeout=approval_timeout,
+        )
+
+        async for event in self._stream_graph(
+            initial_state,
+            config=config,
+            thread_id=thread_id,
+            fallback_mode=execution_mode,
+        ):
+            yield event
 
     async def resume(
         self,
@@ -344,6 +342,174 @@ class SmartEngagementUseCase:
         mode = result.value.get("mode", "execute") if isinstance(result.value, dict) else "execute"
         return self._format_response(result.value, mode, thread_id)
 
+    async def resume_stream(
+        self,
+        thread_id: str,
+        decision: dict,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Resume a suspended run and stream incremental LangGraph updates."""
+        await self._ensure_graph()
+        config = {"configurable": {"thread_id": thread_id}}
+        async for event in self._stream_graph(
+            Command(resume=decision),
+            config=config,
+            thread_id=thread_id,
+            fallback_mode="execute",
+            resumed=True,
+        ):
+            yield event
+
+    async def _stream_graph(
+        self,
+        graph_input: Any,
+        *,
+        config: dict[str, Any],
+        thread_id: str,
+        fallback_mode: str,
+        resumed: bool = False,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Drive graph.astream() and emit incremental SSE-ready events."""
+        run_start = {"type": "run_start", "run_id": thread_id, "thread_id": thread_id}
+        if resumed:
+            run_start["resumed"] = True
+        yield run_start
+
+        try:
+            async for chunk in astream_with_contract(
+                self.graph,
+                graph_input,
+                config=config,
+                stream_mode="updates",
+                strategy=self._version_strategy,
+            ):
+                for entry in chunk.entries:
+                    if entry.kind == "interrupt":
+                        yield {
+                            "type": "approval_required",
+                            "thread_id": thread_id,
+                            "payload": entry.payload if isinstance(entry.payload, dict) else {},
+                        }
+                        return
+
+                    node_name = entry.node_name or ""
+                    yield {
+                        "type": "node_update",
+                        "node": node_name,
+                        "data": self._safe(entry.payload),
+                    }
+
+            final_state = await self._recover_graph_state(config)
+            mode = (
+                final_state.get("mode", fallback_mode)
+                if isinstance(final_state, dict)
+                else fallback_mode
+            )
+            final_result = self._format_response(final_state, mode, thread_id)
+            stop_reason = final_result.get("status") or "completed"
+            if stop_reason == "unknown":
+                stop_reason = "completed"
+
+            yield {
+                "type": "final_response",
+                "thread_id": thread_id,
+                "stop_reason": stop_reason,
+                "text": final_result.get("outcome_reason") or "Smart engagement completed.",
+                "result": final_result,
+            }
+            yield {"type": "run_finish", "run_id": thread_id, "stop_reason": stop_reason}
+
+        except Exception as exc:
+            interrupt_payload = first_interrupt_payload(interrupt_payloads_from_exception(exc))
+            if interrupt_payload is not None:
+                yield {
+                    "type": "approval_required",
+                    "thread_id": thread_id,
+                    "payload": interrupt_payload if isinstance(interrupt_payload, dict) else {},
+                }
+                return
+            logger.exception(
+                "Smart engagement stream failed thread=%s resumed=%s",
+                thread_id,
+                resumed,
+            )
+            yield {
+                "type": "run_error",
+                "run_id": thread_id,
+                "thread_id": thread_id,
+                "message": "Smart engagement failed.",
+            }
+
+    async def _recover_graph_state(self, config: dict[str, Any]) -> SmartEngagementState:
+        """Best-effort recovery of latest graph state after streaming completes."""
+        try:
+            snapshot = await self.graph.aget_state(config)
+            if snapshot:
+                values = snapshot.values or {}
+                if isinstance(values, dict):
+                    return values
+        except Exception:
+            logger.debug(
+                "Could not recover smart engagement graph state thread=%s",
+                config.get("configurable", {}).get("thread_id"),
+            )
+        return {}
+
+    def _build_initial_state(
+        self,
+        *,
+        thread_id: str,
+        execution_mode: str,
+        goal: str,
+        account_id: str,
+        max_targets: int,
+        max_actions_per_target: int,
+        approval_timeout: float,
+    ) -> SmartEngagementState:
+        """Construct initial SmartEngagementState for run() and run_stream()."""
+        return {
+            # Base state
+            "messages": [],
+            "current_tool_calls": None,
+            "tool_results": {},
+            "stop_reason": None,
+            "step_count": 0,
+            # Resumable execution
+            "thread_id": thread_id,
+            # Execution control
+            "mode": execution_mode,
+            "goal": goal,
+            # Goal parsing (populated by ingest_goal node)
+            "structured_goal": None,
+            # Account context
+            "account_id": account_id,
+            "account_health": None,
+            # Target selection
+            "candidate_targets": [],
+            "selected_target": None,
+            # Action selection
+            "proposed_action": None,
+            "draft_payload": None,
+            # Risk assessment
+            "risk_assessment": None,
+            # Approval
+            "approval_request": None,
+            "approval_result": None,
+            # Execution
+            "execution_result": None,
+            # Audit trail
+            "audit_trail": [],
+            # Failure guards (todo-4)
+            "discovery_attempted": False,
+            "approval_attempted": False,
+            # Outcome
+            "outcome_reason": None,
+            # Approval timeout
+            "approval_timeout": approval_timeout,
+            # Loop control
+            "max_targets": max_targets,
+            "max_actions_per_target": max_actions_per_target,
+        }
+
     async def _recover_audit_trail(self, thread_id: str) -> list:
         """Best-effort recovery of audit trail from the audit log port."""
         try:
@@ -351,6 +517,18 @@ class SmartEngagementUseCase:
         except Exception:
             logger.debug("Could not recover audit trail for thread=%s", thread_id)
             return []
+
+    def _safe(self, value: Any) -> Any:
+        """Convert LangGraph node payloads into JSON-safe values for SSE."""
+        if isinstance(value, dict):
+            return {k: self._safe(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._safe(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._safe(item) for item in value]
+        if isinstance(value, (str, int, float, bool, type(None))):
+            return value
+        return str(value)
 
     def _format_response(
         self,

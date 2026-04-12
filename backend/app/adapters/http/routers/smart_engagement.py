@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, AsyncIterator, Optional
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -273,58 +272,11 @@ def _format_response(result: dict) -> SmartEngagementResponse:
     )
 
 
-def _to_stream_events(response: SmartEngagementResponse) -> list[dict[str, Any]]:
-    """Map a smart engagement response into slash-command SSE events."""
-    thread_id = response.thread_id or str(uuid.uuid4())
-    run_start = {
-        "type": "run_start",
-        "run_id": thread_id,
-        "thread_id": thread_id,
-    }
-
-    if response.interrupted:
-        return [
-            run_start,
-            {
-                "type": "approval_required",
-                "thread_id": thread_id,
-                "payload": response.interrupt_payload or {},
-            },
-        ]
-
-    if response.status == "error":
-        return [
-            run_start,
-            {
-                "type": "run_error",
-                "run_id": thread_id,
-                "thread_id": thread_id,
-                "message": response.outcome_reason or "Smart engagement failed.",
-            },
-        ]
-
-    return [
-        run_start,
-        {
-            "type": "final_response",
-            "thread_id": thread_id,
-            "stop_reason": response.status,
-            "text": response.outcome_reason or "Smart engagement completed.",
-            "result": response.model_dump(mode="json"),
-        },
-        {
-            "type": "run_finish",
-            "run_id": thread_id,
-            "stop_reason": response.status,
-        },
-    ]
-
-
 async def _stream_recommend_events(
     request: SmartEngagementRequest,
     use_case: SmartEngagementUseCase,
 ) -> AsyncIterator[dict[str, Any]]:
-    result = await use_case.run(
+    async for event in use_case.run_stream(
         execution_mode=request.execution_mode,
         goal=request.goal,
         account_id=request.account_id,
@@ -332,8 +284,7 @@ async def _stream_recommend_events(
         max_actions_per_target=request.max_actions_per_target,
         approval_timeout=request.approval_timeout,
         metadata=request.metadata,
-    )
-    for event in _to_stream_events(_format_response(result)):
+    ):
         yield event
 
 
@@ -341,15 +292,14 @@ async def _stream_resume_events(
     request: ResumeRequest,
     use_case: SmartEngagementUseCase,
 ) -> AsyncIterator[dict[str, Any]]:
-    result = await use_case.resume(
+    async for event in use_case.resume_stream(
         thread_id=request.thread_id,
         decision={
             "decision": request.decision,
             "notes": request.notes,
             "content": request.content,
         },
-    )
-    for event in _to_stream_events(_format_response(result)):
+    ):
         yield event
 
 
