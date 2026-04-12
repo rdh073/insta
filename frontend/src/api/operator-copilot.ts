@@ -138,6 +138,16 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
         return;
       }
 
+      const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+      if (!contentType.includes('text/event-stream')) {
+        const detail = await readErrorMessage(
+          response,
+          `Transport contract mismatch: expected text/event-stream but got ${contentType || 'unknown'}.`,
+        );
+        controller.error(new ServerError(detail, response.status));
+        return;
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';

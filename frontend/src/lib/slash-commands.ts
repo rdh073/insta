@@ -4,6 +4,7 @@ export interface SlashCommand {
   name: string;
   description: string;
   argSchema: string;
+  transport: 'sse' | 'json';
   runEndpoint: string;
   resumeEndpoint: string;
   buildPayload: (args: string, threadId?: string) => Record<string, unknown>;
@@ -36,6 +37,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'engage',
     description: 'Run smart engagement for an account with a goal',
     argSchema: '@username <engagement goal>',
+    transport: 'json',
     runEndpoint: '/ai/smart-engagement/recommend',
     resumeEndpoint: '/ai/smart-engagement/resume',
     buildPayload(args, threadId) {
@@ -60,6 +62,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'monitor',
     description: 'Evaluate recent campaigns and suggest next actions',
     argSchema: '[lookback_days=7]',
+    transport: 'sse',
     runEndpoint: '/ai/campaign-monitor/run',
     resumeEndpoint: '/ai/campaign-monitor/resume',
     buildPayload(args, threadId) {
@@ -81,6 +84,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'risk',
     description: 'Evaluate account risk and apply control policy',
     argSchema: '@username',
+    transport: 'sse',
     runEndpoint: '/ai/risk-control/run',
     resumeEndpoint: '/ai/risk-control/resume',
     buildPayload(args, threadId) {
@@ -102,6 +106,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'recover',
     description: 'Diagnose and recover a broken account session',
     argSchema: '@username',
+    transport: 'sse',
     runEndpoint: '/ai/account-recovery/run',
     resumeEndpoint: '/ai/account-recovery/resume',
     buildPayload(args, threadId) {
@@ -127,6 +132,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'pipeline',
     description: 'Generate, validate, and schedule an Instagram caption',
     argSchema: '@username1 ... <campaign brief>',
+    transport: 'sse',
     runEndpoint: '/ai/content-pipeline/run',
     resumeEndpoint: '/ai/content-pipeline/resume',
     buildPayload(args, threadId) {

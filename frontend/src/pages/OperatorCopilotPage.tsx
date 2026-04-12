@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { graphRunner } from '../api/graph-runner';
+import { commandJsonRunner } from '../api/command-json-runner';
 import { operatorCopilotApi, StreamAbortedError, NetworkError, ServerError } from '../api/operator-copilot';
 import type { CopilotEvent } from '../api/operator-copilot';
 import { parseSlashCommand, getCommandSuggestions } from '../lib/slash-commands';
@@ -90,6 +91,21 @@ export function OperatorCopilotPage() {
 
   // ── Stream consumer ──
 
+  const appendRunError = useCallback((message: string) => {
+    setSession((prev) => {
+      const turns = [...prev.turns];
+      if (turns.length > 0) {
+        const lastIdx = turns.length - 1;
+        const lastTurn = turns[lastIdx];
+        turns[lastIdx] = {
+          ...lastTurn,
+          events: [...lastTurn.events, { type: 'run_error', message }],
+        };
+      }
+      return { ...prev, turns, runState: 'error' };
+    });
+  }, [setSession]);
+
   const consumeStream = useCallback(async (stream: ReadableStream<CopilotEvent>) => {
     const reader = stream.getReader();
     try {
@@ -132,12 +148,12 @@ export function OperatorCopilotPage() {
           ? `Server error ${error.status}: ${error.message}`
           : error instanceof Error ? error.message : 'Stream error';
       toast.error(message, { duration: 5000 });
-      setSession((prev) => ({ ...prev, runState: 'error' }));
+      appendRunError(message);
     } finally {
       reader.releaseLock();
       setSession((prev) => (prev.runState === 'running' ? { ...prev, runState: 'done' } : prev));
     }
-  }, []);
+  }, [appendRunError, setSession]);
 
   // ── Handlers ──
 
@@ -248,17 +264,27 @@ export function OperatorCopilotPage() {
         }
         const payload = {
           ...rawPayload,
-          provider,
-          model,
-          apiKey: apiKeys[provider] || undefined,
-          providerBaseUrl: providerBaseUrls[provider] || undefined,
         };
-        const stream = graphRunner.run(command.runEndpoint, payload, backendUrl, controller.signal);
+        const stream = command.transport === 'json'
+          ? commandJsonRunner.run(command.runEndpoint, payload, backendUrl, controller.signal)
+          : graphRunner.run(
+            command.runEndpoint,
+            {
+              ...payload,
+              provider,
+              model,
+              apiKey: apiKeys[provider] || undefined,
+              providerBaseUrl: providerBaseUrls[provider] || undefined,
+            },
+            backendUrl,
+            controller.signal,
+          );
         await consumeStream(stream);
       } catch (error) {
         if (!(error instanceof StreamAbortedError)) {
-          toast.error(error instanceof Error ? error.message : 'Failed to start run');
-          setSession((prev) => ({ ...prev, runState: 'error' }));
+          const errMessage = error instanceof Error ? error.message : 'Failed to start run';
+          toast.error(errMessage);
+          appendRunError(errMessage);
         }
       }
       return;
@@ -300,8 +326,9 @@ export function OperatorCopilotPage() {
       await consumeStream(stream);
     } catch (error) {
       if (!(error instanceof StreamAbortedError)) {
-        toast.error(error instanceof Error ? error.message : 'Failed to start run');
-        setSession((prev) => ({ ...prev, runState: 'error' }));
+        const errMessage = error instanceof Error ? error.message : 'Failed to start run';
+        toast.error(errMessage);
+        appendRunError(errMessage);
       }
     } finally {
       textareaRef.current?.focus();
@@ -320,7 +347,9 @@ export function OperatorCopilotPage() {
     try {
       if (activeCommand) {
         const resumePayload = activeCommand.buildResumePayload(session.threadId, result, editedCalls);
-        const stream = graphRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal);
+        const stream = activeCommand.transport === 'json'
+          ? commandJsonRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal)
+          : graphRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal);
         await consumeStream(stream);
       } else {
         const stream = operatorCopilotApi.resume(
@@ -331,8 +360,9 @@ export function OperatorCopilotPage() {
       }
     } catch (error) {
       if (!(error instanceof StreamAbortedError)) {
-        toast.error(error instanceof Error ? error.message : 'Resume failed');
-        setSession((prev) => ({ ...prev, runState: 'error' }));
+        const errMessage = error instanceof Error ? error.message : 'Resume failed';
+        toast.error(errMessage);
+        appendRunError(errMessage);
       }
     } finally {
       setResumeLoading(false);
