@@ -5,12 +5,14 @@ import { useSettingsStore } from '../store/settings';
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  readonly family?: string;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, family?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.family = family;
   }
 }
 
@@ -39,10 +41,12 @@ api.interceptors.response.use(
     const detail = data?.detail;
     const code: string | undefined =
       detail && typeof detail === 'object' ? (detail as { code?: string }).code : undefined;
+    const family: string | undefined =
+      detail && typeof detail === 'object' ? (detail as { family?: string }).family : undefined;
     const message: string =
       (typeof detail === 'string' ? detail : typeof detail?.message === 'string' ? detail.message : null) ??
       err.message ??
       'Unknown error';
-    return Promise.reject(new ApiError(message, status, code));
+    return Promise.reject(new ApiError(message, status, code, family));
   }
 );

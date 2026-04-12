@@ -20,7 +20,9 @@ class ReloginMode(str, Enum):
         authenticates with the stored username + password + TOTP.  Required
         when the account status is ``"error"`` with ``last_error_code ==
         "login_required"`` (e.g. Instagram server-side force-logout /
-        logout_reason:8) — those sessions cannot be restored.
+        logout_reason:8), or when the previous failure is challenge-family
+        (checkpoint/consent/geo/captcha variants) — those sessions cannot be
+        restored by reusing stale cookies.
     """
 
     SESSION_RESTORE = "session_restore"

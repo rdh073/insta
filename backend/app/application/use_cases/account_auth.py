@@ -26,6 +26,10 @@ from ..ports.instagram_identity import InstagramIdentityReader
 from ..ports.persistence_models import AccountRecord
 from ..ports.persistence_uow import PersistenceUnitOfWork
 from ...domain.instagram_failures import InstagramFailure, InstagramAdapterError
+from .account_status_policy import (
+    status_from_failure,
+    should_use_fresh_credentials_relogin,
+)
 
 
 class AccountAuthUseCases:
@@ -124,10 +128,10 @@ class AccountAuthUseCases:
         forward them to an event bus without accessing internal state.
         Returns ``None`` on any failure.
 
-        When the failure indicates the session is dead (requires_user_action=True,
-        e.g. login_required / logout_reason:8), the account is marked "error" and
-        the client is evicted so future bulk-hydrate cycles skip it automatically.
-        Transient failures (rate-limit, network) are silently swallowed.
+        Failure handling uses the same shared policy as connectivity probes so
+        challenge-family failures consistently map to ``status="challenge"``.
+        Transient failures (rate-limit, network) are swallowed without
+        overwriting status.
         """
         try:
             # account_info() validates the session and returns name/pic.
@@ -141,11 +145,11 @@ class AccountAuthUseCases:
             return {"id": account_id, **updates}
         except InstagramAdapterError as exc:
             failure = exc.failure
-            if failure.requires_user_action:
-                # Hard session failure (login_required, challenge, etc.) — evict
-                # the dead client and mark error so this account drops out of the
-                # "active" pool and stops generating API noise.
-                self.status_repo.set(account_id, "error")
+            new_status = status_from_failure(failure, keep_transient=True)
+            if new_status is not None:
+                # Hard failure (auth/challenge/2FA) — evict the dead client so
+                # this account drops out of the active runtime pool.
+                self.status_repo.set(account_id, new_status)
                 if self.client_repo.exists(account_id):
                     self.client_repo.remove(account_id)
                 self.account_repo.update(
@@ -190,14 +194,7 @@ class AccountAuthUseCases:
         Returns None when the failure is transient and the account status should
         be left unchanged (credentials may still be valid).
         """
-        if failure.family == "challenge":
-            return "challenge"
-        if failure.code == "two_factor_required":
-            return "2fa_required"
-        if failure.retryable and not failure.requires_user_action:
-            # Transient failure — do not overwrite a potentially valid status.
-            return None
-        return "error"
+        return status_from_failure(failure, keep_transient=True)
 
     @staticmethod
     def _select_relogin_mode(account: dict) -> ReloginMode:
@@ -206,17 +203,17 @@ class AccountAuthUseCases:
         ``FRESH_CREDENTIALS`` is selected when:
         - ``last_error_code="login_required"`` — server-side force-logout
           (Instagram logout_reason:8).  Session file is permanently invalid.
-        - ``last_error_code`` starts with ``"challenge"`` — Instagram issued a
-          security challenge during the previous auth attempt.  Retrying with
-          the stale session will just trigger the same challenge again; a fresh
-          credential login is the correct first step after the operator has
-          manually resolved the challenge on instagram.com.
+        - the previous failure is challenge-family (including
+          ``checkpoint_required``, ``consent_required``, ``geo_blocked``,
+          ``captcha_challenge_required``, etc.).
 
         All other accounts use ``SESSION_RESTORE`` — the faster path that reuses
         the saved session token when the session is still valid.
         """
-        code = account.get("last_error_code") or ""
-        if code == "login_required" or code.startswith("challenge"):
+        if should_use_fresh_credentials_relogin(
+            last_error_code=account.get("last_error_code"),
+            last_error_family=account.get("last_error_family"),
+        ):
             return ReloginMode.FRESH_CREDENTIALS
         return ReloginMode.SESSION_RESTORE
 

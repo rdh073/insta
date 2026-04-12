@@ -49,3 +49,25 @@ export function auditMeta(event: string) {
 }
 
 export const NON_ACTIVE_STATUSES = new Set(['idle', 'error', 'challenge', '2fa_required']);
+
+const CHALLENGE_ERROR_CODES = new Set([
+  'challenge_error',
+  'challenge_redirection',
+  'challenge_required',
+  'challenge_selfie',
+  'challenge_unknown_step',
+  'challenge_select_contact',
+  'challenge_recaptcha',
+  'challenge_phone_required',
+  'challenge_password_change',
+  'captcha_challenge_required',
+  'checkpoint_required',
+  'consent_required',
+  'geo_blocked',
+]);
+
+export function isChallengeFailure(code?: string, family?: string): boolean {
+  if (family === 'challenge') return true;
+  if (!code) return false;
+  return CHALLENGE_ERROR_CODES.has(code);
+}

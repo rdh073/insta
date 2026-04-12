@@ -11,7 +11,14 @@ import threading
 from pathlib import Path
 
 from instagrapi import Client as IGClient
-from instagrapi.exceptions import LoginRequired, BadPassword, ChallengeRequired, ReloginAttemptExceeded, TwoFactorRequired
+from instagrapi.exceptions import (
+    LoginRequired,
+    BadPassword,
+    ChallengeRequired,
+    CaptchaChallengeRequired,
+    ReloginAttemptExceeded,
+    TwoFactorRequired,
+)
 
 __all__ = [
     "SESSIONS_DIR",
@@ -20,6 +27,7 @@ __all__ = [
     "LoginRequired",
     "BadPassword",
     "ChallengeRequired",
+    "CaptchaChallengeRequired",
     "ReloginAttemptExceeded",
     "TwoFactorRequired",
     "has_account",

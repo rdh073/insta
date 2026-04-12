@@ -6,14 +6,26 @@ and that unknown exceptions safely fall back to unknown_instagram_error.
 """
 
 import pytest
-from backend.app.domain.instagram_failures import InstagramFailure
-from backend.app.adapters.instagram.exception_catalog import (
+from app.domain.instagram_failures import InstagramFailure
+from app.adapters.instagram.exception_catalog import (
     EXCEPTION_REGISTRY,
     DOCUMENTED_EXCEPTIONS,
     REGISTERED_EXCEPTION_NAMES,
 )
-from backend.app.adapters.instagram.exception_handler import (
+from app.adapters.instagram.exception_handler import (
     CatalogDrivenInstagramExceptionHandler,
+)
+
+RUNTIME_EXCEPTION_ALLOWLIST = frozenset(
+    {
+        # Present in instagrapi runtime but intentionally not mapped yet.
+        "AgeEligibilityError",
+        "EmailInvalidError",
+        "EmailNotAvailableError",
+        "EmailVerificationSendError",
+        "NotFoundError",
+        "ValidationError",
+    }
 )
 
 
@@ -37,55 +49,28 @@ class TestExceptionRegistryCoverage:
     def test_registry_covers_all_documented_exceptions(self):
         """Verify all documented exceptions have registry entries."""
         try:
-            from instagrapi.exceptions import (
-                ClientError, BadPassword, TwoFactorRequired, LoginRequired,
-                ChallengeRequired, MediaNotFound, UserNotFound, UserError,
-                ProxyError, RateLimitError, PleaseWaitFewMinutes,
-                FeedbackRequired, PreLoginRequired, BadCredentials,
-                IsRegulatedC18Error, ChallengeError, ChallengeRedirection,
-                ChallengeSelfieCaptcha, ChallengeUnknownStep,
-                SelectContactPointRecoveryForm, RecaptchaChallengeForm,
-                SubmitPhoneNumberForm, LegacyForceSetNewPasswordForm,
-                ConsentRequired, GeoBlockRequired, CheckpointRequired,
-                MediaError, InvalidTargetUser, InvalidMediaId, MediaUnavailable,
-                PrivateAccount, AccountSuspended, TermsUnblock, TermsAccept,
-                AboutUsError, CollectionError, CollectionNotFound,
-                DirectError, DirectThreadNotFound, DirectMessageNotFound,
-                PhotoNotDownload, PhotoNotUpload, PhotoConfigureError,
-                PhotoConfigureStoryError, VideoNotDownload, VideoNotUpload,
-                VideoConfigureError, VideoConfigureStoryError, VideoTooLongException,
-                IGTVNotUpload, IGTVConfigureError, ClipNotUpload, ClipConfigureError,
-                AlbumNotDownload, AlbumUnknownFormat, AlbumConfigureError,
-                StoryNotFound, HighlightNotFound, HashtagError, HashtagNotFound,
-                HashtagPageWarning, LocationError, LocationNotFound,
-                CommentNotFound, CommentsDisabled, ShareDecodeError,
-                NoteNotFound, TrackNotFound, ResetPasswordError,
-                UnsupportedError, UnsupportedSettingValue, ReloginAttemptExceeded,
-                ClientLoginRequired, GenericRequestError, ClientGraphqlError,
-                ClientJSONDecodeError, ClientConnectionError, ClientBadRequestError,
-                ClientUnauthorizedError, ClientForbiddenError, ClientNotFoundError,
-                ClientThrottledError, ClientRequestTimeout, ClientIncompleteReadError,
-                ClientErrorWithTitle, ClientUnknownError, WrongCursorError,
-                ClientStatusFail, ConnectProxyError, AuthRequiredProxyError,
-                ProxyAddressIsBlocked, SentryBlock, PrivateError,
-            )
+            from instagrapi import exceptions as instagrapi_exceptions
         except ImportError:
             pytest.skip("instagrapi not installed")
 
         # Test that at least a representative set of exceptions is in the registry
-        key_exceptions = [
-            ClientError,
-            BadPassword,
-            TwoFactorRequired,
-            LoginRequired,
-            ChallengeRequired,
-            MediaNotFound,
-            UserNotFound,
-            ProxyError,
-            RateLimitError,
+        key_exception_names = [
+            "ClientError",
+            "BadPassword",
+            "TwoFactorRequired",
+            "LoginRequired",
+            "ChallengeRequired",
+            "CaptchaChallengeRequired",
+            "MediaNotFound",
+            "UserNotFound",
+            "ProxyAddressIsBlocked",
+            "RateLimitError",
         ]
 
-        for exc_class in key_exceptions:
+        for exception_name in key_exception_names:
+            if not hasattr(instagrapi_exceptions, exception_name):
+                continue
+            exc_class = getattr(instagrapi_exceptions, exception_name)
             assert exc_class in EXCEPTION_REGISTRY, (
                 f"Exception {exc_class.__name__} not found in registry. "
                 "Add it to the exception_catalog.py registration section."
@@ -104,12 +89,33 @@ class TestExceptionRegistryCoverage:
         except ImportError:
             pytest.skip("instagrapi not installed")
 
+        runtime_exception_names = {
+            name
+            for name, value in vars(instagrapi_exceptions).items()
+            if isinstance(value, type) and issubclass(value, Exception)
+        }
+
+        unexpected_runtime = (
+            runtime_exception_names - DOCUMENTED_EXCEPTIONS - RUNTIME_EXCEPTION_ALLOWLIST
+        )
+        assert not unexpected_runtime, (
+            "Runtime instagrapi exceptions missing from documented snapshot "
+            "(or allowlist): " + ", ".join(sorted(unexpected_runtime))
+        )
+
         # All documented names available in current instagrapi version should be in registry.
         for exc_name in DOCUMENTED_EXCEPTIONS:
             if hasattr(instagrapi_exceptions, exc_name):
                 assert exc_name in registered_names, (
                     f"Documented exception {exc_name} not in runtime registry"
                 )
+
+        # Any runtime exception not explicitly allowlisted must be registered.
+        for exc_name in sorted(runtime_exception_names - RUNTIME_EXCEPTION_ALLOWLIST):
+            assert exc_name in registered_names, (
+                f"Runtime exception {exc_name} not in registry; "
+                "add mapping or place in explicit allowlist."
+            )
 
 
 class TestExceptionHandler:
@@ -191,13 +197,31 @@ class TestExceptionHandler:
         assert failure.code == "challenge_required"
         assert failure.requires_user_action is True
 
+    def test_handler_maps_captcha_challenge_to_challenge_family(self):
+        """CaptchaChallengeRequired must not fall back to generic client_error."""
+        handler = CatalogDrivenInstagramExceptionHandler()
+
+        try:
+            from instagrapi.exceptions import CaptchaChallengeRequired
+        except ImportError:
+            pytest.skip("instagrapi not installed")
+
+        failure = handler.handle(
+            CaptchaChallengeRequired("captcha required"),
+            operation="login",
+        )
+
+        assert failure.code == "captcha_challenge_required"
+        assert failure.family == "challenge"
+        assert failure.requires_user_action is True
+
 
 class TestFailureProperties:
     """Test InstagramFailure properties."""
 
     def test_failure_is_frozen(self):
         """Verify InstagramFailure is immutable."""
-        from backend.app.adapters.instagram.exception_catalog import (
+        from app.adapters.instagram.exception_catalog import (
             SPEC_BAD_PASSWORD,
         )
 
@@ -208,7 +232,7 @@ class TestFailureProperties:
 
     def test_failure_has_sensible_defaults(self):
         """Verify failures have sensible default values."""
-        from backend.app.adapters.instagram.exception_catalog import (
+        from app.adapters.instagram.exception_catalog import (
             SPEC_TWO_FACTOR_REQUIRED,
         )
 
@@ -223,7 +247,7 @@ class TestFailureProperties:
 
     def test_failure_detail_from_exception(self):
         """Verify failure can include exception detail."""
-        from backend.app.adapters.instagram.exception_catalog import (
+        from app.adapters.instagram.exception_catalog import (
             SPEC_MEDIA_NOT_FOUND,
         )
 

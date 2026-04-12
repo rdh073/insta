@@ -6,6 +6,7 @@ from state import (
     IGClient,
     BadPassword,
     ChallengeRequired,
+    CaptchaChallengeRequired,
     LoginRequired,
     TwoFactorRequired,
     SESSIONS_DIR,
@@ -17,6 +18,34 @@ from state import (
 )
 from app.adapters.instagram.device_pool import random_device_profile
 from app.adapters.instagram.exception_handler import instagram_exception_handler
+
+
+def _non_interactive_handle_exception(_client, error: Exception) -> None:
+    """Force private_request() to surface errors instead of auto-resolving.
+
+    instagrapi's default path auto-calls ``challenge_resolve()`` when
+    ``handle_exception`` is unset and may invoke stdin-driven handlers. Raising
+    immediately keeps backend flows deterministic and non-blocking.
+    """
+    raise error
+
+
+def _non_interactive_challenge_code_handler(
+    username: str,
+    choice=None,
+) -> str:
+    """Reject interactive challenge code prompts in backend runtime."""
+    challenge_kind = getattr(choice, "name", choice) or "unknown"
+    raise ChallengeRequired(
+        f"Challenge verification required for @{username} via {challenge_kind}."
+    )
+
+
+def _non_interactive_change_password_handler(username: str) -> str:
+    """Reject interactive password-change prompts in backend runtime."""
+    raise ChallengeRequired(
+        f"Challenge password reset required for @{username}."
+    )
 
 
 def new_client(
@@ -41,6 +70,11 @@ def new_client(
     # required for session validity — skipping it makes fresh-account login
     # faster and avoids unnecessary API exposure on new accounts.
     client.login_flow = lambda: True
+    # Disable instagrapi's implicit interactive challenge flow. The defaults
+    # can block on input() in non-interactive server contexts.
+    client.handle_exception = _non_interactive_handle_exception
+    client.challenge_code_handler = _non_interactive_challenge_code_handler
+    client.change_password_handler = _non_interactive_change_password_handler
     return client
 
 
@@ -158,7 +192,7 @@ def create_authenticated_client(
                 raise
             except BadPassword:
                 raise
-            except ChallengeRequired:
+            except (ChallengeRequired, CaptchaChallengeRequired):
                 # Challenge cannot be resolved by retrying — propagate immediately
                 # so the caller can mark the account as "challenge" and stop.
                 # Falling through to fresh login would only trigger the same
@@ -178,7 +212,7 @@ def create_authenticated_client(
         except BadPassword:
             raise  # wrong credential — a fresh client won't help
 
-        except ChallengeRequired:
+        except (ChallengeRequired, CaptchaChallengeRequired):
             # Challenge required on initial session restore — propagate directly.
             raise
 

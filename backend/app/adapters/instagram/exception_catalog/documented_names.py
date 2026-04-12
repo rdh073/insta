@@ -47,6 +47,7 @@ DOCUMENTED_EXCEPTIONS = frozenset({
     "ConsentRequired",
     "GeoBlockRequired",
     "CheckpointRequired",
+    "CaptchaChallengeRequired",
     "MediaError",
     "MediaNotFound",
     "InvalidTargetUser",

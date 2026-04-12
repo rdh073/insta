@@ -110,3 +110,12 @@ SPEC_CHECKPOINT_REQUIRED = FailureSpec(
     user_message="Account verification required.",
     http_hint=409,
 )
+
+SPEC_CAPTCHA_CHALLENGE_REQUIRED = FailureSpec(
+    code="captcha_challenge_required",
+    family="challenge",
+    retryable=False,
+    requires_user_action=True,
+    user_message="Captcha challenge required.",
+    http_hint=409,
+)

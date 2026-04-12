@@ -85,7 +85,14 @@ async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: async
             logger.warning("job_restore.skip job_id=%s reason=%s", job.id, exc)
 
 
-async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_event: asyncio.Event | None = None, event_bus=None) -> None:
+async def _restore_sessions(
+    account_repo,
+    relogin_fn,
+    hydrate_fn=None,
+    done_event: asyncio.Event | None = None,
+    event_bus=None,
+    status_lookup_fn=None,
+) -> None:
     """Background task: relogin all persisted accounts on startup.
 
     After each successful relogin, fires profile hydration (followers/following)
@@ -116,7 +123,13 @@ async def _restore_sessions(account_repo, relogin_fn, hydrate_fn=None, done_even
         except Exception as exc:
             logger.warning("session_restore.failed account_id=%s reason=%s", account_id, exc)
             if event_bus:
-                event_bus.publish("account_updated", {"id": account_id, "status": "error"})
+                status = "error"
+                if status_lookup_fn is not None:
+                    try:
+                        status = status_lookup_fn(account_id) or "error"
+                    except Exception:
+                        status = "error"
+                event_bus.publish("account_updated", {"id": account_id, "status": status})
 
     # Sequential with delay — avoids rate-limiting when restoring many accounts.
     for aid in ids:
@@ -178,6 +191,7 @@ def create_app() -> FastAPI:
                 hydrate_fn=lambda aid: _hydrate_and_publish(account_auth, aid),
                 done_event=sessions_ready,
                 event_bus=account_event_bus,
+                status_lookup_fn=lambda aid: services["_status_repo"].get(aid, "error"),
             )
         )
         asyncio.ensure_future(

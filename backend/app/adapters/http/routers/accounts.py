@@ -62,11 +62,12 @@ def _hydrate_and_publish(usecases: "AccountAuthUseCases", account_id: str) -> No
             warm_image_cache(pic_url)
     elif not usecases.client_repo.exists(account_id):
         # Hard session failure: hydrate_account_profile evicted the client and
-        # set status="error" in the DB (login_required / logout_reason:8 etc.).
-        # Push an SSE event immediately so the frontend reflects reality —
-        # without this, the frontend shows "active" (from the relogin HTTP
-        # response patch) until the user manually refreshes or clicks Sync.
-        account_event_bus.publish("account_updated", {"id": account_id, "status": "error"})
+        # persisted the derived status (error/challenge/2fa_required). Push it
+        # immediately so SSE reflects the canonical backend state.
+        persisted_status = usecases.status_repo.get(account_id, "error")
+        account_event_bus.publish(
+            "account_updated", {"id": account_id, "status": persisted_status}
+        )
         return  # No point fetching follower counts if the session is dead.
 
     counts = usecases.refresh_follower_counts(account_id)

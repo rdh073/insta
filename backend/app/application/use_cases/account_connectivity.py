@@ -15,6 +15,7 @@ from ..ports import (
 from ..ports.instagram_error_handling import InstagramExceptionHandler
 from ..ports.instagram_identity import InstagramIdentityReader
 from ...domain.instagram_failures import InstagramFailure, InstagramAdapterError
+from .account_status_policy import status_from_failure
 
 
 def _connectivity_failure_status(failure: InstagramFailure) -> str | None:
@@ -23,14 +24,7 @@ def _connectivity_failure_status(failure: InstagramFailure) -> str | None:
     Returns None when the failure is transient and the account status should
     be left unchanged (credentials may still be valid).
     """
-    if failure.family == "challenge":
-        return "challenge"
-    if failure.code == "two_factor_required":
-        return "2fa_required"
-    if failure.retryable and not failure.requires_user_action:
-        # Transient failure (network, rate-limit) — do not overwrite a potentially valid status.
-        return None
-    return "error"
+    return status_from_failure(failure, keep_transient=True)
 
 
 class AccountConnectivityUseCases:

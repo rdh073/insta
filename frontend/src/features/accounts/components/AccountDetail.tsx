@@ -12,7 +12,7 @@ import { useAccountStore } from '../../../store/accounts';
 import { AccountAvatar } from './AccountAvatar';
 import { CredentialsModal } from './CredentialsModal';
 import { statusBadge } from './StatusBadge';
-import { auditMeta, formatCooldown, formatRelativeTime } from './account-helpers';
+import { auditMeta, formatCooldown, formatRelativeTime, isChallengeFailure } from './account-helpers';
 
 export function AccountDetail({
   account,
@@ -81,6 +81,7 @@ export function AccountDetail({
     }
 
     const code = lastError?.code ?? '';
+    const family = lastError?.family ?? '';
     let msg = lastError?.message || 'Relogin failed';
     let status: 'error' | 'challenge' | '2fa_required' = 'error';
 
@@ -89,7 +90,7 @@ export function AccountDetail({
     } else if (code === 'two_factor_required') {
       msg = '2FA required — add TOTP secret to enable auto-auth';
       status = '2fa_required';
-    } else if (code.startsWith('challenge')) {
+    } else if (isChallengeFailure(code, family)) {
       msg = 'Instagram security challenge — manual action required';
       status = 'challenge';
     } else if (code === 'relogin_attempt_exceeded') {

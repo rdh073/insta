@@ -106,6 +106,20 @@ def test_failure_status_challenge():
     assert _connectivity_failure_status(f) == "challenge"
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "challenge_required",
+        "checkpoint_required",
+        "consent_required",
+        "geo_blocked",
+    ],
+)
+def test_failure_status_challenge_family_codes_without_prefix(code: str):
+    f = _make_failure(code=code, family="unknown", requires_user_action=False)
+    assert _connectivity_failure_status(f) == "challenge"
+
+
 def test_failure_status_two_factor():
     f = _make_failure(code="two_factor_required", family="auth")
     assert _connectivity_failure_status(f) == "2fa_required"

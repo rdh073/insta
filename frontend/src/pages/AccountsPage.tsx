@@ -30,6 +30,7 @@ import {
   ImportModal,
   TOTPSetupModal,
 } from '../features/accounts/components';
+import { isChallengeFailure } from '../features/accounts/components/account-helpers';
 
 export function AccountsPage() {
   const accounts = useAccountStore((s) => s.accounts);
@@ -88,10 +89,11 @@ export function AccountsPage() {
     } catch (err) {
       const e = err as ApiError;
       const code = e.code ?? '';
+      const family = e.family ?? '';
       let msg = e.message || 'Relogin failed';
       let status: Account['status'] = 'error';
       if (code === 'two_factor_required') { msg = '2FA required'; status = '2fa_required'; }
-      else if (code.startsWith('challenge')) { msg = 'Security challenge'; status = 'challenge'; }
+      else if (isChallengeFailure(code, family)) { msg = 'Security challenge'; status = 'challenge'; }
       updatePageStatus(account.id, status, msg);
       toast.error(`@${account.username}: ${msg}`, { duration: 5000 });
     } finally {
