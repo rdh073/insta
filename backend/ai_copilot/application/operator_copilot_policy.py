@@ -205,9 +205,28 @@ class ToolPolicyRegistry:
         "get_user_medias": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads post list for a user"
         ),
+        "get_media_oembed": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads oEmbed metadata for a public media URL"
+        ),
+        # ── Read-only: discovery ──────────────────────────────────────────────
+        "search_hashtags": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "searches hashtag metadata by query"
+        ),
+        "get_hashtag": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads metadata for one hashtag"
+        ),
+        "list_collections": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads saved collection metadata for the account"
+        ),
         # ── Read-only: stories & highlights ──────────────────────────────────
+        "get_story": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads one story with overlay counts"
+        ),
         "list_user_stories": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads active stories for a user"
+        ),
+        "get_highlight": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads one highlight and its story items"
         ),
         "list_user_highlights": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads highlight reels for a user"
@@ -291,12 +310,34 @@ class ToolPolicyRegistry:
         "delete_direct_message": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "deletes a direct message from a thread"
         ),
+        "approve_pending_direct_thread": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "approves a pending direct-message request thread"
+        ),
+        "mark_direct_thread_seen": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "marks a direct-message thread as seen"
+        ),
+        # ── Write-sensitive: stories ──────────────────────────────────────────
+        "delete_story": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "deletes a story"
+        ),
+        "mark_stories_seen": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "marks stories as seen/skipped"
+        ),
         # ── Write-sensitive: highlights ───────────────────────────────────────
         "create_highlight": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "creates a new story highlight reel"
         ),
         "delete_highlight": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "permanently deletes a story highlight"
+        ),
+        "change_highlight_title": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "renames a story highlight"
+        ),
+        "add_stories_to_highlight": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "adds stories to a story highlight"
+        ),
+        "remove_stories_from_highlight": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "removes stories from a story highlight"
         ),
         # ── Write-sensitive: content management ──────────────────────────────
         "schedule_post": ToolClassification(

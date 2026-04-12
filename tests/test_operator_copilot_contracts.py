@@ -465,6 +465,25 @@ _COMMENT_MODERATION_TOOLS = [
     "unpin_comment",
 ]
 
+_NEW_READ_TOOLS = [
+    "search_hashtags",
+    "get_hashtag",
+    "list_collections",
+    "get_media_oembed",
+    "get_story",
+    "get_highlight",
+]
+
+_NEW_WRITE_TOOLS = [
+    "delete_story",
+    "mark_stories_seen",
+    "change_highlight_title",
+    "add_stories_to_highlight",
+    "remove_stories_from_highlight",
+    "approve_pending_direct_thread",
+    "mark_direct_thread_seen",
+]
+
 
 def test_bridge_filters_blocked_tools_from_schemas():
     bridge = _make_bridge(["list_accounts", "delete_account", "follow_user"])
@@ -529,6 +548,66 @@ def test_bridge_exposes_registered_comment_moderation_tools_with_policy_hints():
     by_name = {schema["function"]["name"]: schema for schema in bridge.get_schemas()}
 
     for tool_name in _COMMENT_MODERATION_TOOLS:
+        assert tool_name in by_name
+        desc = by_name[tool_name]["function"]["description"].lower()
+        assert "write-sensitive" in desc
+        assert "approval" in desc
+
+
+def test_bridge_exposes_new_read_tools_with_policy_hints():
+    bridge = _make_bridge(_NEW_READ_TOOLS)
+    schemas = bridge.get_schemas()
+    by_name = {schema["function"]["name"]: schema for schema in schemas}
+
+    for tool_name in _NEW_READ_TOOLS:
+        assert tool_name in by_name
+        desc = by_name[tool_name]["function"]["description"].lower()
+        assert "read-only" in desc
+        assert "no approval" in desc
+
+
+def test_bridge_exposes_new_write_tools_with_policy_hints():
+    bridge = _make_bridge(_NEW_WRITE_TOOLS)
+    schemas = bridge.get_schemas()
+    by_name = {schema["function"]["name"]: schema for schema in schemas}
+
+    for tool_name in _NEW_WRITE_TOOLS:
+        assert tool_name in by_name
+        desc = by_name[tool_name]["function"]["description"].lower()
+        assert "write-sensitive" in desc
+        assert "approval" in desc
+
+
+def test_bridge_exposes_registered_new_tools_with_policy_hints():
+    from app.adapters.ai.tool_registry.builder import create_tool_registry
+    from ai_copilot.adapters.tool_registry_bridge import ToolRegistryBridgeAdapter
+
+    sentinel = object()
+    tool_registry = create_tool_registry(
+        account_usecases=sentinel,
+        postjob_usecases=sentinel,
+        hashtag_use_cases=sentinel,
+        collection_use_cases=sentinel,
+        media_use_cases=sentinel,
+        story_use_cases=sentinel,
+        highlight_use_cases=sentinel,
+        comment_use_cases=sentinel,
+        direct_use_cases=sentinel,
+        insight_use_cases=sentinel,
+        relationship_use_cases=sentinel,
+        account_profile_usecases=sentinel,
+        account_auth_usecases=sentinel,
+        account_proxy_usecases=sentinel,
+        proxy_pool_usecases=sentinel,
+    )
+    bridge = ToolRegistryBridgeAdapter(tool_registry=tool_registry)
+    by_name = {schema["function"]["name"]: schema for schema in bridge.get_schemas()}
+
+    for tool_name in _NEW_READ_TOOLS:
+        assert tool_name in by_name
+        assert "read-only" in by_name[tool_name]["function"]["description"].lower()
+
+    for tool_name in _NEW_WRITE_TOOLS:
         assert tool_name in by_name
         desc = by_name[tool_name]["function"]["description"].lower()
         assert "write-sensitive" in desc

@@ -230,6 +230,12 @@ def test_policy_registry_covers_actual_registered_tool_names():
     assert reg.classify("pick_proxy").policy == ToolPolicy.READ_ONLY
     assert reg.classify("get_direct_thread").policy == ToolPolicy.READ_ONLY
     assert reg.classify("list_direct_messages").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("search_hashtags").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_hashtag").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("list_collections").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_media_oembed").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_story").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_highlight").policy == ToolPolicy.READ_ONLY
 
     assert reg.classify("import_proxies").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("recheck_proxy_pool").policy == ToolPolicy.WRITE_SENSITIVE
@@ -237,6 +243,13 @@ def test_policy_registry_covers_actual_registered_tool_names():
     assert reg.classify("send_message_to_thread").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("find_or_create_direct_thread").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("delete_direct_message").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("delete_story").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("mark_stories_seen").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("change_highlight_title").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("add_stories_to_highlight").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("remove_stories_from_highlight").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("approve_pending_direct_thread").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("mark_direct_thread_seen").policy == ToolPolicy.WRITE_SENSITIVE
 
 
 def test_bridge_planner_context_compacts_managed_accounts():

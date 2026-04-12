@@ -136,6 +136,31 @@ def test_comment_moderation_tools_classified_write_sensitive(tool_name):
     assert "comment" in cls.reason.lower()
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "expected_policy", "requires_approval"),
+    [
+        ("search_hashtags", ToolPolicy.READ_ONLY, False),
+        ("get_hashtag", ToolPolicy.READ_ONLY, False),
+        ("list_collections", ToolPolicy.READ_ONLY, False),
+        ("get_media_oembed", ToolPolicy.READ_ONLY, False),
+        ("get_story", ToolPolicy.READ_ONLY, False),
+        ("get_highlight", ToolPolicy.READ_ONLY, False),
+        ("delete_story", ToolPolicy.WRITE_SENSITIVE, True),
+        ("mark_stories_seen", ToolPolicy.WRITE_SENSITIVE, True),
+        ("change_highlight_title", ToolPolicy.WRITE_SENSITIVE, True),
+        ("add_stories_to_highlight", ToolPolicy.WRITE_SENSITIVE, True),
+        ("remove_stories_from_highlight", ToolPolicy.WRITE_SENSITIVE, True),
+        ("approve_pending_direct_thread", ToolPolicy.WRITE_SENSITIVE, True),
+        ("mark_direct_thread_seen", ToolPolicy.WRITE_SENSITIVE, True),
+    ],
+)
+def test_new_langgraph_exposure_tools_classification(tool_name, expected_policy, requires_approval):
+    reg = ToolPolicyRegistry()
+    cls = reg.classify(tool_name)
+    assert cls.policy == expected_policy
+    assert cls.requires_approval is requires_approval
+
+
 def test_classify_blocked():
     reg = ToolPolicyRegistry()
     cls = reg.classify("delete_account")
@@ -238,6 +263,12 @@ def test_classify_actual_registered_tool_names():
     assert reg.classify("pick_proxy").policy == ToolPolicy.READ_ONLY
     assert reg.classify("get_direct_thread").policy == ToolPolicy.READ_ONLY
     assert reg.classify("list_direct_messages").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("search_hashtags").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_hashtag").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("list_collections").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_media_oembed").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_story").policy == ToolPolicy.READ_ONLY
+    assert reg.classify("get_highlight").policy == ToolPolicy.READ_ONLY
 
     assert reg.classify("import_proxies").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("recheck_proxy_pool").policy == ToolPolicy.WRITE_SENSITIVE
@@ -245,6 +276,13 @@ def test_classify_actual_registered_tool_names():
     assert reg.classify("send_message_to_thread").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("find_or_create_direct_thread").policy == ToolPolicy.WRITE_SENSITIVE
     assert reg.classify("delete_direct_message").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("delete_story").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("mark_stories_seen").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("change_highlight_title").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("add_stories_to_highlight").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("remove_stories_from_highlight").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("approve_pending_direct_thread").policy == ToolPolicy.WRITE_SENSITIVE
+    assert reg.classify("mark_direct_thread_seen").policy == ToolPolicy.WRITE_SENSITIVE
 
 
 # ===========================================================================
@@ -713,6 +751,34 @@ async def test_execute_tools_treats_unknown_tool_payload_as_failure():
     assert failure["status"] == "failure"
     assert "Unknown tool" in failure["error"]
     assert failure["failure_kind"] == "error_return_payload"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "search_hashtags",
+        "get_story",
+        "delete_story",
+        "mark_stories_seen",
+        "change_highlight_title",
+        "approve_pending_direct_thread",
+        "mark_direct_thread_seen",
+    ],
+)
+async def test_execute_tools_audits_new_exposed_tool_names(tool_name):
+    executor = FakeToolExecutor(results={tool_name: {"ok": True}})
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": tool_name, "arguments": {}}]
+    )
+
+    await nodes.execute_tools_node(state)
+
+    events = audit.get_events("tool_execution")
+    assert len(events) == 1
+    assert events[0]["data"]["tool_name"] == tool_name
 
 
 @pytest.mark.asyncio

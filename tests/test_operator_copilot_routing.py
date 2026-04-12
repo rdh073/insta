@@ -155,6 +155,27 @@ def test_route_after_policy_write_sensitive_not_attempted_routes_to_approval():
     assert nodes.route_after_policy(state) == "request_approval_if_needed"
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "delete_story",
+        "mark_stories_seen",
+        "change_highlight_title",
+        "add_stories_to_highlight",
+        "remove_stories_from_highlight",
+        "approve_pending_direct_thread",
+        "mark_direct_thread_seen",
+    ],
+)
+def test_route_after_policy_new_write_tools_require_approval(tool_name):
+    nodes = _make_nodes()
+    state = _base_state(
+        proposed_tool_calls=[{"id": "c1", "name": tool_name}],
+        approval_attempted=False,
+    )
+    assert nodes.route_after_policy(state) == "request_approval_if_needed"
+
+
 def test_route_after_policy_write_sensitive_attempted_routes_to_execute():
     """Loop-bound: if approval already attempted, bypass approval gate."""
     nodes = _make_nodes()

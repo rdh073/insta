@@ -35,6 +35,17 @@ def _story_summary_to_dict(story) -> dict:
     }
 
 
+def _story_detail_to_dict(story) -> dict:
+    return {
+        "summary": _story_summary_to_dict(story.summary),
+        "link_count": story.link_count,
+        "mention_count": story.mention_count,
+        "hashtag_count": story.hashtag_count,
+        "location_count": story.location_count,
+        "sticker_count": story.sticker_count,
+    }
+
+
 def _highlight_summary_to_dict(highlight) -> dict:
     return {
         "pk": highlight.pk,
@@ -42,6 +53,14 @@ def _highlight_summary_to_dict(highlight) -> dict:
         "title": highlight.title,
         "media_count": highlight.media_count,
         "owner_username": highlight.owner_username,
+    }
+
+
+def _highlight_detail_to_dict(highlight) -> dict:
+    return {
+        "summary": _highlight_summary_to_dict(highlight.summary),
+        "story_ids": list(highlight.story_ids or []),
+        "items": [_story_summary_to_dict(story) for story in (highlight.items or [])],
     }
 
 
@@ -96,6 +115,39 @@ def _insight_to_dict(insight) -> dict:
         "share_count": insight.share_count,
         "save_count": insight.save_count,
         "video_view_count": insight.video_view_count,
+    }
+
+
+def _media_oembed_to_dict(oembed) -> dict:
+    return {
+        "media_id": oembed.media_id,
+        "author_name": oembed.author_name,
+        "author_url": oembed.author_url,
+        "author_id": oembed.author_id,
+        "title": oembed.title,
+        "provider_name": oembed.provider_name,
+        "html": oembed.html,
+        "thumbnail_url": oembed.thumbnail_url,
+        "width": oembed.width,
+        "height": oembed.height,
+        "can_view": oembed.can_view,
+    }
+
+
+def _hashtag_to_dict(hashtag) -> dict:
+    return {
+        "id": hashtag.id,
+        "name": hashtag.name,
+        "media_count": hashtag.media_count,
+        "profile_pic_url": hashtag.profile_pic_url,
+    }
+
+
+def _collection_to_dict(collection) -> dict:
+    return {
+        "pk": collection.pk,
+        "name": collection.name,
+        "media_count": collection.media_count,
     }
 
 
@@ -163,6 +215,18 @@ def register_media_read_tools(registry: ToolRegistry, context: "ToolBuilderConte
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
 
+    def get_media_oembed_handler(args: dict) -> dict:
+        if context.media_use_cases is None:
+            return {"error": "Media use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            oembed = context.media_use_cases.get_media_oembed(account_id, str(args["url"]))
+            return _media_oembed_to_dict(oembed)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
     registry.register(
         "get_media_by_pk",
         get_media_by_pk_handler,
@@ -210,9 +274,42 @@ def register_media_read_tools(registry: ToolRegistry, context: "ToolBuilderConte
         ),
     )
 
+    registry.register(
+        "get_media_oembed",
+        get_media_oembed_handler,
+        schema(
+            "get_media_oembed",
+            "Fetch oEmbed metadata for a public Instagram media URL.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "url": {"type": "string", "description": "Public Instagram media URL"},
+            },
+            required=["username", "url"],
+        ),
+    )
+
 
 def register_story_read_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
     """Register story read tools."""
+
+    def get_story_handler(args: dict) -> dict:
+        if context.story_use_cases is None:
+            return {"error": "Story use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            use_cache = args.get("use_cache", True)
+            if isinstance(use_cache, str):
+                use_cache = use_cache.strip().lower() not in {"0", "false", "no"}
+            story = context.story_use_cases.get_story(
+                account_id,
+                int(args["story_pk"]),
+                use_cache=bool(use_cache),
+            )
+            return _story_detail_to_dict(story)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
 
     def list_user_stories_handler(args: dict) -> dict:
         if context.story_use_cases is None:
@@ -234,6 +331,25 @@ def register_story_read_tools(registry: ToolRegistry, context: "ToolBuilderConte
             return {"error": str(exc)}
 
     registry.register(
+        "get_story",
+        get_story_handler,
+        schema(
+            "get_story",
+            "Get one story by numeric story_pk with overlay counters.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "story_pk": {"type": "integer", "description": "Numeric story primary key"},
+                "use_cache": {
+                    "type": "boolean",
+                    "description": "Use cached story metadata when available (default true)",
+                    "default": True,
+                },
+            },
+            required=["username", "story_pk"],
+        ),
+    )
+
+    registry.register(
         "list_user_stories",
         list_user_stories_handler,
         schema(
@@ -251,6 +367,18 @@ def register_story_read_tools(registry: ToolRegistry, context: "ToolBuilderConte
 
 def register_highlight_read_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
     """Register highlight read tools."""
+
+    def get_highlight_handler(args: dict) -> dict:
+        if context.highlight_use_cases is None:
+            return {"error": "Highlight use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            highlight = context.highlight_use_cases.get_highlight(account_id, int(args["highlight_pk"]))
+            return _highlight_detail_to_dict(highlight)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
 
     def list_user_highlights_handler(args: dict) -> dict:
         if context.highlight_use_cases is None:
@@ -272,6 +400,20 @@ def register_highlight_read_tools(registry: ToolRegistry, context: "ToolBuilderC
             return {"error": str(exc)}
 
     registry.register(
+        "get_highlight",
+        get_highlight_handler,
+        schema(
+            "get_highlight",
+            "Get one highlight by numeric highlight_pk including story items.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "highlight_pk": {"type": "integer", "description": "Numeric highlight primary key"},
+            },
+            required=["username", "highlight_pk"],
+        ),
+    )
+
+    registry.register(
         "list_user_highlights",
         list_user_highlights_handler,
         schema(
@@ -282,6 +424,93 @@ def register_highlight_read_tools(registry: ToolRegistry, context: "ToolBuilderC
                 "user_id": {"type": "integer", "description": "Numeric Instagram user ID"},
             },
             required=["username", "user_id"],
+        ),
+    )
+
+
+def register_discovery_read_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
+    """Register hashtag and collection discovery/read tools."""
+
+    def search_hashtags_handler(args: dict) -> dict:
+        if context.hashtag_use_cases is None:
+            return {"error": "Hashtag use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            hashtags = context.hashtag_use_cases.search_hashtags(account_id, str(args["query"]))
+            return {
+                "count": len(hashtags),
+                "hashtags": [_hashtag_to_dict(hashtag) for hashtag in hashtags],
+            }
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def get_hashtag_handler(args: dict) -> dict:
+        if context.hashtag_use_cases is None:
+            return {"error": "Hashtag use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            hashtag = context.hashtag_use_cases.get_hashtag(account_id, str(args["name"]))
+            return _hashtag_to_dict(hashtag)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def list_collections_handler(args: dict) -> dict:
+        if context.collection_use_cases is None:
+            return {"error": "Collection use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            collections = context.collection_use_cases.list_collections(account_id)
+            return {
+                "count": len(collections),
+                "collections": [_collection_to_dict(collection) for collection in collections],
+            }
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    registry.register(
+        "search_hashtags",
+        search_hashtags_handler,
+        schema(
+            "search_hashtags",
+            "Search hashtags by query string and return hashtag metadata candidates.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "query": {"type": "string", "description": "Hashtag query with or without #"},
+            },
+            required=["username", "query"],
+        ),
+    )
+
+    registry.register(
+        "get_hashtag",
+        get_hashtag_handler,
+        schema(
+            "get_hashtag",
+            "Fetch metadata for one hashtag by exact name.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "name": {"type": "string", "description": "Hashtag name with or without #"},
+            },
+            required=["username", "name"],
+        ),
+    )
+
+    registry.register(
+        "list_collections",
+        list_collections_handler,
+        schema(
+            "list_collections",
+            "List saved collections for the authenticated account.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+            },
+            required=["username"],
         ),
     )
 

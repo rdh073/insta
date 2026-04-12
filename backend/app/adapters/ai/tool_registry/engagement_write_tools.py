@@ -39,6 +39,14 @@ def _thread_to_dict(thread) -> dict:
     }
 
 
+def _action_receipt_to_dict(receipt) -> dict:
+    return {
+        "action_id": receipt.action_id,
+        "success": receipt.success,
+        "reason": receipt.reason,
+    }
+
+
 def _resolve_account(context: "ToolBuilderContext", username: str) -> Optional[str]:
     return context.resolve_account(username)
 
@@ -72,7 +80,55 @@ def register_highlight_write_tools(registry: ToolRegistry, context: "ToolBuilder
             return {"error": f"Account @{username} not found"}
         try:
             result = context.highlight_use_cases.delete_highlight(account_id, int(args["highlight_pk"]))
-            return {"success": result.success, "reason": result.reason}
+            return _action_receipt_to_dict(result)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def change_highlight_title_handler(args: dict) -> dict:
+        if context.highlight_use_cases is None:
+            return {"error": "Highlight use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            highlight = context.highlight_use_cases.change_title(
+                account_id,
+                int(args["highlight_pk"]),
+                str(args["title"]),
+            )
+            return {"success": True, "highlight": _highlight_summary_to_dict(highlight.summary)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def add_stories_to_highlight_handler(args: dict) -> dict:
+        if context.highlight_use_cases is None:
+            return {"error": "Highlight use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            highlight = context.highlight_use_cases.add_stories(
+                account_id,
+                int(args["highlight_pk"]),
+                [int(story_id) for story_id in args.get("story_ids", [])],
+            )
+            return {"success": True, "highlight": _highlight_summary_to_dict(highlight.summary)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def remove_stories_from_highlight_handler(args: dict) -> dict:
+        if context.highlight_use_cases is None:
+            return {"error": "Highlight use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            highlight = context.highlight_use_cases.remove_stories(
+                account_id,
+                int(args["highlight_pk"]),
+                [int(story_id) for story_id in args.get("story_ids", [])],
+            )
+            return {"success": True, "highlight": _highlight_summary_to_dict(highlight.summary)}
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
 
@@ -106,6 +162,129 @@ def register_highlight_write_tools(registry: ToolRegistry, context: "ToolBuilder
                 "highlight_pk": {"type": "integer", "description": "Numeric highlight ID"},
             },
             required=["username", "highlight_pk"],
+        ),
+    )
+
+    registry.register(
+        "change_highlight_title",
+        change_highlight_title_handler,
+        schema(
+            "change_highlight_title",
+            "Rename an existing highlight by numeric highlight_pk.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "highlight_pk": {"type": "integer", "description": "Numeric highlight ID"},
+                "title": {"type": "string", "description": "New highlight title"},
+            },
+            required=["username", "highlight_pk", "title"],
+        ),
+    )
+
+    registry.register(
+        "add_stories_to_highlight",
+        add_stories_to_highlight_handler,
+        schema(
+            "add_stories_to_highlight",
+            "Add stories to an existing highlight. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "highlight_pk": {"type": "integer", "description": "Numeric highlight ID"},
+                "story_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Story PKs to add to the highlight",
+                },
+            },
+            required=["username", "highlight_pk", "story_ids"],
+        ),
+    )
+
+    registry.register(
+        "remove_stories_from_highlight",
+        remove_stories_from_highlight_handler,
+        schema(
+            "remove_stories_from_highlight",
+            "Remove stories from an existing highlight. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "highlight_pk": {"type": "integer", "description": "Numeric highlight ID"},
+                "story_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Story PKs to remove from the highlight",
+                },
+            },
+            required=["username", "highlight_pk", "story_ids"],
+        ),
+    )
+
+
+def register_story_write_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
+    """Register story write tools."""
+
+    def delete_story_handler(args: dict) -> dict:
+        if context.story_use_cases is None:
+            return {"error": "Story use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            result = context.story_use_cases.delete_story(account_id, int(args["story_pk"]))
+            return _action_receipt_to_dict(result)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def mark_stories_seen_handler(args: dict) -> dict:
+        if context.story_use_cases is None:
+            return {"error": "Story use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            skipped_story_pks = args.get("skipped_story_pks")
+            result = context.story_use_cases.mark_seen(
+                account_id,
+                [int(pk) for pk in args.get("story_pks", [])],
+                [int(pk) for pk in skipped_story_pks] if skipped_story_pks else None,
+            )
+            return _action_receipt_to_dict(result)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    registry.register(
+        "delete_story",
+        delete_story_handler,
+        schema(
+            "delete_story",
+            "Delete one story by story_pk. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "story_pk": {"type": "integer", "description": "Numeric story primary key"},
+            },
+            required=["username", "story_pk"],
+        ),
+    )
+
+    registry.register(
+        "mark_stories_seen",
+        mark_stories_seen_handler,
+        schema(
+            "mark_stories_seen",
+            "Mark one or more stories as seen. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "story_pks": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Story PKs to mark as seen",
+                },
+                "skipped_story_pks": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Optional story PKs marked as skipped",
+                },
+            },
+            required=["username", "story_pks"],
         ),
     )
 
@@ -403,7 +582,37 @@ def register_direct_thread_write_tools(registry: ToolRegistry, context: "ToolBui
             return {"error": "message_id is required"}
         try:
             receipt = context.direct_use_cases.delete_message(account_id, thread_id, message_id)
-            return {"success": receipt.success, "reason": receipt.reason}
+            return _action_receipt_to_dict(receipt)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def approve_pending_thread_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_id = args.get("thread_id", "")
+        if not thread_id:
+            return {"error": "thread_id is required"}
+        try:
+            receipt = context.direct_use_cases.approve_pending_thread(account_id, thread_id)
+            return _action_receipt_to_dict(receipt)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def mark_direct_thread_seen_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_id = args.get("thread_id", "")
+        if not thread_id:
+            return {"error": "thread_id is required"}
+        try:
+            receipt = context.direct_use_cases.mark_thread_seen(account_id, thread_id)
+            return _action_receipt_to_dict(receipt)
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
 
@@ -452,6 +661,34 @@ def register_direct_thread_write_tools(registry: ToolRegistry, context: "ToolBui
                 "message_id": {"type": "string", "description": "Message ID to delete"},
             },
             required=["username", "thread_id", "message_id"],
+        ),
+    )
+
+    registry.register(
+        "approve_pending_direct_thread",
+        approve_pending_thread_handler,
+        schema(
+            "approve_pending_direct_thread",
+            "Approve a pending DM request thread. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_id": {"type": "string", "description": "Pending direct thread ID"},
+            },
+            required=["username", "thread_id"],
+        ),
+    )
+
+    registry.register(
+        "mark_direct_thread_seen",
+        mark_direct_thread_seen_handler,
+        schema(
+            "mark_direct_thread_seen",
+            "Mark a direct thread as seen. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_id": {"type": "string", "description": "Direct thread ID"},
+            },
+            required=["username", "thread_id"],
         ),
     )
 

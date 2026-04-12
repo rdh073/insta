@@ -8,6 +8,7 @@ from typing import Any, Optional
 from .account_tools import register_account_content_tools, register_account_tools
 from .content_read_tools import (
     register_comment_read_tools,
+    register_discovery_read_tools,
     register_direct_inbox_read_tools,
     register_direct_thread_read_tools,
     register_highlight_read_tools,
@@ -25,6 +26,7 @@ from .engagement_write_tools import (
     register_relationship_management_write_tools,
     register_relationship_primary_write_tools,
     register_send_direct_message_tool,
+    register_story_write_tools,
 )
 from .proxy_pool_tools import register_proxy_pool_tools
 
@@ -144,9 +146,12 @@ def create_tool_registry(
     register_proxy_pool_tools(registry, context)
     register_account_content_tools(registry, context)
 
+    register_discovery_read_tools(registry, context)
     register_media_read_tools(registry, context)
     register_story_read_tools(registry, context)
     register_highlight_read_tools(registry, context)
+
+    register_story_write_tools(registry, context)
     register_highlight_write_tools(registry, context)
 
     register_comment_read_tools(registry, context)
