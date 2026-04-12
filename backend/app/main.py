@@ -111,7 +111,23 @@ async def _restore_sessions(
 
     async def _one(account_id: str) -> None:
         try:
-            await asyncio.to_thread(relogin_fn, account_id)
+            result = await asyncio.to_thread(relogin_fn, account_id)
+            status = "active"
+            if isinstance(result, dict):
+                status = str(result.get("status") or "active").lower()
+            elif result is not None:
+                status = str(getattr(result, "status", None) or "active").lower()
+
+            if status != "active":
+                logger.warning(
+                    "session_restore.not_active account_id=%s status=%s",
+                    account_id,
+                    status,
+                )
+                if event_bus:
+                    event_bus.publish("account_updated", {"id": account_id, "status": status})
+                return
+
             logger.info("session_restore.ok account_id=%s", account_id)
             if event_bus:
                 event_bus.publish("account_updated", {"id": account_id, "status": "active"})
