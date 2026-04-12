@@ -5,9 +5,11 @@ Handles direct message sending and deletion via instagrapi.
 Normalizes send results and thread creation operations.
 """
 
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from app.application.dto.instagram_direct_dto import (
+    DirectParticipantSummary,
     DirectThreadSummary,
     DirectMessageSummary,
     DirectActionReceipt,
@@ -61,7 +63,7 @@ class InstagramDirectWriterAdapter:
             thread = client.direct_thread_by_participants(participant_user_ids)
 
             # Map to DTO
-            return InstagramDirectReaderAdapter._map_thread_to_summary(thread, is_pending=False)
+            return self._map_find_or_create_thread_response(thread)
 
         except Exception as e:
             failure = translate_instagram_error(
@@ -242,3 +244,206 @@ class InstagramDirectWriterAdapter:
                 success=False,
                 reason=failure.user_message,
             )
+
+    @staticmethod
+    def _map_find_or_create_thread_response(thread: Any) -> DirectThreadSummary:
+        """Map find/create response into a stable thread summary.
+
+        ``direct_thread_by_participants`` can return either a vendor ``DirectThread``
+        model or a raw dict payload depending on instagrapi/runtime version.
+        """
+        if isinstance(thread, dict):
+            return InstagramDirectWriterAdapter._map_thread_payload_to_summary(thread)
+        return InstagramDirectReaderAdapter._map_thread_to_summary(thread, is_pending=False)
+
+    @staticmethod
+    def _map_thread_payload_to_summary(payload: dict[str, Any]) -> DirectThreadSummary:
+        """Map a raw thread payload dict into DirectThreadSummary."""
+        thread = InstagramDirectWriterAdapter._extract_thread_payload(payload)
+
+        direct_thread_id = (
+            InstagramDirectWriterAdapter._first_non_empty_string(
+                thread.get("thread_id"),
+                thread.get("id"),
+                thread.get("thread_v2_id"),
+                payload.get("thread_id"),
+                payload.get("id"),
+                thread.get("pk"),
+                payload.get("pk"),
+            )
+            or ""
+        )
+        pk = InstagramDirectWriterAdapter._to_int(
+            thread.get("pk")
+            if thread.get("pk") is not None
+            else thread.get("thread_pk")
+        )
+
+        participants: list[DirectParticipantSummary] = []
+        users = thread.get("users")
+        if isinstance(users, list):
+            for user in users:
+                participant = InstagramDirectWriterAdapter._map_participant_payload(user)
+                if participant is not None:
+                    participants.append(participant)
+
+        last_message = None
+        last_message_payload = InstagramDirectWriterAdapter._extract_last_message_payload(thread)
+        if last_message_payload is not None and direct_thread_id:
+            last_message = InstagramDirectWriterAdapter._map_message_payload_to_summary(
+                last_message_payload, direct_thread_id
+            )
+
+        return DirectThreadSummary(
+            direct_thread_id=direct_thread_id,
+            pk=pk,
+            participants=participants,
+            last_message=last_message,
+            is_pending=False,
+        )
+
+    @staticmethod
+    def _extract_thread_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """Return the concrete thread dict from possible envelope shapes."""
+        thread = payload.get("thread")
+        if isinstance(thread, dict):
+            return thread
+        return payload
+
+    @staticmethod
+    def _map_participant_payload(user: Any) -> Optional[DirectParticipantSummary]:
+        """Map a participant user dict into DirectParticipantSummary."""
+        if not isinstance(user, dict):
+            return None
+
+        user_id = InstagramDirectWriterAdapter._to_int(
+            user.get("pk")
+            if user.get("pk") is not None
+            else user.get("id")
+            if user.get("id") is not None
+            else user.get("user_id")
+        )
+        if user_id is None:
+            return None
+
+        username = (
+            InstagramDirectWriterAdapter._first_non_empty_string(user.get("username")) or ""
+        )
+
+        return DirectParticipantSummary(
+            user_id=user_id,
+            username=username,
+            full_name=InstagramDirectWriterAdapter._first_non_empty_string(user.get("full_name")),
+            profile_pic_url=InstagramDirectReaderAdapter._to_string(
+                user.get("profile_pic_url")
+            ),
+            is_private=(
+                user.get("is_private") if isinstance(user.get("is_private"), bool) else None
+            ),
+        )
+
+    @staticmethod
+    def _extract_last_message_payload(thread: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """Extract the most recent message payload from known dict shapes."""
+        for key in ("items", "messages"):
+            items = thread.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        return item
+
+        for key in ("last_permanent_item", "last_message", "last_item"):
+            value = thread.get(key)
+            if isinstance(value, dict):
+                return value
+
+        return None
+
+    @staticmethod
+    def _map_message_payload_to_summary(
+        message: dict[str, Any],
+        direct_thread_id: str,
+    ) -> Optional[DirectMessageSummary]:
+        """Map a raw message payload dict into DirectMessageSummary."""
+        direct_message_id = InstagramDirectWriterAdapter._first_non_empty_string(
+            message.get("id"),
+            message.get("item_id"),
+            message.get("pk"),
+            message.get("client_context"),
+        )
+        if direct_message_id is None:
+            return None
+
+        return DirectMessageSummary(
+            direct_message_id=direct_message_id,
+            direct_thread_id=direct_thread_id,
+            sender_user_id=InstagramDirectWriterAdapter._to_int(
+                message.get("user_id")
+                if message.get("user_id") is not None
+                else message.get("sender_id")
+            ),
+            sent_at=InstagramDirectWriterAdapter._to_datetime(
+                message.get("timestamp")
+                if message.get("timestamp") is not None
+                else message.get("timestamp_ms")
+            ),
+            item_type=InstagramDirectWriterAdapter._first_non_empty_string(
+                message.get("item_type")
+            ),
+            text=InstagramDirectWriterAdapter._first_non_empty_string(message.get("text")),
+            is_shh_mode=(
+                message.get("is_shh_mode")
+                if isinstance(message.get("is_shh_mode"), bool)
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _first_non_empty_string(*values: Any) -> Optional[str]:
+        """Return the first non-empty string representation of the given values."""
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return None
+
+    @staticmethod
+    def _to_int(value: Any) -> Optional[int]:
+        """Convert value to int when possible."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _to_datetime(value: Any) -> Optional[datetime]:
+        """Convert timestamp-like payload values to UTC datetime."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+
+        numeric: float
+        try:
+            numeric = float(str(value))
+        except (TypeError, ValueError):
+            return None
+
+        # Instagram payloads often use microseconds; keep conversion deterministic.
+        if numeric > 1e14:
+            numeric /= 1_000_000.0
+        elif numeric > 1e11:
+            numeric /= 1_000.0
+
+        try:
+            return datetime.fromtimestamp(numeric, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None

@@ -258,6 +258,119 @@ class TestDirectWriterAdapter:
         assert result.direct_thread_id == "new-thread"
         mock_client.direct_thread_by_participants.assert_called_once_with([100, 101])
 
+    def test_find_or_create_thread_maps_existing_dict_payload(self):
+        """Verify dict payload with thread envelope maps deterministically."""
+        mock_client = Mock()
+        mock_client.direct_thread_by_participants.return_value = {
+            "status": "ok",
+            "thread": {
+                "thread_id": "340282366841710300949128171234567890123",
+                "pk": "178612312342",
+                "users": [
+                    {
+                        "pk": "100",
+                        "username": "alice",
+                        "full_name": "Alice A",
+                        "profile_pic_url": "https://example.com/alice.jpg",
+                        "is_private": False,
+                    },
+                    {
+                        "pk": 101,
+                        "username": "bob",
+                        "full_name": "Bob B",
+                        "is_private": True,
+                    },
+                ],
+                "items": [
+                    {
+                        "item_id": "30076214123123123123123864",
+                        "user_id": "100",
+                        "timestamp": "1700000000000000",
+                        "item_type": "text",
+                        "text": "hello from existing thread",
+                        "is_shh_mode": False,
+                    }
+                ],
+            },
+        }
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramDirectWriterAdapter(mock_repo)
+        result = adapter.find_or_create_thread("acc-123", [100, 101])
+
+        assert result.direct_thread_id == "340282366841710300949128171234567890123"
+        assert result.pk == 178612312342
+        assert len(result.participants) == 2
+        assert result.participants[0].user_id == 100
+        assert result.participants[0].username == "alice"
+        assert result.participants[1].username == "bob"
+        assert result.last_message is not None
+        assert result.last_message.direct_message_id == "30076214123123123123123864"
+        assert result.last_message.direct_thread_id == result.direct_thread_id
+        assert result.last_message.sender_user_id == 100
+        assert result.last_message.text == "hello from existing thread"
+        assert result.last_message.item_type == "text"
+        assert isinstance(result.last_message.sent_at, datetime)
+        assert result.last_message.sent_at.tzinfo == timezone.utc
+
+    def test_find_or_create_thread_maps_new_thread_dict_payload(self):
+        """Verify direct dict payload (without thread envelope) maps correctly."""
+        mock_client = Mock()
+        mock_client.direct_thread_by_participants.return_value = {
+            "id": "340282366841710300949128171234567890999",
+            "pk": 178612300099,
+            "users": [{"id": 777, "username": "newfriend"}],
+            "last_permanent_item": {
+                "id": "msg-new-1",
+                "sender_id": 777,
+                "timestamp": 1700000100,
+                "item_type": "text",
+                "text": "first message",
+            },
+        }
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramDirectWriterAdapter(mock_repo)
+        result = adapter.find_or_create_thread("acc-123", [777])
+
+        assert result.direct_thread_id == "340282366841710300949128171234567890999"
+        assert result.pk == 178612300099
+        assert len(result.participants) == 1
+        assert result.participants[0].user_id == 777
+        assert result.participants[0].username == "newfriend"
+        assert result.last_message is not None
+        assert result.last_message.direct_message_id == "msg-new-1"
+        assert result.last_message.sender_user_id == 777
+        assert result.last_message.text == "first message"
+        assert result.last_message.item_type == "text"
+
+    def test_find_or_create_thread_maps_partial_dict_payload(self):
+        """Verify partial dict payload maps without attribute errors."""
+        mock_client = Mock()
+        mock_client.direct_thread_by_participants.return_value = {
+            "thread": {
+                "thread_id": "partial-thread-1",
+                "users": [{"pk": "321"}],  # no username/full_name/profile fields
+            }
+        }
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramDirectWriterAdapter(mock_repo)
+        result = adapter.find_or_create_thread("acc-123", [321])
+
+        assert result.direct_thread_id == "partial-thread-1"
+        assert result.pk is None
+        assert len(result.participants) == 1
+        assert result.participants[0].user_id == 321
+        assert result.participants[0].username == ""
+        assert result.last_message is None
+
     def test_send_to_thread(self):
         """Verify direct_answer() sends message to thread."""
         # Create mock client
