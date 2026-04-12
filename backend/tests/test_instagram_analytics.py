@@ -173,6 +173,12 @@ class TestInsightReaderAdapter:
         assert results[2].reach_count == 3000
         assert results[2].video_view_count == 999
         assert results[2].extra_metrics["vendor_metric"] == "alpha"
+        mock_client.insights_media_feed_all.assert_called_once_with(
+            post_type="ALL",
+            time_frame="TWO_YEARS",
+            data_ordering="REACH_COUNT",
+            count=0,
+        )
 
     def test_list_media_insights_edge_list_skips_invalid_nodes(self):
         """Verify malformed edge entries are ignored without failing the call."""
@@ -382,6 +388,7 @@ class TestTrackCatalogAdapter:
         results = adapter.search_tracks("acc-123", "strict query", limit=1)
 
         mock_client.search_music.assert_called_once_with("strict query")
+        assert mock_client.search_music.call_args.kwargs == {}
         assert len(results) == 1
         assert results[0].canonical_id == "200"
 

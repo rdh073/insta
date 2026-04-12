@@ -76,7 +76,11 @@ class TestCommentReaderAdapter:
         assert len(result.comments) == 2
         assert result.comments[0].pk == 100
         assert result.next_cursor == "Q1VSU09SX1RPS0VOPQ=="
-        mock_client.media_comments_chunk.assert_called_once()
+        mock_client.media_comments_chunk.assert_called_once_with(
+            "media-456",
+            max_amount=2,
+            min_id=None,
+        )
 
     def test_list_comments_page_with_cursor(self):
         """Verify pagination cursor is passed correctly."""
@@ -103,6 +107,8 @@ class TestCommentReaderAdapter:
         assert result.next_cursor is None  # No more pages
         # Verify opaque cursor is passed through unchanged as min_id
         call_args = mock_client.media_comments_chunk.call_args
+        assert call_args.args == ("media-456",)
+        assert call_args.kwargs.get("max_amount") == 10
         assert call_args.kwargs.get("min_id") == opaque_cursor
 
     def test_comment_author_extraction(self):

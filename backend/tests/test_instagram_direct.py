@@ -142,6 +142,7 @@ class TestDirectReaderAdapter:
         assert results[0].user_id == 777
         assert results[0].username == "search-result-1"
         assert not hasattr(results[0], "direct_thread_id")
+        mock_client.direct_search.assert_called_once_with("username")
 
     def test_participants_extraction(self):
         """Verify thread participants are extracted."""
@@ -330,6 +331,7 @@ class TestDirectWriterAdapter:
         assert result.last_message.item_type == "text"
         assert isinstance(result.last_message.sent_at, datetime)
         assert result.last_message.sent_at.tzinfo == timezone.utc
+        mock_client.direct_thread_by_participants.assert_called_once_with([100, 101])
 
     def test_find_or_create_thread_maps_new_thread_dict_payload(self):
         """Verify direct dict payload (without thread envelope) maps correctly."""
