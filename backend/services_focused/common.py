@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 
 from app.adapters.instagram.exception_handler import instagram_exception_handler
 
@@ -11,6 +12,13 @@ def utc_now() -> datetime.datetime:
 
 def utc_now_iso() -> str:
     return utc_now().isoformat().replace("+00:00", "Z")
+
+
+def bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def classify_exception(
@@ -27,4 +35,3 @@ def classify_exception(
         account_id=account_id,
         username=username,
     )
-

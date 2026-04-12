@@ -31,7 +31,7 @@ from .account_query import (
     get_account_status,
     get_account_username,
 )
-from .common import classify_exception
+from .common import bool_env, classify_exception
 from .totp import generate_totp_code, normalize_totp_secret, verify_totp_code
 
 
@@ -83,6 +83,7 @@ def login_account(
             password,
             proxy,
             totp_secret=totp_secret,
+            verify_session=bool_env("ACCOUNT_VERIFY_SESSION_ON_RESTORE", False),
             country=country,
             country_code=country_code,
             locale=locale,

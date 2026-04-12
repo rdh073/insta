@@ -8,7 +8,7 @@ import state
 from instagram import relogin_account_sync as default_relogin_account_sync
 
 from .account_query import find_account_id_by_username, get_account_username
-from .common import classify_exception
+from .common import bool_env, classify_exception
 
 
 ReloginSync = Callable[..., dict]
@@ -22,19 +22,43 @@ def _supports_credentials_signature(relogin_sync: ReloginSync) -> bool:
     return "username" in params and "password" in params
 
 
+def _supports_verify_session_signature(relogin_sync: ReloginSync) -> bool:
+    try:
+        params = inspect.signature(relogin_sync).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    for param in params:
+        if param.kind is inspect.Parameter.VAR_KEYWORD:
+            return True
+        if param.name == "verify_session":
+            return True
+    return False
+
+
 def _invoke_relogin_sync(relogin_sync: ReloginSync, account_id: str) -> dict:
     if _supports_credentials_signature(relogin_sync):
         meta = state.get_account(account_id) or {}
+        kwargs = {
+            "username": meta.get("username", ""),
+            "password": meta.get("password", ""),
+            "proxy": meta.get("proxy"),
+            "totp_secret": meta.get("totp_secret"),
+        }
+        if _supports_verify_session_signature(relogin_sync):
+            kwargs["verify_session"] = bool_env(
+                "ACCOUNT_VERIFY_SESSION_ON_RESTORE", False
+            )
+        kwargs.update(
+            {
+                "country": meta.get("country"),
+                "country_code": meta.get("country_code"),
+                "locale": meta.get("locale"),
+                "timezone_offset": meta.get("timezone_offset"),
+            }
+        )
         return relogin_sync(
             account_id,
-            username=meta.get("username", ""),
-            password=meta.get("password", ""),
-            proxy=meta.get("proxy"),
-            totp_secret=meta.get("totp_secret"),
-            country=meta.get("country"),
-            country_code=meta.get("country_code"),
-            locale=meta.get("locale"),
-            timezone_offset=meta.get("timezone_offset"),
+            **kwargs,
         )
     return relogin_sync(account_id)
 

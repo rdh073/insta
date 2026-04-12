@@ -7,6 +7,7 @@ import instagram
 import pytest
 import services
 import state
+from services_focused import account_auth as account_auth_runtime
 
 
 class FakeUser:
@@ -69,6 +70,54 @@ def test_login_account_persists_session_and_updates_state(monkeypatch):
     assert state.get_account_status_value(account_id) == "active"
     assert isinstance(state.get_client(account_id), FakeClient)
     assert (services.SESSIONS_DIR / "alice.json").exists()
+
+
+def test_login_account_enables_verify_session_policy_for_restore_path(monkeypatch):
+    captured: list[bool] = []
+
+    def fake_create_authenticated_client(
+        _username: str,
+        _password: str,
+        _proxy: str | None = None,
+        _totp_secret: str | None = None,
+        verify_session: bool = False,
+    ):
+        captured.append(verify_session)
+        return FakeClient()
+
+    monkeypatch.setenv("ACCOUNT_VERIFY_SESSION_ON_RESTORE", "true")
+    monkeypatch.setattr(
+        account_auth_runtime, "create_authenticated_client", fake_create_authenticated_client
+    )
+
+    result = services.login_account("alice", "secret", "http://proxy:8080")
+
+    assert result["status"] == "active"
+    assert captured == [True]
+
+
+def test_login_account_keeps_verify_session_policy_disabled_by_default(monkeypatch):
+    captured: list[bool] = []
+
+    def fake_create_authenticated_client(
+        _username: str,
+        _password: str,
+        _proxy: str | None = None,
+        _totp_secret: str | None = None,
+        verify_session: bool = False,
+    ):
+        captured.append(verify_session)
+        return FakeClient()
+
+    monkeypatch.delenv("ACCOUNT_VERIFY_SESSION_ON_RESTORE", raising=False)
+    monkeypatch.setattr(
+        account_auth_runtime, "create_authenticated_client", fake_create_authenticated_client
+    )
+
+    result = services.login_account("alice", "secret", "http://proxy:8080")
+
+    assert result["status"] == "active"
+    assert captured == [False]
 
 
 def test_import_session_archive_creates_idle_accounts_and_files():
@@ -178,6 +227,58 @@ def test_relogin_account_with_tracking_marks_error_and_logs_failure(monkeypatch)
     assert entries["entries"][0]["username"] == "alice"
     # detail is the translated user_message from the exception catalog, not the raw message
     assert entries["entries"][0]["detail"] == "An unexpected error occurred. Please try again."
+
+
+def test_relogin_account_with_tracking_enables_verify_session_policy(monkeypatch):
+    captured: list[bool] = []
+    state.set_account("acct-1", {"username": "alice", "password": "secret"})
+
+    def relogin_with_verify(
+        _account_id: str,
+        *,
+        username: str,
+        password: str,
+        proxy: str | None = None,
+        totp_secret: str | None = None,
+        verify_session: bool = False,
+    ):
+        del username, password, proxy, totp_secret
+        captured.append(verify_session)
+        return {"id": _account_id, "status": "active"}
+
+    monkeypatch.setenv("ACCOUNT_VERIFY_SESSION_ON_RESTORE", "true")
+    monkeypatch.setattr(services, "relogin_account_sync", relogin_with_verify)
+
+    result = services.relogin_account_with_tracking("acct-1")
+
+    assert result["status"] == "active"
+    assert captured == [True]
+
+
+def test_relogin_account_with_tracking_keeps_verify_session_policy_disabled(monkeypatch):
+    captured: list[bool] = []
+    state.set_account("acct-1", {"username": "alice", "password": "secret"})
+
+    def relogin_with_verify(
+        _account_id: str,
+        *,
+        username: str,
+        password: str,
+        proxy: str | None = None,
+        totp_secret: str | None = None,
+        verify_session: bool = False,
+    ):
+        del username, password, proxy, totp_secret
+        captured.append(verify_session)
+        return {"id": _account_id, "status": "active"}
+
+    monkeypatch.delenv("ACCOUNT_VERIFY_SESSION_ON_RESTORE", raising=False)
+    monkeypatch.setattr(services, "relogin_account_sync", relogin_with_verify)
+
+    result = services.relogin_account_with_tracking("acct-1")
+
+    assert result["status"] == "active"
+    assert captured == [False]
 
 
 def test_bulk_relogin_accounts_uses_account_id_when_username_missing(monkeypatch):
