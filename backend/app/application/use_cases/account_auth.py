@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from contextlib import nullcontext
 
+from .account.relogin import ReloginUseCases
 from ..dto.account_dto import (
     LoginRequest,
     AccountResponse,
@@ -47,6 +47,7 @@ class AccountAuthUseCases:
         error_handler: InstagramExceptionHandler,
         identity_reader: InstagramIdentityReader,
         uow: PersistenceUnitOfWork | None = None,
+        relogin_usecases: ReloginUseCases | None = None,
     ):
         self.account_repo = account_repo
         self.client_repo = client_repo
@@ -58,6 +59,15 @@ class AccountAuthUseCases:
         self.error_handler = error_handler
         self.identity_reader = identity_reader
         self.uow = uow
+        # Canonical relogin semantics shared with AccountUseCases facade.
+        self._relogin = relogin_usecases or ReloginUseCases(
+            account_repo=account_repo,
+            status_repo=status_repo,
+            instagram=instagram,
+            logger=logger,
+            error_handler=error_handler,
+            uow=uow,
+        )
 
     def _uow_scope(self):
         """Return transaction context when UoW is configured."""
@@ -381,106 +391,12 @@ class AccountAuthUseCases:
             )
 
     def relogin_account(self, account_id: str) -> AccountResponse:
-        """Relogin an account using the appropriate strategy.
-
-        Automatically selects ``FRESH_CREDENTIALS`` when the account's
-        ``last_error_code`` indicates a server-side force-logout
-        (``login_required`` / Instagram logout_reason:8) so the dead session
-        file is bypassed and a full credential login is performed directly.
-        All other accounts use the faster ``SESSION_RESTORE`` path.
-        """
-        with self._uow_scope():
-            account = self.account_repo.get(account_id) or {}
-            username = account.get("username", account_id)
-            password = account.get("password", "")
-            if not password:
-                raise ValueError(
-                    f"No stored password for @{username}. Login manually via the Accounts page."
-                )
-            mode = self._select_relogin_mode(account)
-            try:
-                result = self.instagram.relogin_account(
-                    account_id,
-                    username=username,
-                    password=password,
-                    proxy=account.get("proxy"),
-                    totp_secret=account.get("totp_secret"),
-                    mode=mode,
-                )
-                # Mark active and clear any stale error state.
-                # status_repo must be updated explicitly — instagram.py's
-                # activate_account_client only writes the legacy in-memory
-                # state._account_statuses, not the SQL-backed status_repo.
-                self.status_repo.set(account_id, "active")
-                self.account_repo.update(
-                    account_id, last_error=None, last_error_code=None
-                )
-                # Use the username from the repo (not from result) — result comes
-                # from instagram.py's account_to_dict which reads legacy state._accounts.
-                # On SQL backends that dict is empty → username would be "".
-                return AccountResponse(
-                    id=account_id,
-                    username=username,
-                    status="active",
-                )
-            except Exception as exc:
-                failure = self.error_handler.handle(
-                    exc,
-                    operation="relogin",
-                    account_id=account_id,
-                    username=username,
-                )
-                new_status = self._relogin_failure_status(failure)
-
-                if new_status is not None:
-                    self.status_repo.set(account_id, new_status)
-
-                # Persist error details so the frontend can display context and
-                # _select_relogin_mode can choose the right strategy next time.
-                self.account_repo.update(
-                    account_id,
-                    last_error=failure.user_message,
-                    last_error_code=failure.code,
-                )
-
-                self.logger.log_event(
-                    account_id,
-                    username,
-                    "relogin_failed",
-                    detail=failure.user_message,
-                    status=new_status or account.get("status", "unknown"),
-                )
-                raise InstagramAdapterError(failure) from exc
+        """Relogin an account via canonical split-path relogin semantics."""
+        return self._relogin.relogin_account(account_id)
 
     def relogin_account_by_username(self, username: str) -> dict:
         """Relogin account by username, returning summary for AI tools."""
-        normalized = username.lstrip("@")
-        account_id = self.find_by_username(normalized)
-        if not account_id:
-            return {"error": f"Account @{normalized} not found"}
-
-        try:
-            self.relogin_account(account_id)
-            account = self.account_repo.get(account_id) or {}
-            return {
-                "success": True,
-                "username": normalized,
-                "status": "active",
-                "followers": account.get("followers"),
-                "message": f"@{normalized} re-logged in successfully",
-            }
-        except Exception as exc:
-            failure = self.error_handler.handle(
-                exc,
-                operation="relogin",
-                account_id=account_id,
-                username=normalized,
-            )
-            return {
-                "success": False,
-                "username": normalized,
-                "error": failure.user_message,
-            }
+        return self._relogin.relogin_account_by_username(username)
 
     def find_by_username(self, username: str) -> str | None:
         """Find account ID by username."""
@@ -489,43 +405,8 @@ class AccountAuthUseCases:
     async def bulk_relogin_accounts(
         self, request: BulkReloginRequest
     ) -> list[AccountResponse]:
-        """Relogin multiple accounts concurrently."""
-        semaphore = asyncio.Semaphore(request.concurrency)
-
-        async def _relogin_one(account_id: str) -> AccountResponse:
-            async with semaphore:
-                account = self.account_repo.get(account_id) or {}
-                username = account.get("username", account_id)
-                if not account.get("password"):
-                    return AccountResponse(
-                        id=account_id,
-                        username=username,
-                        status="error",
-                        last_error=f"No stored password for @{username}. Login manually.",
-                    )
-                try:
-                    return await asyncio.to_thread(
-                        self.relogin_account, account_id
-                    )
-                except Exception as exc:
-                    failure = self.error_handler.handle(
-                        exc,
-                        operation="relogin",
-                        account_id=account_id,
-                        username=username,
-                    )
-                    # relogin_account already set status and logged,
-                    # but re-raise as a non-exception response for bulk.
-                    error_status = self._relogin_failure_status(failure) or "error"
-                    return AccountResponse(
-                        id=account_id,
-                        username=username,
-                        status=error_status,
-                    )
-
-        return await asyncio.gather(
-            *[_relogin_one(account_id) for account_id in request.account_ids]
-        )
+        """Relogin multiple accounts with canonical relogin semantics."""
+        return await self._relogin.bulk_relogin_accounts(request)
 
     def bulk_logout_accounts(self, account_ids: list[str]) -> list[AccountResponse]:
         """Logout multiple accounts."""

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 
 from app.application.use_cases.account import AccountUseCases
+from app.application.use_cases.account.relogin import ReloginUseCases
 from app.application.use_cases.account_auth import AccountAuthUseCases
 from app.application.use_cases.account_connectivity import AccountConnectivityUseCases
 from app.application.use_cases.account_profile import AccountProfileUseCases
@@ -147,6 +148,15 @@ def _build_account_usecases(repos, ig, infra):
     instagram, totp, identity_reader = ig
     activity_log, proxy_checker = infra
 
+    relogin = ReloginUseCases(
+        account_repo=account_repo,
+        status_repo=status_repo,
+        instagram=instagram,
+        logger=activity_log,
+        error_handler=instagram_exception_handler,
+        uow=uow,
+    )
+
     legacy = AccountUseCases(
         account_repo=account_repo,
         client_repo=client_repo,
@@ -159,6 +169,7 @@ def _build_account_usecases(repos, ig, infra):
         identity_reader=identity_reader,
         uow=uow,
         proxy_checker=proxy_checker,
+        relogin_usecases=relogin,
     )
     auth = AccountAuthUseCases(
         account_repo=account_repo,
@@ -171,6 +182,7 @@ def _build_account_usecases(repos, ig, infra):
         error_handler=instagram_exception_handler,
         identity_reader=identity_reader,
         uow=uow,
+        relogin_usecases=relogin,
     )
     profile = AccountProfileUseCases(
         account_repo=account_repo,
@@ -215,6 +227,7 @@ def _build_account_usecases(repos, ig, infra):
     )
     return {
         "legacy": legacy,
+        "relogin": relogin,
         "auth": auth,
         "profile": profile,
         "proxy": proxy,
@@ -591,7 +604,7 @@ def create_services():
         "_client_repo": client_repo,
         "_status_repo": status_repo,
         "_job_repo": job_repo,
-        "_relogin_fn": acct["auth"].relogin_account,
+        "_relogin_fn": acct["relogin"].relogin_account,
         "ai_gateway": ai["ai_gateway"],
         "tool_registry": ai["tool_registry"],
         "smart_engagement": se["rec"],

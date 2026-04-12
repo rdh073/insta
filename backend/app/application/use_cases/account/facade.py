@@ -66,6 +66,7 @@ class AccountUseCases:
         identity_reader: InstagramIdentityReader,
         uow: PersistenceUnitOfWork | None = None,
         proxy_checker: ProxyCheckerPort | None = None,
+        relogin_usecases: ReloginUseCases | None = None,
     ):
         # Initialize sub-modules with only the dependencies they need
         self._auth = AuthUseCases(
@@ -81,7 +82,7 @@ class AccountUseCases:
             uow=uow,
         )
 
-        self._relogin = ReloginUseCases(
+        self._relogin = relogin_usecases or ReloginUseCases(
             account_repo=account_repo,
             status_repo=status_repo,
             instagram=instagram,
