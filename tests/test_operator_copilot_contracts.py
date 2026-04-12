@@ -439,6 +439,17 @@ def test_bridge_get_policy_summary():
     assert summary.get("follow_user") == "write_sensitive"
 
 
+def test_bridge_get_policy_coverage_report_machine_readable():
+    bridge = _make_bridge(["list_accounts", "follow_user"])
+    report = bridge.get_policy_coverage_report()
+    assert "registered_only" in report
+    assert "policy_only" in report
+    assert "intentional_exceptions" in report
+    assert report["registered_only"] == []
+    assert isinstance(report["policy_only"], list)
+    assert isinstance(report["intentional_exceptions"], list)
+
+
 # ===========================================================================
 # InMemoryOperatorApprovalAdapter contract
 # ===========================================================================

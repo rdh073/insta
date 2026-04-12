@@ -166,3 +166,30 @@ def create_tool_registry(
     register_media_write_tools(registry, context)
 
     return registry
+
+
+def list_registered_tool_names_for_policy_audit() -> list[str]:
+    """Return all tool names declared by the tool registry builder.
+
+    This helper intentionally uses placeholder dependencies because only
+    registration-time metadata is needed (tool names/schemas), not execution.
+    """
+    sentinel = object()
+    registry = create_tool_registry(
+        account_usecases=sentinel,
+        postjob_usecases=sentinel,
+        hashtag_use_cases=sentinel,
+        collection_use_cases=sentinel,
+        media_use_cases=sentinel,
+        story_use_cases=sentinel,
+        highlight_use_cases=sentinel,
+        comment_use_cases=sentinel,
+        direct_use_cases=sentinel,
+        insight_use_cases=sentinel,
+        relationship_use_cases=sentinel,
+        account_profile_usecases=sentinel,
+        account_auth_usecases=sentinel,
+        account_proxy_usecases=sentinel,
+        proxy_pool_usecases=sentinel,
+    )
+    return registry.get_registered_tool_names()

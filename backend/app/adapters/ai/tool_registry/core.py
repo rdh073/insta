@@ -37,6 +37,10 @@ class ToolRegistry:
         """Get all tool schemas for AI provider."""
         return self._schemas
 
+    def get_registered_tool_names(self) -> list[str]:
+        """Get all registered tool names in deterministic order."""
+        return sorted(self._tools.keys())
+
     async def execute(self, name: str, args: dict) -> dict:
         """Execute a tool by name.
 

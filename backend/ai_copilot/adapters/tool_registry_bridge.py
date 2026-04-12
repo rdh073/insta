@@ -208,6 +208,15 @@ class ToolRegistryBridgeAdapter(ToolExecutorPort):
             if _extract_name(s)
         }
 
+    def get_policy_coverage_report(self) -> dict[str, object]:
+        """Return machine-readable policy/registry parity coverage report."""
+        registered_names = {
+            _extract_name(schema)
+            for schema in self._tool_registry.get_schemas()
+            if _extract_name(schema)
+        }
+        return self._policy_registry.build_parity_report(registered_names)
+
     def invalidate_schema_cache(self) -> None:
         """Force recomputation of schemas on next get_schemas() call."""
         self._cached_schemas = None

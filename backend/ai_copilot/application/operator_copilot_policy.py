@@ -1,21 +1,22 @@
 """Tool policy classification for operator copilot.
 
 This module owns the tool allowlist, classification, and policy rules.
-It is the single source of truth for: which tools exist, their risk level,
-and whether they require approval.
+It is the single source of truth for: tool risk level, approval requirements,
+and explicitly-documented policy-only exceptions.
 
 Invariants enforced here:
 - Tools NOT in the allowlist are BLOCKED by default (deny-unknown).
 - BLOCKED tools can never be routed to execution regardless of approval.
 - WRITE_SENSITIVE tools require approval_result == "approved" before execution.
 - READ_ONLY tools do not require approval.
-- Policy lives here, NOT in prompts, adapters, or the UI.
+- Policy parity validation lives here, NOT in prompts, adapters, or the UI.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Iterable
 
 
 class ToolPolicy(str, Enum):
@@ -69,6 +70,29 @@ _UNKNOWN_TOOL_BLOCK = ToolClassification(
     reason="unknown tool — not in allowlist",
 )
 
+# Explicit policy-only entries that are intentionally not in the runtime tool
+# registry. These are retained for compatibility with historical traces/tests
+# and for defensive deny-lists of unsafe legacy names.
+_INTENTIONAL_POLICY_ONLY_EXCEPTIONS: dict[str, str] = {
+    # Defensive blocked names: must stay classified as BLOCKED even when absent
+    # from the runtime registry.
+    "delete_account": "legacy blocked action retained as explicit deny-list entry",
+    "mass_unfollow": "legacy blocked mass-action retained as explicit deny-list entry",
+    "bulk_dm": "legacy blocked spam action retained as explicit deny-list entry",
+    "scrape_users": "legacy blocked scraping action retained as explicit deny-list entry",
+    # Legacy aliases used by older prompts/tests before the tool-registry split.
+    "get_user_profile": "legacy read alias retained for compatibility",
+    "get_followers": "legacy read alias retained for compatibility",
+    "get_following": "legacy read alias retained for compatibility",
+    "get_posts": "legacy read alias retained for compatibility",
+    "get_post_details": "legacy read alias retained for compatibility",
+    "get_scheduled_posts": "legacy read alias retained for compatibility",
+    "get_engagement_stats": "legacy read alias retained for compatibility",
+    "publish_post": "legacy write alias retained for compatibility",
+    "delete_post": "legacy write alias retained for compatibility",
+    "update_profile": "legacy write alias retained for compatibility",
+}
+
 
 class ToolPolicyRegistry:
     """Allowlist-based tool classification registry.
@@ -90,9 +114,9 @@ class ToolPolicyRegistry:
     """
 
     _CLASSIFICATIONS: dict[str, ToolClassification] = {
-        # ── App operator tools (actual tool_registry.py tools) ───────────────
+        # ── App operator tools (actual tool_registry/* tools) ─────────────────
         # These are the real tools available in the app's ToolRegistry.
-        # Named after the handlers registered in app/adapters/ai/tool_registry.py.
+        # Named after handlers registered in app/adapters/ai/tool_registry/*.
         "list_accounts": ToolClassification(
             ToolPolicy.READ_ONLY, False, "lists all managed accounts and their status"
         ),
@@ -243,6 +267,18 @@ class ToolPolicyRegistry:
         "delete_comment": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "deletes a public comment"
         ),
+        "like_comment": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "likes a public comment"
+        ),
+        "unlike_comment": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "removes like from a public comment"
+        ),
+        "pin_comment": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "pins a public comment on owned media"
+        ),
+        "unpin_comment": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE, True, "unpins a public comment on owned media"
+        ),
         "send_direct_message": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "sends a direct message to a user"
         ),
@@ -296,6 +332,58 @@ class ToolPolicyRegistry:
         Unknown tools return BLOCKED with reason "not in allowlist".
         """
         return self._CLASSIFICATIONS.get(tool_name, _UNKNOWN_TOOL_BLOCK)
+
+    @classmethod
+    def classified_tool_names(cls) -> set[str]:
+        """Return all explicit tool names known to policy."""
+        return set(cls._CLASSIFICATIONS.keys())
+
+    @classmethod
+    def intentional_policy_only_exceptions(cls) -> dict[str, str]:
+        """Return documented policy-only names that may stay non-registered."""
+        return dict(_INTENTIONAL_POLICY_ONLY_EXCEPTIONS)
+
+    @classmethod
+    def build_parity_report(cls, registered_tool_names: Iterable[str]) -> dict[str, object]:
+        """Build machine-readable policy/registry parity report.
+
+        Args:
+            registered_tool_names: Actual runtime names registered by the tool
+                registry builder.
+
+        Returns:
+            Dict with coverage details:
+            - registered_only: tools registered but missing in policy (CI fail)
+            - policy_only: tools in policy but absent from registry
+            - intentional_exceptions: policy_only entries explicitly documented
+            - policy_only_unexpected: policy_only entries not in exceptions (CI fail)
+            - stale_intentional_exceptions: exception names no longer policy_only
+            - is_parity_ok: overall parity status for CI
+        """
+        registered = {name for name in registered_tool_names if name}
+        policy = cls.classified_tool_names()
+        policy_only = policy - registered
+        registered_only = registered - policy
+
+        declared_exceptions = set(_INTENTIONAL_POLICY_ONLY_EXCEPTIONS.keys())
+        intentional_exceptions = policy_only & declared_exceptions
+        policy_only_unexpected = policy_only - declared_exceptions
+        stale_intentional_exceptions = declared_exceptions - policy_only
+
+        return {
+            "registered_only": sorted(registered_only),
+            "policy_only": sorted(policy_only),
+            "intentional_exceptions": sorted(intentional_exceptions),
+            "policy_only_unexpected": sorted(policy_only_unexpected),
+            "stale_intentional_exceptions": sorted(stale_intentional_exceptions),
+            "intentional_exception_reasons": {
+                name: _INTENTIONAL_POLICY_ONLY_EXCEPTIONS[name]
+                for name in sorted(intentional_exceptions)
+            },
+            "is_parity_ok": not registered_only
+            and not policy_only_unexpected
+            and not stale_intentional_exceptions,
+        }
 
     def classify_calls(
         self, proposed_tool_calls: list[dict]
