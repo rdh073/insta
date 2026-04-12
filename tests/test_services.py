@@ -81,6 +81,7 @@ def test_login_account_enables_verify_session_policy_for_restore_path(monkeypatc
         _proxy: str | None = None,
         _totp_secret: str | None = None,
         verify_session: bool = False,
+        **_kwargs,
     ):
         captured.append(verify_session)
         return FakeClient()
@@ -105,6 +106,7 @@ def test_login_account_keeps_verify_session_policy_disabled_by_default(monkeypat
         _proxy: str | None = None,
         _totp_secret: str | None = None,
         verify_session: bool = False,
+        **_kwargs,
     ):
         captured.append(verify_session)
         return FakeClient()
@@ -241,6 +243,7 @@ def test_relogin_account_with_tracking_enables_verify_session_policy(monkeypatch
         proxy: str | None = None,
         totp_secret: str | None = None,
         verify_session: bool = False,
+        **_kwargs,
     ):
         del username, password, proxy, totp_secret
         captured.append(verify_session)
@@ -267,6 +270,7 @@ def test_relogin_account_with_tracking_keeps_verify_session_policy_disabled(monk
         proxy: str | None = None,
         totp_secret: str | None = None,
         verify_session: bool = False,
+        **_kwargs,
     ):
         del username, password, proxy, totp_secret
         captured.append(verify_session)
