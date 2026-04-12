@@ -108,14 +108,22 @@ class ReloginUseCases:
             last_verified_at=now,
             last_error=None,
             last_error_code=None,
+            last_error_family=None,
         )
 
-    def _mark_error(self, account_id: str, error: str, code: str | None = None) -> None:
+    def _mark_error(
+        self,
+        account_id: str,
+        error: str,
+        code: str | None = None,
+        family: str | None = None,
+    ) -> None:
         """Mark account with error from failed Instagram interaction."""
         self.account_repo.update(
             account_id,
             last_error=error,
             last_error_code=code,
+            last_error_family=family,
         )
 
     def _build_account_response(
@@ -145,6 +153,7 @@ class ReloginUseCases:
             last_verified_at=get("last_verified_at"),
             last_error=get("last_error"),
             last_error_code=get("last_error_code"),
+            last_error_family=get("last_error_family"),
         )
 
     def relogin_account(self, account_id: str) -> AccountResponse:
@@ -184,7 +193,12 @@ class ReloginUseCases:
                 new_status = status_from_failure(failure, keep_transient=True)
                 if new_status is not None:
                     self.status_repo.set(account_id, new_status)
-                self._mark_error(account_id, failure.user_message, failure.code)
+                self._mark_error(
+                    account_id,
+                    failure.user_message,
+                    failure.code,
+                    failure.family,
+                )
                 self.logger.log_event(
                     account_id,
                     username,
@@ -248,7 +262,12 @@ class ReloginUseCases:
                     new_status = status_from_failure(failure, keep_transient=True)
                     if new_status is not None:
                         self.status_repo.set(account_id, new_status)
-                    self._mark_error(account_id, failure.user_message, failure.code)
+                    self._mark_error(
+                        account_id,
+                        failure.user_message,
+                        failure.code,
+                        failure.family,
+                    )
                     self.logger.log_event(
                         account_id,
                         username,

@@ -174,6 +174,7 @@ def test_verify_success_marks_verified_and_refreshes_metadata():
     assert "last_verified_at" in first_call_kwargs
     assert first_call_kwargs["last_error"] is None
     assert first_call_kwargs["last_error_code"] is None
+    assert first_call_kwargs["last_error_family"] is None
 
     # Metadata refresh persisted
     calls_kwargs = [c[1] for c in account_repo.update.call_args_list]
@@ -239,6 +240,7 @@ def test_verify_auth_failure_overwrites_status_to_error():
         "acc-1",
         last_error="Session expired. Please re-authenticate.",
         last_error_code="login_required",
+        last_error_family="auth",
     )
     logger.log_event.assert_called_once_with(
         "acc-1",
@@ -340,6 +342,7 @@ def test_verify_transient_failure_preserves_active_status():
         "acc-1",
         last_error="Network timeout. Please retry.",
         last_error_code="network_error",
+        last_error_family="network",
     )
     # Response status follows the current runtime status (active because client exists)
     assert result.status == "active"

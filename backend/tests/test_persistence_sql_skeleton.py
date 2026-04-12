@@ -50,7 +50,14 @@ def test_sql_repositories_roundtrip(tmp_path: Path):
     statuses = SqlStatusRepository(store)
     jobs = SqlJobRepository(store)
 
-    accounts.set("acc-1", AccountRecord(username="operator", password="secret"))
+    accounts.set(
+        "acc-1",
+        AccountRecord(
+            username="operator",
+            password="secret",
+            last_error_family="challenge",
+        ),
+    )
     statuses.set("acc-1", "active")
     jobs.set(
         "job-1",
@@ -63,6 +70,7 @@ def test_sql_repositories_roundtrip(tmp_path: Path):
     )
 
     assert accounts.get("acc-1").username == "operator"
+    assert accounts.get("acc-1").last_error_family == "challenge"
     assert accounts.find_by_username("operator") == "acc-1"
     assert statuses.get("acc-1", "idle") == "active"
     assert jobs.get("job-1").id == "job-1"

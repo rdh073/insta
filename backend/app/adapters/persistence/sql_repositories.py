@@ -66,6 +66,7 @@ class SqlAccountRepository:
             last_verified_at=row.last_verified_at,
             last_error=row.last_error,
             last_error_code=row.last_error_code,
+            last_error_family=row.last_error_family,
         )
 
     @staticmethod
@@ -86,6 +87,7 @@ class SqlAccountRepository:
         row.last_verified_at = record.last_verified_at
         row.last_error = record.last_error
         row.last_error_code = record.last_error_code
+        row.last_error_family = record.last_error_family
 
     @_wrap_sql_error
     def get(self, account_id: str) -> Optional[AccountRecord]:

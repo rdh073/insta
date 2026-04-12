@@ -33,6 +33,7 @@ class Account:
     last_verified_at: Optional[str] = None  # ISO timestamp of last successful Instagram interaction
     last_error: Optional[str] = None
     last_error_code: Optional[str] = None
+    last_error_family: Optional[str] = None
 
     # Invariants
     def validate(self) -> None:

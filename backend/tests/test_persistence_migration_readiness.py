@@ -58,6 +58,16 @@ class TestMigrationReadiness:
             assert "account_status" in tables
             assert "jobs" in tables
 
+    def test_accounts_schema_includes_last_error_family_column(self, tmp_path, monkeypatch):
+        """Schema migrations must include accounts.last_error_family."""
+        db_path = tmp_path / "test_health_column.sqlite3"
+        monkeypatch.setenv("PERSISTENCE_DATABASE_URL", f"sqlite:///{db_path}")
+        store = SqlitePersistenceStore(db_path=db_path)
+
+        inspector = __import__("sqlalchemy", fromlist=["inspect"]).inspect
+        columns = {column["name"] for column in inspector(store.engine).get_columns("accounts")}
+        assert "last_error_family" in columns
+
     def test_schema_version_check_optional(self, tmp_path):
         """Schema version check should be optional (backward compat)."""
         db_path = tmp_path / "test_version.sqlite3"

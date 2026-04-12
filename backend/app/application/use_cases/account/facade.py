@@ -248,9 +248,15 @@ class AccountUseCases:
         """Mark account as verified (successful Instagram interaction)."""
         self._auth._mark_verified(account_id)
 
-    def _mark_error(self, account_id: str, error: str, code: str | None = None) -> None:
+    def _mark_error(
+        self,
+        account_id: str,
+        error: str,
+        code: str | None = None,
+        family: str | None = None,
+    ) -> None:
         """Mark account with error from failed Instagram interaction."""
-        self._relogin._mark_error(account_id, error, code)
+        self._relogin._mark_error(account_id, error, code, family)
 
     def _activate_account_client(
         self,

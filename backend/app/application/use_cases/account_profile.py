@@ -60,6 +60,11 @@ class AccountProfileUseCases:
                     followers=account.get("followers"),
                     following=account.get("following"),
                     avatar=account.get("profile_pic_url"),
+                    totp_enabled=account.get("totp_enabled", False),
+                    last_verified_at=account.get("last_verified_at"),
+                    last_error=account.get("last_error"),
+                    last_error_code=account.get("last_error_code"),
+                    last_error_family=account.get("last_error_family"),
                 )
             )
         return results

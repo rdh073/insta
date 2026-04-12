@@ -53,6 +53,7 @@ def test_account_repository_roundtrip_returns_account_record():
             full_name="Operator",
             followers=120,
             following=10,
+            last_error_family="challenge",
         ),
     )
 
@@ -63,18 +64,25 @@ def test_account_repository_roundtrip_returns_account_record():
     assert record.username == "operator"
     assert record.full_name == "Operator"
     assert record.followers == 120
+    assert record.last_error_family == "challenge"
 
 
 def test_account_repository_supports_update_iter_and_remove():
     repo = InMemoryAccountRepository()
     repo.set("acc-1", AccountRecord(username="operator", proxy="http://old-proxy"))
 
-    repo.update("acc-1", proxy="http://new-proxy", full_name="Operator Name")
+    repo.update(
+        "acc-1",
+        proxy="http://new-proxy",
+        full_name="Operator Name",
+        last_error_family="network",
+    )
     updated = repo.get("acc-1")
 
     assert updated is not None
     assert updated.proxy == "http://new-proxy"
     assert updated.full_name == "Operator Name"
+    assert updated.last_error_family == "network"
     assert repo.find_by_username("operator") == "acc-1"
 
     all_rows = repo.iter_all()

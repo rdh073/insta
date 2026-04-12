@@ -33,7 +33,8 @@ class AccountConnectivityUseCases:
     Distinct from session restore/relogin: uses ``account_info()`` (via
     ``identity_reader``) as a lightweight authenticated read to confirm the
     current session is still usable.  Updates ``last_verified_at``,
-    ``last_error``, and ``last_error_code`` after each probe, and only
+    ``last_error``, ``last_error_code``, and ``last_error_family`` after each
+    probe, and only
     overwrites ``status`` when the failure indicates the session is truly
     broken (auth/challenge/2FA), not for transient network/rate-limit errors.
     """
@@ -70,13 +71,21 @@ class AccountConnectivityUseCases:
             last_verified_at=now,
             last_error=None,
             last_error_code=None,
+            last_error_family=None,
         )
 
-    def _mark_error(self, account_id: str, error: str, code: str | None = None) -> None:
+    def _mark_error(
+        self,
+        account_id: str,
+        error: str,
+        code: str | None = None,
+        family: str | None = None,
+    ) -> None:
         self.account_repo.update(
             account_id,
             last_error=error,
             last_error_code=code,
+            last_error_family=family,
         )
 
     def _build_response(
@@ -101,6 +110,7 @@ class AccountConnectivityUseCases:
             last_verified_at=get("last_verified_at"),
             last_error=get("last_error"),
             last_error_code=get("last_error_code"),
+            last_error_family=get("last_error_family"),
         )
 
     # ------------------------------------------------------------------
@@ -168,7 +178,12 @@ class AccountConnectivityUseCases:
                 # to status_repo instead of returning "active" from a stale entry.
                 if self.client_repo.exists(account_id):
                     self.client_repo.remove(account_id)
-            self._mark_error(account_id, failure.user_message, failure.code)
+            self._mark_error(
+                account_id,
+                failure.user_message,
+                failure.code,
+                failure.family,
+            )
             self.logger.log_event(
                 account_id,
                 username,
@@ -194,7 +209,12 @@ class AccountConnectivityUseCases:
                 self.status_repo.set(account_id, new_status)
                 if self.client_repo.exists(account_id):
                     self.client_repo.remove(account_id)
-            self._mark_error(account_id, failure.user_message, failure.code)
+            self._mark_error(
+                account_id,
+                failure.user_message,
+                failure.code,
+                failure.family,
+            )
             self.logger.log_event(
                 account_id,
                 username,

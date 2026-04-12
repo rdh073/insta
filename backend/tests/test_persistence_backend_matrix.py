@@ -101,6 +101,50 @@ class TestPersistenceBackendMatrix:
         assert accts.exists("acc-1") is False
 
     @pytest.mark.parametrize("backend_name", ["memory", "sqlite", "sql_url"])
+    def test_account_error_family_roundtrip_consistency(
+        self,
+        backend_name: str,
+        monkeypatch,
+        tmp_path,
+    ):
+        """Account health metadata must persist consistently on all backends."""
+        if backend_name == "sqlite":
+            monkeypatch.setenv("PERSISTENCE_BACKEND", "sqlite")
+            monkeypatch.delenv("PERSISTENCE_DATABASE_URL", raising=False)
+            monkeypatch.setenv("PERSISTENCE_SQLITE_PATH", str(tmp_path / "health.sqlite3"))
+        elif backend_name == "sql_url":
+            monkeypatch.setenv("PERSISTENCE_BACKEND", "sql")
+            monkeypatch.setenv(
+                "PERSISTENCE_DATABASE_URL",
+                f"sqlite+pysqlite:///{tmp_path / 'health_url.sqlite3'}",
+            )
+            monkeypatch.delenv("PERSISTENCE_SQLITE_PATH", raising=False)
+        else:
+            monkeypatch.delenv("PERSISTENCE_BACKEND", raising=False)
+            monkeypatch.delenv("PERSISTENCE_DATABASE_URL", raising=False)
+            monkeypatch.delenv("PERSISTENCE_SQLITE_PATH", raising=False)
+
+        accts, _, _, _, _ = build_persistence_adapters()
+        accts.set(
+            "acc-1",
+            AccountRecord(
+                username="alice",
+                last_error="Challenge required.",
+                last_error_code="checkpoint_required",
+                last_error_family="challenge",
+            ),
+        )
+
+        persisted = accts.get("acc-1")
+        assert persisted is not None
+        assert persisted.last_error_family == "challenge"
+
+        accts.update("acc-1", last_error_family="auth")
+        updated = accts.get("acc-1")
+        assert updated is not None
+        assert updated.last_error_family == "auth"
+
+    @pytest.mark.parametrize("backend_name", ["memory", "sqlite", "sql_url"])
     def test_status_repository_interface_consistency(
         self,
         backend_name: str,

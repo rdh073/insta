@@ -86,6 +86,7 @@ def test_hydration_uses_same_challenge_status_policy_as_connectivity():
         "acc-1",
         last_error="Your location is not supported.",
         last_error_code="geo_blocked",
+        last_error_family="challenge",
     )
 
 
@@ -110,3 +111,9 @@ def test_relogin_mode_uses_session_restore_for_non_challenge_code():
     mode = AccountAuthUseCases._select_relogin_mode({"last_error_code": "network_error"})
     assert mode is ReloginMode.SESSION_RESTORE
 
+
+def test_relogin_mode_uses_fresh_credentials_for_challenge_family_metadata():
+    mode = AccountAuthUseCases._select_relogin_mode(
+        {"last_error_code": "network_error", "last_error_family": "challenge"}
+    )
+    assert mode is ReloginMode.FRESH_CREDENTIALS

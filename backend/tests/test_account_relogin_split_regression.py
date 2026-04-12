@@ -91,6 +91,28 @@ def test_relogin_account_passes_required_kwargs_and_returns_active():
     logger.log_event.assert_not_called()
 
 
+def test_relogin_account_uses_fresh_credentials_when_last_error_family_is_challenge():
+    instagram = _KwOnlyInstagramClient()
+    usecase, account_repo, status_repo, logger, error_handler = _build_usecase(instagram)
+
+    account_repo.get.return_value = {
+        "username": "alice",
+        "password": "s3cret",
+        "proxy": None,
+        "totp_secret": None,
+        "last_error_code": "network_error",
+        "last_error_family": "challenge",
+    }
+
+    result = usecase.relogin_account("acc-1")
+
+    assert result.status == "active"
+    assert instagram.calls[0]["mode"] is ReloginMode.FRESH_CREDENTIALS
+    status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
+    error_handler.handle.assert_not_called()
+    logger.log_event.assert_not_called()
+
+
 def test_relogin_account_attaches_structured_failure_and_sets_policy_status():
     instagram = _KwOnlyInstagramClient(error=RuntimeError("checkpoint"))
     usecase, account_repo, status_repo, logger, error_handler = _build_usecase(instagram)
@@ -120,6 +142,7 @@ def test_relogin_account_attaches_structured_failure_and_sets_policy_status():
         "acc-1",
         last_error=failure.user_message,
         last_error_code=failure.code,
+        last_error_family=failure.family,
     )
     logger.log_event.assert_called_once_with(
         "acc-1",

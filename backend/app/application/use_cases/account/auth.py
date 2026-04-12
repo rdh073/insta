@@ -94,6 +94,7 @@ class AuthUseCases:
             last_verified_at=get("last_verified_at"),
             last_error=get("last_error"),
             last_error_code=get("last_error_code"),
+            last_error_family=get("last_error_family"),
         )
 
     def _activate_account_client(
@@ -127,6 +128,7 @@ class AuthUseCases:
             last_verified_at=now,
             last_error=None,
             last_error_code=None,
+            last_error_family=None,
         )
 
     @staticmethod

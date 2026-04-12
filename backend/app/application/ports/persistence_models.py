@@ -41,6 +41,7 @@ class AccountRecord:
     last_verified_at: str | None = None  # ISO timestamp of last successful Instagram interaction
     last_error: str | None = None  # Last error message
     last_error_code: str | None = None  # Structured error code (e.g., "session_expired", "challenge")
+    last_error_family: str | None = None  # Error family (e.g., "auth", "challenge", "network")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AccountRecord:
@@ -81,6 +82,7 @@ class AccountRecord:
             last_verified_at=data.get("last_verified_at"),
             last_error=data.get("last_error"),
             last_error_code=data.get("last_error_code"),
+            last_error_family=data.get("last_error_family"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -101,6 +103,7 @@ class AccountRecord:
             "last_verified_at": self.last_verified_at,
             "last_error": self.last_error,
             "last_error_code": self.last_error_code,
+            "last_error_family": self.last_error_family,
         }
 
     def get(self, key: str, default: Any = None) -> Any:

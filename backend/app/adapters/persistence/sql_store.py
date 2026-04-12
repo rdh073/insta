@@ -60,6 +60,7 @@ class AccountRow(Base):
     last_verified_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_family: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class AccountStatusRow(Base):

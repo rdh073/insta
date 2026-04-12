@@ -40,6 +40,7 @@ class AccountResponse:
     )
     last_error: Optional[str] = None
     last_error_code: Optional[str] = None
+    last_error_family: Optional[str] = None
 
 
 @dataclass

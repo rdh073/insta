@@ -178,6 +178,7 @@ def _serialize_account(acc, include_password: bool = False) -> dict:
             "lastVerifiedAt": acc.last_verified_at,
             "lastError": acc.last_error,
             "lastErrorCode": acc.last_error_code,
+            "lastErrorFamily": acc.last_error_family,
         }
     # Fallback for dict-like objects
     return {
@@ -194,6 +195,7 @@ def _serialize_account(acc, include_password: bool = False) -> dict:
         "lastVerifiedAt": acc.get("last_verified_at"),
         "lastError": acc.get("last_error"),
         "lastErrorCode": acc.get("last_error_code"),
+        "lastErrorFamily": acc.get("last_error_family"),
     }
 
 
@@ -575,6 +577,7 @@ async def bulk_verify_accounts(
             "last_verified_at": acc.last_verified_at,
             "last_error": acc.last_error,
             "last_error_code": acc.last_error_code,
+            "last_error_family": acc.last_error_family,
         }
         for acc in results
     ]
@@ -616,6 +619,7 @@ async def verify_account(
             "last_verified_at": result.last_verified_at,
             "last_error": result.last_error,
             "last_error_code": result.last_error_code,
+            "last_error_family": result.last_error_family,
         }
     except ValueError as e:
         raise HTTPException(

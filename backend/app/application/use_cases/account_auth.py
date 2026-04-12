@@ -185,6 +185,7 @@ class AccountAuthUseCases:
                     account_id,
                     last_error=failure.user_message,
                     last_error_code=failure.code,
+                    last_error_family=failure.family,
                 )
             return None
         except Exception:

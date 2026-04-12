@@ -86,6 +86,7 @@ class ProfileUseCases:
             last_verified_at=get("last_verified_at"),
             last_error=get("last_error"),
             last_error_code=get("last_error_code"),
+            last_error_family=get("last_error_family"),
         )
 
     def find_by_username(self, username: str) -> str | None:
