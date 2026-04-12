@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 from typing import Callable
 
@@ -8,11 +9,53 @@ from state import SESSIONS_DIR, TwoFactorRequired, log_event, pop_client, store_
 from .auth import activate_account_client, classify_exception, create_authenticated_client, new_client
 
 _MAX_RELOGIN_ATTEMPTS = 3
+_COOLDOWN_FAILURE_CODES = frozenset({"rate_limit", "wait_required", "feedback_required"})
+_COOLDOWN_RETRY_MIN_SECONDS = 30.0
+_COOLDOWN_RETRY_MAX_SECONDS = 120.0
+_COOLDOWN_RETRY_JITTER_MAX_SECONDS = 15.0
 
 ReloginStrategy = Callable[[str, str, str | None, str | None], object]
 CreateAuthenticatedClientFn = Callable[[str, str, str | None, str | None], object]
 NewClientFn = Callable[[str | None], object]
 ClassifyExceptionFn = Callable[..., object]
+SleepFn = Callable[[float], None]
+JitterUniformFn = Callable[[float, float], float]
+
+
+def _is_cooldown_worthy_failure(failure) -> bool:
+    code = str(getattr(failure, "code", "") or "")
+    if code in _COOLDOWN_FAILURE_CODES:
+        return True
+    return getattr(failure, "http_hint", None) == 429
+
+
+def _rate_limit_retry_after_seconds(account_id: str) -> float:
+    try:
+        from app.adapters.instagram.rate_limit_guard import rate_limit_guard
+
+        limited, retry_after = rate_limit_guard.is_limited(account_id)
+        if limited:
+            return max(float(retry_after), 0.0)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _compute_retry_delay_seconds(
+    *,
+    failure,
+    retry_index: int,
+    account_id: str,
+    jitter_uniform_fn: JitterUniformFn = random.uniform,
+) -> float:
+    if _is_cooldown_worthy_failure(failure):
+        retry_after = _rate_limit_retry_after_seconds(account_id)
+        cooldown_delay = retry_after if retry_after > 0 else _COOLDOWN_RETRY_MIN_SECONDS
+        cooldown_delay = max(cooldown_delay, _COOLDOWN_RETRY_MIN_SECONDS)
+        cooldown_delay = min(cooldown_delay, _COOLDOWN_RETRY_MAX_SECONDS)
+        jitter = max(jitter_uniform_fn(0.0, _COOLDOWN_RETRY_JITTER_MAX_SECONDS), 0.0)
+        return cooldown_delay + jitter
+    return float(2 ** retry_index)
 
 
 # ── Relogin strategies ────────────────────────────────────────────────────────
@@ -128,7 +171,10 @@ def relogin_account_sync(
     create_authenticated_client_fn: CreateAuthenticatedClientFn = create_authenticated_client,
     new_client_fn: NewClientFn = new_client,
     classify_exception_fn: ClassifyExceptionFn = classify_exception,
+    translate_exception_fn: ClassifyExceptionFn | None = None,
     relogin_strategies: dict[str, ReloginStrategy] | None = None,
+    sleep_fn: SleepFn = time.sleep,
+    jitter_uniform_fn: JitterUniformFn = random.uniform,
 ) -> dict:
     """Synchronous relogin with retry for transient failures."""
     strategies = relogin_strategies or _build_relogin_strategies(
@@ -145,16 +191,26 @@ def relogin_account_sync(
 
     cl = None
     for attempt in range(_MAX_RELOGIN_ATTEMPTS):
-        if attempt > 0:
-            time.sleep(2 ** (attempt - 1))  # 1s, then 2s
         try:
             cl = strategy(username, password, proxy, totp_secret)
             break  # success — exit retry loop
         except Exception as exc:
-            failure = classify_exception_fn(
-                exc, operation="relogin", account_id=account_id, username=username
-            )
+            if translate_exception_fn is not None:
+                failure = translate_exception_fn(
+                    exc, operation="relogin", account_id=account_id, username=username
+                )
+            else:
+                failure = classify_exception_fn(
+                    exc, operation="relogin", account_id=account_id, username=username
+                )
             if getattr(failure, "retryable", False) and attempt < _MAX_RELOGIN_ATTEMPTS - 1:
+                delay = _compute_retry_delay_seconds(
+                    failure=failure,
+                    retry_index=attempt,
+                    account_id=account_id,
+                    jitter_uniform_fn=jitter_uniform_fn,
+                )
+                sleep_fn(delay)
                 continue  # transient — retry
             raise
 

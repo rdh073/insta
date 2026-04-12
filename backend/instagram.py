@@ -35,6 +35,7 @@ from state import (
     update_account,
 )
 from app.adapters.instagram.device_pool import random_device_profile
+from app.adapters.instagram.error_utils import translate_instagram_error
 from app.adapters.instagram.exception_handler import instagram_exception_handler
 
 from instagram_runtime import auth as _auth
@@ -79,6 +80,22 @@ def _classify_exception(
 ):
     """Translate an exception to a stable Instagram failure."""
     return instagram_exception_handler.handle(
+        error,
+        operation=operation,
+        account_id=account_id,
+        username=username,
+    )
+
+
+def _translate_exception(
+    error: Exception,
+    *,
+    operation: str,
+    account_id: str | None = None,
+    username: str | None = None,
+):
+    """Translate an exception and apply shared side effects."""
+    return translate_instagram_error(
         error,
         operation=operation,
         account_id=account_id,
@@ -183,6 +200,7 @@ def relogin_account_sync(
         create_authenticated_client_fn=create_authenticated_client,
         new_client_fn=_new_client,
         classify_exception_fn=_classify_exception,
+        translate_exception_fn=_translate_exception,
         relogin_strategies=_RELOGIN_STRATEGIES,
     )
 
