@@ -24,6 +24,14 @@ from fastapi.responses import JSONResponse
 
 from app.adapters.http.observability import register_observability
 from app.adapters.persistence.factory import build_sql_persistence_store, current_persistence_backend
+from app.application.use_cases.post_job import (
+    INVALID_SCHEDULE_ERROR_CODE,
+    INVALID_SCHEDULE_ERROR_MESSAGE,
+    MEDIA_REQUIRED_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_MESSAGE,
+    has_runnable_media_paths,
+    is_valid_scheduled_at,
+)
 from app.bootstrap.runtime import APP_VERSION, load_runtime_settings
 
 
@@ -38,6 +46,45 @@ def _resolve_oauth_state_secret() -> str:
         or os.environ.get("AUTH_SECRET", "").strip()
         or secrets.token_urlsafe(32)
     )
+
+
+def _annotate_job_results(
+    results: list[dict] | None,
+    *,
+    status: str,
+    error: str,
+    error_code: str,
+) -> list:
+    annotated: list = []
+    for result in results or []:
+        if not isinstance(result, dict):
+            annotated.append(result)
+            continue
+        row = dict(result)
+        row["status"] = status
+        row["error"] = error
+        row["errorCode"] = error_code
+        annotated.append(row)
+    return annotated
+
+
+def _set_job_field(job, key: str, value) -> None:
+    if isinstance(job, dict):
+        job[key] = value
+        return
+    setattr(job, key, value)
+
+
+def _get_job_field(job, key: str, default=None):
+    if isinstance(job, dict):
+        return job.get(key, default)
+    return getattr(job, key, default)
+
+
+def _job_id(job) -> str:
+    if isinstance(job, dict):
+        return str(job.get("id", ""))
+    return str(getattr(job, "id", ""))
 
 
 async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: asyncio.Event) -> None:
@@ -63,11 +110,15 @@ async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: async
     # control/status endpoints remain coherent after restart.
     for job in jobs:
         try:
-            job_repo.set(job.id, job)
+            job_repo.set(_job_id(job), job)
         except Exception as exc:
-            logger.warning("job_restore.hydrate_skip job_id=%s reason=%s", job.id, exc)
+            logger.warning("job_restore.hydrate_skip job_id=%s reason=%s", _job_id(job), exc)
 
-    pending = [j for j in jobs if j.status in _RESTORE_ELIGIBLE_STATUSES]
+    pending = [
+        j
+        for j in jobs
+        if str(_get_job_field(j, "status", "")).lower() in _RESTORE_ELIGIBLE_STATUSES
+    ]
     if not pending:
         return
 
@@ -80,11 +131,59 @@ async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: async
         logger.warning("job_restore.session_wait_timeout — enqueuing anyway")
 
     for job in pending:
+        status = str(_get_job_field(job, "status", "")).lower()
+        media_paths = _get_job_field(job, "media_paths")
+        if media_paths is None and hasattr(job, "get"):
+            media_paths = job.get("_media_paths")
+
+        scheduled_at = _get_job_field(job, "scheduled_at")
+        if scheduled_at is None and hasattr(job, "get"):
+            scheduled_at = job.get("_scheduled_at")
+
+        if not has_runnable_media_paths(media_paths):
+            _set_job_field(job, "status", "needs_media")
+            _set_job_field(
+                job,
+                "results",
+                _annotate_job_results(
+                    _get_job_field(job, "results", []),
+                    status="pending",
+                    error=MEDIA_REQUIRED_ERROR_MESSAGE,
+                    error_code=MEDIA_REQUIRED_ERROR_CODE,
+                ),
+            )
+            try:
+                job_repo.set(_job_id(job), job)
+            except Exception as exc:
+                logger.warning("job_restore.needs_media_persist_failed job_id=%s reason=%s", _job_id(job), exc)
+            logger.info("job_restore.skip job_id=%s reason=missing_media", _job_id(job))
+            continue
+
+        if status == "scheduled" and not is_valid_scheduled_at(scheduled_at):
+            _set_job_field(job, "status", "failed")
+            _set_job_field(
+                job,
+                "results",
+                _annotate_job_results(
+                    _get_job_field(job, "results", []),
+                    status="failed",
+                    error=INVALID_SCHEDULE_ERROR_MESSAGE,
+                    error_code=INVALID_SCHEDULE_ERROR_CODE,
+                ),
+            )
+            try:
+                job_repo.set(_job_id(job), job)
+            except Exception as exc:
+                logger.warning("job_restore.invalid_schedule_persist_failed job_id=%s reason=%s", _job_id(job), exc)
+            logger.warning("job_restore.skip job_id=%s reason=invalid_schedule", _job_id(job))
+            continue
+
+        enqueue_scheduled_at = scheduled_at if status == "scheduled" else None
         try:
-            scheduler.enqueue(job.id, job.scheduled_at)
-            logger.info("job_restore.queued job_id=%s status=%s", job.id, job.status)
+            scheduler.enqueue(_job_id(job), enqueue_scheduled_at)
+            logger.info("job_restore.queued job_id=%s status=%s", _job_id(job), status)
         except Exception as exc:
-            logger.warning("job_restore.skip job_id=%s reason=%s", job.id, exc)
+            logger.warning("job_restore.skip job_id=%s reason=%s", _job_id(job), exc)
 
 
 async def _restore_sessions(

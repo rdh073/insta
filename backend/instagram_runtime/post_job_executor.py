@@ -5,6 +5,14 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, wait as wait_futures
 from pathlib import Path
 
+from app.application.use_cases.post_job import (
+    INVALID_SCHEDULE_ERROR_CODE,
+    INVALID_SCHEDULE_ERROR_MESSAGE,
+    MEDIA_REQUIRED_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_MESSAGE,
+    has_runnable_media_paths,
+    is_valid_scheduled_at,
+)
 from state import ThreadSafeJobStore, get_client, job_store, log_event
 
 from .auth import classify_exception
@@ -61,6 +69,35 @@ class PostJobExecutor:
         except Exception:
             pass
 
+    def _set_job_non_runnable(
+        self,
+        *,
+        job_id: str,
+        job: dict,
+        job_status: str,
+        result_status: str,
+        error: str,
+        error_code: str,
+        reason: str,
+    ) -> None:
+        self._store.set_job_status(job_id, job_status)
+        for result in job.get("results", []):
+            account_id = result.get("accountId")
+            if not account_id:
+                continue
+            if str(result.get("status") or "").lower() == "success":
+                continue
+            self._store.update_result(
+                job_id,
+                account_id,
+                status=result_status,
+                error=error,
+                error_code=error_code,
+            )
+        self._store.clear_control(job_id)
+        self._notify_sse()
+        logger.info("Skipping non-runnable job before execution (job=%s reason=%s)", job_id, reason)
+
     def run(self, job_id: str) -> None:
         """Execute all account uploads for *job_id* concurrently."""
         job = self._store.get(job_id)
@@ -83,11 +120,36 @@ class PostJobExecutor:
             )
             return
 
+        media_paths: list[str] = list(job.get("_media_paths") or [])
+        if not has_runnable_media_paths(media_paths):
+            self._set_job_non_runnable(
+                job_id=job_id,
+                job=job,
+                job_status="needs_media",
+                result_status="pending",
+                error=MEDIA_REQUIRED_ERROR_MESSAGE,
+                error_code=MEDIA_REQUIRED_ERROR_CODE,
+                reason="missing_media",
+            )
+            return
+
+        scheduled_at = job.get("_scheduled_at") or job.get("scheduled_at")
+        if status == "scheduled" and not is_valid_scheduled_at(scheduled_at):
+            self._set_job_non_runnable(
+                job_id=job_id,
+                job=job,
+                job_status="failed",
+                result_status="failed",
+                error=INVALID_SCHEDULE_ERROR_MESSAGE,
+                error_code=INVALID_SCHEDULE_ERROR_CODE,
+                reason="invalid_schedule",
+            )
+            return
+
         self._store.set_job_status(job_id, "running")
         self._notify_sse()
 
         try:
-            media_paths: list[str] = job["_media_paths"]
             caption: str = job["caption"]
             media_type: str = job.get("mediaType", "photo")
             thumbnail_path: str | None = job.get("_thumbnail_path")

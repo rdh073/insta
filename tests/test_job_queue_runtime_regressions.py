@@ -12,6 +12,10 @@ from app.adapters.http.routers.posts import retry_post_job, stop_post_job
 from app.adapters.persistence.post_job_control_adapter import PostJobControlAdapter
 from app.adapters.scheduler.event_bus import post_job_event_bus
 from app.adapters.scheduler.job_queue import PostJobQueue, _JobItem
+from app.application.use_cases.post_job import (
+    INVALID_SCHEDULE_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_CODE,
+)
 
 
 def _make_job(
@@ -198,13 +202,14 @@ def test_stop_then_retry_resets_control_and_emits_sse_events(initial_status: str
 
 class _RestoreJobRepo:
     def __init__(self, jobs: list[SimpleNamespace]) -> None:
-        self._jobs = list(jobs)
+        self._jobs = {job.id: job for job in jobs}
         self.hydrated: list[str] = []
 
     def list_all(self) -> list[SimpleNamespace]:
-        return list(self._jobs)
+        return list(self._jobs.values())
 
     def set(self, job_id: str, job: SimpleNamespace) -> None:
+        self._jobs[job_id] = job
         self.hydrated.append(job_id)
 
 
@@ -220,8 +225,34 @@ class _RestoreScheduler:
 async def test_startup_restore_only_hydrates_and_enqueues_pending_or_scheduled() -> None:
     repo = _RestoreJobRepo(
         [
-            SimpleNamespace(id="job-pending", status="pending", scheduled_at=None),
-            SimpleNamespace(id="job-scheduled", status="scheduled", scheduled_at="2026-04-12T17:00:00Z"),
+            SimpleNamespace(
+                id="job-pending",
+                status="pending",
+                scheduled_at=None,
+                media_paths=["/tmp/pending.jpg"],
+                results=[{"accountId": "acc-1", "username": "alice", "status": "pending"}],
+            ),
+            SimpleNamespace(
+                id="job-scheduled",
+                status="scheduled",
+                scheduled_at="2026-04-12T17:00:00Z",
+                media_paths=["/tmp/scheduled.jpg"],
+                results=[{"accountId": "acc-1", "username": "alice", "status": "pending"}],
+            ),
+            SimpleNamespace(
+                id="job-scheduled-no-media",
+                status="scheduled",
+                scheduled_at="2026-04-12T17:10:00Z",
+                media_paths=[],
+                results=[{"accountId": "acc-1", "username": "alice", "status": "pending"}],
+            ),
+            SimpleNamespace(
+                id="job-scheduled-invalid",
+                status="scheduled",
+                scheduled_at="not-a-datetime",
+                media_paths=["/tmp/invalid.jpg"],
+                results=[{"accountId": "acc-1", "username": "alice", "status": "pending"}],
+            ),
             SimpleNamespace(id="job-stopped", status="stopped", scheduled_at=None),
             SimpleNamespace(id="job-needs-media", status="needs_media", scheduled_at="2026-04-12T18:00:00Z"),
         ]
@@ -236,16 +267,22 @@ async def test_startup_restore_only_hydrates_and_enqueues_pending_or_scheduled()
         session_restore_done=sessions_ready,
     )
 
-    assert repo.hydrated == [
+    assert set(repo.hydrated) == {
         "job-pending",
         "job-scheduled",
+        "job-scheduled-no-media",
+        "job-scheduled-invalid",
         "job-stopped",
         "job-needs-media",
-    ]
+    }
     assert scheduler.enqueued == [
         ("job-pending", None),
         ("job-scheduled", "2026-04-12T17:00:00Z"),
     ]
+    assert repo._jobs["job-scheduled-no-media"].status == "needs_media"
+    assert repo._jobs["job-scheduled-no-media"].results[0]["errorCode"] == MEDIA_REQUIRED_ERROR_CODE
+    assert repo._jobs["job-scheduled-invalid"].status == "failed"
+    assert repo._jobs["job-scheduled-invalid"].results[0]["errorCode"] == INVALID_SCHEDULE_ERROR_CODE
 
 
 def test_scheduled_draft_without_media_is_not_executed() -> None:
@@ -258,3 +295,4 @@ def test_scheduled_draft_without_media_is_not_executed() -> None:
 
     assert ran == []
     assert state.get_job(job_id)["status"] == "needs_media"
+    assert state.get_job(job_id)["results"][0]["errorCode"] == MEDIA_REQUIRED_ERROR_CODE

@@ -140,6 +140,34 @@ def _validate_caption(caption: str) -> str:
     return caption.strip()
 
 
+# Shared non-runnable semantics for draft/scheduled jobs without media.
+MEDIA_REQUIRED_ERROR_CODE = "media_required"
+MEDIA_REQUIRED_ERROR_MESSAGE = "Attach at least one media file before this post can run."
+INVALID_SCHEDULE_ERROR_CODE = "invalid_schedule"
+INVALID_SCHEDULE_ERROR_MESSAGE = "Scheduled time is invalid. Update it and retry."
+
+
+def has_runnable_media_paths(media_paths: list[str] | None) -> bool:
+    """Return True when at least one non-empty media path is present."""
+    if not media_paths:
+        return False
+    for path in media_paths:
+        if isinstance(path, str) and path.strip():
+            return True
+    return False
+
+
+def is_valid_scheduled_at(scheduled_at: Optional[str]) -> bool:
+    """Return True when scheduled_at is a parseable ISO datetime string."""
+    if not isinstance(scheduled_at, str) or not scheduled_at.strip():
+        return False
+    try:
+        datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+    except (ValueError, OverflowError):
+        return False
+    return True
+
+
 # ============================================================================
 # Use Case Implementation
 # ============================================================================
@@ -273,6 +301,8 @@ class PostJobUseCases:
                     "accountId": account_id,
                     "username": username,
                     "status": "pending",
+                    "error": MEDIA_REQUIRED_ERROR_MESSAGE,
+                    "errorCode": MEDIA_REQUIRED_ERROR_CODE,
                 })
 
             job = JobRecord(
@@ -281,7 +311,7 @@ class PostJobUseCases:
                 media_urls=[],
                 media_type="photo",
                 targets=[{"accountId": account_id} for account_id in account_ids],
-                status="needs_media" if not request.scheduled_at else "scheduled",
+                status="needs_media",
                 results=results,
                 created_at=_utc_now_iso(),
                 media_paths=[],
@@ -296,8 +326,8 @@ class PostJobUseCases:
 
             if request.scheduled_at:
                 message = (
-                    f"Post scheduled for {', '.join('@' + u for u in target_usernames)} "
-                    f"at {request.scheduled_at}. Attach media via the Post page."
+                    f"Post draft created for {', '.join('@' + u for u in target_usernames)} "
+                    f"at {request.scheduled_at}. Attach media via the Post page to activate scheduling."
                 )
             else:
                 message = (

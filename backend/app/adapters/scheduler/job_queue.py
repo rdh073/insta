@@ -20,6 +20,12 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+<<<<<<< HEAD
+from app.application.use_cases.post_job import (
+    MEDIA_REQUIRED_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_MESSAGE,
+    has_runnable_media_paths,
+)
 from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
 from app.adapters.scheduler.job_runtime_adapter import ThreadSafeJobRuntimeAdapter
 from app.application.ports.job_engine import JobEventPublisherPort, JobRuntimePort
@@ -265,7 +271,29 @@ class PostJobQueue:
             return False
 
         media_paths = job.get("_media_paths") or []
-        return len(media_paths) == 0
+        return not has_runnable_media_paths(media_paths)
+
+    @staticmethod
+    def _set_media_required_result_errors(job_id: str) -> None:
+        try:
+            import state
+
+            job = state.get_job(job_id)
+            for result in job.get("results", []):
+                account_id = result.get("accountId")
+                if not account_id:
+                    continue
+                if str(result.get("status") or "").lower() == "success":
+                    continue
+                state.job_store.update_result(
+                    job_id,
+                    account_id,
+                    status="pending",
+                    error=MEDIA_REQUIRED_ERROR_MESSAGE,
+                    error_code=MEDIA_REQUIRED_ERROR_CODE,
+                )
+        except Exception:
+            pass
 
     def _is_runnable_before_run(self, job_id: str) -> bool:
         state_available, status = self._read_job_status(job_id)
@@ -308,6 +336,7 @@ class PostJobQueue:
 
         if self._is_scheduled_without_media(item.job_id):
             self._set_job_status(item.job_id, "needs_media")
+            self._set_media_required_result_errors(item.job_id)
             logger.info("Skipping scheduled job %s with missing media", item.job_id)
             self._notify_event(item.job_id, "job_update")
             return

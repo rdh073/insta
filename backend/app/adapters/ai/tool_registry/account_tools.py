@@ -282,7 +282,7 @@ def register_account_content_tools(registry: ToolRegistry, context: "ToolBuilder
         get_post_jobs_handler,
         schema(
             "get_post_jobs",
-            "Get recent post jobs with their status (pending, scheduled, running, completed, partial, failed).",
+            "Get recent post jobs with their status (needs_media, pending, scheduled, running, completed, partial, failed).",
             properties={
                 "limit": {
                     "type": "integer",
@@ -291,7 +291,7 @@ def register_account_content_tools(registry: ToolRegistry, context: "ToolBuilder
                 },
                 "status_filter": {
                     "type": "string",
-                    "description": "Filter by status: pending, scheduled, running, completed, partial, failed, or omit for all",
+                    "description": "Filter by status: needs_media, pending, scheduled, running, completed, partial, failed, or omit for all",
                 },
             },
         ),

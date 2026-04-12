@@ -137,10 +137,18 @@ def _dispatch_upload(
     extra_data: dict,
 ) -> None:
     """Select and invoke the correct upload strategy for *media_type*."""
+    normalized_media_paths = [
+        candidate
+        for candidate in (str(path).strip() for path in (media_paths or []))
+        if candidate
+    ]
+    if not normalized_media_paths:
+        raise ValueError("Upload media is missing. Attach at least one media file before running this job.")
+
     strategy: _UploadFn = _UPLOAD_STRATEGIES.get(media_type, _DEFAULT_UPLOAD_STRATEGY)
     strategy(
         cl,
-        media_paths,
+        normalized_media_paths,
         caption,
         thumbnail_path,
         igtv_title,
@@ -148,4 +156,3 @@ def _dispatch_upload(
         location,
         extra_data,
     )
-

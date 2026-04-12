@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from app.adapters.http.routers.posts import retry_post_job
 from app.adapters.scheduler.job_queue import PostJobQueue, _JobItem
+from app.application.use_cases.post_job import (
+    INVALID_SCHEDULE_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_CODE,
+)
 from instagram_runtime.post_job_executor import PostJobExecutor
 from state import ThreadSafeJobStore
 
@@ -12,6 +16,7 @@ def _make_job(
     status: str = "pending",
     account_ids: tuple[str, ...] = ("acc1",),
     media_paths: list[str] | None = None,
+    scheduled_at: str | None = None,
 ) -> dict:
     return {
         "id": job_id,
@@ -28,6 +33,7 @@ def _make_job(
             for account_id in account_ids
         ],
         "_media_paths": list(media_paths or []),
+        "_scheduled_at": scheduled_at,
         "_usertags": [],
         "_extra_data": {},
     }
@@ -168,3 +174,63 @@ def test_active_stop_flag_still_skips_worker_upload(monkeypatch) -> None:
     )
 
     assert store.get(job_id)["results"][0]["status"] == "skipped"
+
+
+def test_executor_marks_scheduled_job_without_media_as_needs_media(monkeypatch) -> None:
+    import instagram_runtime.post_job_executor as executor_module
+
+    store = ThreadSafeJobStore()
+    job_id = "job-scheduled-no-media"
+    store.put(
+        job_id,
+        _make_job(
+            job_id,
+            status="scheduled",
+            account_ids=("acc1",),
+            media_paths=[],
+            scheduled_at="2026-05-01T12:00:00Z",
+        ),
+    )
+
+    monkeypatch.setattr(
+        executor_module,
+        "_dispatch_upload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("upload must not run")),
+    )
+
+    PostJobExecutor(store=store).run(job_id)
+
+    job = store.get(job_id)
+    assert job["status"] == "needs_media"
+    assert job["results"][0]["status"] == "pending"
+    assert job["results"][0]["errorCode"] == MEDIA_REQUIRED_ERROR_CODE
+
+
+def test_executor_marks_invalid_scheduled_time_as_failed(monkeypatch) -> None:
+    import instagram_runtime.post_job_executor as executor_module
+
+    store = ThreadSafeJobStore()
+    job_id = "job-scheduled-invalid-time"
+    store.put(
+        job_id,
+        _make_job(
+            job_id,
+            status="scheduled",
+            account_ids=("acc1",),
+            media_paths=["/tmp/media.jpg"],
+            scheduled_at="invalid",
+        ),
+    )
+
+    monkeypatch.setattr(
+        executor_module,
+        "_dispatch_upload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("upload must not run")),
+    )
+
+    PostJobExecutor(store=store).run(job_id)
+
+    job = store.get(job_id)
+    assert job["status"] == "failed"
+    assert job["results"][0]["status"] == "failed"
+    assert job["results"][0]["errorCode"] == INVALID_SCHEDULE_ERROR_CODE

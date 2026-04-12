@@ -202,14 +202,16 @@ def test_create_scheduled_post_draft_tracks_targets_and_missing_accounts():
     )
 
     assert result["success"] is True
-    assert result["status"] == "scheduled"
+    assert result["status"] == "needs_media"
     assert result["targets"] == ["alice", "bob"]
     assert result["not_found"] == ["charlie"]
+    assert "activate scheduling" in result["message"]
 
     job = state.get_job(result["jobId"])
     assert job["caption"] == "Launch post"
-    assert job["status"] == "scheduled"
+    assert job["status"] == "needs_media"
     assert [item["accountId"] for item in job["targets"]] == ["acct-1", "acct-2"]
+    assert all(item.get("errorCode") == "media_required" for item in job["results"])
 
 
 def test_relogin_account_with_tracking_marks_error_and_logs_failure(monkeypatch):

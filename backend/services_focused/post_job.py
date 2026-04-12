@@ -3,6 +3,10 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
+from app.application.use_cases.post_job import (
+    MEDIA_REQUIRED_ERROR_CODE,
+    MEDIA_REQUIRED_ERROR_MESSAGE,
+)
 from state import get_account, iter_jobs_values, set_job
 
 from .account_query import find_account_id_by_username
@@ -96,6 +100,8 @@ def create_scheduled_post_draft(
             "accountId": account_id,
             "username": (get_account(account_id) or {}).get("username", account_id),
             "status": "pending",
+            "error": MEDIA_REQUIRED_ERROR_MESSAGE,
+            "errorCode": MEDIA_REQUIRED_ERROR_CODE,
         }
         for account_id in account_ids
     ]
@@ -105,7 +111,7 @@ def create_scheduled_post_draft(
         "mediaUrls": [],
         "mediaType": "photo",
         "targets": [{"accountId": account_id} for account_id in account_ids],
-        "status": "needs_media" if not scheduled_at else "scheduled",
+        "status": "needs_media",
         "results": results,
         "createdAt": utc_now_iso(),
         "_media_paths": [],
@@ -121,10 +127,9 @@ def create_scheduled_post_draft(
         "not_found": not_found,
         "scheduled_at": scheduled_at,
         "message": (
-            f"Post scheduled for {', '.join('@' + (get_account(account_id) or {}).get('username', '') for account_id in account_ids)} "
-            f"at {scheduled_at}. Attach media via the Post page."
+            f"Post draft created for {', '.join('@' + (get_account(account_id) or {}).get('username', '') for account_id in account_ids)} "
+            f"at {scheduled_at}. Attach media via the Post page to activate scheduling."
             if scheduled_at
             else f"Caption draft created for {', '.join('@' + (get_account(account_id) or {}).get('username', '') for account_id in account_ids)}. Attach media via the Post page to publish."
         ),
     }
-
