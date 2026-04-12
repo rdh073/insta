@@ -13,6 +13,7 @@ Todo-4 additions:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import uuid
 from typing import Any, AsyncIterator
@@ -93,14 +94,19 @@ class SmartEngagementUseCase:
             engagement_memory: Cross-thread engagement memory (optional)
             checkpointer: Pre-created LangGraph checkpointer.  Use this when a
                 MemorySaver (sync-compatible) is appropriate, e.g. in tests.
-            checkpoint_factory: Factory with ``create_async()`` method.  Preferred
-                over ``checkpointer`` for production — the async checkpointer is
-                created lazily on the first ``run()`` / ``resume()`` call so that
-                bootstrap stays synchronous while the graph still uses an async-
-                compatible SQLite saver (AsyncSqliteSaver) at runtime.
+            checkpoint_factory: Factory with ``create_async()`` and/or
+                ``create_checkpointer()``. For factories with ``create_async()``,
+                the checkpointer is created lazily on first ``run()`` / ``resume()``
+                so bootstrap stays synchronous.
             store: LangGraph Store instance for cross-thread memory.
             max_steps: Max workflow iterations (default 11 for 11-node graph)
         """
+        if checkpointer is not None and checkpoint_factory is not None:
+            raise ValueError(
+                "Invalid smart engagement checkpointer configuration: provide "
+                "either 'checkpointer' or 'checkpoint_factory', not both."
+            )
+
         self.account_context = account_context
         self.candidate_discovery = candidate_discovery
         self.risk_scoring = risk_scoring
@@ -108,7 +114,6 @@ class SmartEngagementUseCase:
         self.executor = executor
         self.audit_log = audit_log
         self.engagement_memory = engagement_memory
-        self.checkpointer = checkpointer
         self.max_steps = max_steps
 
         self._nodes = SmartEngagementNodes(
@@ -123,33 +128,141 @@ class SmartEngagementUseCase:
         )
         self._store = store
         self._checkpoint_factory = checkpoint_factory
+        self._checkpointer = None
+        self.checkpointer = None
         self._graph_lock = asyncio.Lock()
         self._version_strategy = DEFAULT_LANGGRAPH_VERSION_STRATEGY
 
-        if checkpoint_factory is None:
-            # Eager path: caller supplied a pre-created checkpointer (tests, MemorySaver)
+        if checkpointer is not None:
+            # Eager path: caller supplied a pre-created checkpointer.
+            self._checkpointer = self._validate_checkpointer(
+                checkpointer,
+                source="checkpointer",
+            )
             self.graph = build_smart_engagement_graph(
-                self._nodes, checkpointer=checkpointer, store=store,
+                self._nodes,
+                checkpointer=self._checkpointer,
+                store=store,
+            )
+        elif checkpoint_factory is None:
+            # Deterministic fallback for alternate wiring/tests.
+            from langgraph.checkpoint.memory import MemorySaver
+
+            self._checkpointer = self._validate_checkpointer(
+                MemorySaver(),
+                source="default MemorySaver fallback",
+            )
+            self.graph = build_smart_engagement_graph(
+                self._nodes,
+                checkpointer=self._checkpointer,
+                store=store,
             )
         else:
-            # Lazy path: async checkpointer created on first run()/resume() call
-            self.graph = None
+            has_async, _has_sync = self._validate_checkpoint_factory(checkpoint_factory)
+            if has_async:
+                # Lazy path: async checkpointer created on first run()/resume() call.
+                self.graph = None
+            else:
+                # Sync-only factory path for tests/alternate wiring.
+                self._checkpointer = self._validate_checkpointer(
+                    checkpoint_factory.create_checkpointer(),
+                    source="checkpoint_factory.create_checkpointer()",
+                )
+                self.graph = build_smart_engagement_graph(
+                    self._nodes,
+                    checkpointer=self._checkpointer,
+                    store=store,
+                )
+
+        self.checkpointer = self._checkpointer
+
+    @staticmethod
+    def _validate_checkpoint_factory(checkpoint_factory) -> tuple[bool, bool]:
+        """Validate checkpoint factory contract and return available creation modes."""
+        has_async = callable(getattr(checkpoint_factory, "create_async", None))
+        has_sync = callable(getattr(checkpoint_factory, "create_checkpointer", None))
+        if not has_async and not has_sync:
+            raise ValueError(
+                "Invalid smart engagement checkpoint_factory: expected "
+                "create_async() and/or create_checkpointer()."
+            )
+        return has_async, has_sync
+
+    @staticmethod
+    def _validate_checkpointer(checkpointer, *, source: str):
+        """Validate checkpointer shape for predictable interrupt/resume semantics."""
+        if checkpointer is None:
+            raise ValueError(
+                f"Invalid smart engagement checkpointer from {source}: got None."
+            )
+
+        has_sync_contract = (
+            all(
+                callable(getattr(checkpointer, name, None))
+                for name in ("get_tuple", "put", "put_writes")
+            )
+            or all(
+                callable(getattr(checkpointer, name, None))
+                for name in ("get", "put", "list")
+            )
+        )
+        has_async_contract = (
+            all(
+                callable(getattr(checkpointer, name, None))
+                for name in ("aget_tuple", "aput", "aput_writes")
+            )
+            or all(
+                callable(getattr(checkpointer, name, None))
+                for name in ("aget", "aput", "alist")
+            )
+        )
+
+        if not has_sync_contract and not has_async_contract:
+            raise ValueError(
+                f"Invalid smart engagement checkpointer from {source}: expected "
+                "LangGraph saver methods for sync (get_tuple/put/put_writes or "
+                "get/put/list) or async (aget_tuple/aput/aput_writes or "
+                "aget/aput/alist) operation."
+            )
+        return checkpointer
 
     async def _ensure_graph(self) -> None:
         """Lazily build the compiled graph with an async checkpointer.
 
         Called at the start of every ``run()`` and ``resume()`` when
-        ``checkpoint_factory`` was supplied instead of a pre-built checkpointer.
+        ``checkpoint_factory.create_async()`` is used for checkpointer resolution.
         A lock prevents duplicate initialisation under concurrent requests.
         """
         if self.graph is not None:
             return
+
+        if self._checkpoint_factory is None:
+            raise RuntimeError(
+                "Smart engagement graph is uninitialized and no checkpoint_factory "
+                "is available to create a checkpointer."
+            )
+
         async with self._graph_lock:
             if self.graph is not None:
                 return
-            checkpointer = await self._checkpoint_factory.create_async()
+            create_async = getattr(self._checkpoint_factory, "create_async", None)
+            if not callable(create_async):
+                raise RuntimeError(
+                    "Smart engagement lazy graph initialization requires "
+                    "checkpoint_factory.create_async()."
+                )
+            checkpointer = create_async()
+            if inspect.isawaitable(checkpointer):
+                checkpointer = await checkpointer
+            self._checkpointer = self._validate_checkpointer(
+                checkpointer,
+                source="checkpoint_factory.create_async()",
+            )
+            self.checkpointer = self._checkpointer
             self.graph = build_smart_engagement_graph(
-                self._nodes, checkpointer=checkpointer, store=self._store,
+                self._nodes,
+                checkpointer=self._checkpointer,
+                store=self._store,
             )
 
     async def run(

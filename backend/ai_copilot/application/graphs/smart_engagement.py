@@ -52,12 +52,18 @@ def build_smart_engagement_graph(nodes: SmartEngagementNodes, checkpointer=None,
     Args:
         nodes: SmartEngagementNodes instance with 7 port dependencies
         checkpointer: LangGraph checkpointer (required for interrupt/resume).
-                      If None, interrupt will not persist state between calls.
         store: LangGraph Store for cross-thread memory (optional).
 
     Returns:
         Compiled StateGraph
     """
+    if checkpointer is None:
+        raise ValueError(
+            "Smart engagement graph requires a checkpointer. "
+            "Provide an explicit checkpointer (for example MemorySaver) or "
+            "a use-case-level fallback before compiling the graph."
+        )
+
     graph = StateGraph(SmartEngagementState)
 
     # ── Nodes ─────────────────────────────────────────────────────────────────
@@ -138,9 +144,7 @@ def build_smart_engagement_graph(nodes: SmartEngagementNodes, checkpointer=None,
     graph.add_edge("log_outcome", "finish")
     graph.add_edge("finish", END)
 
-    compile_kwargs = {}
-    if checkpointer is not None:
-        compile_kwargs["checkpointer"] = checkpointer
+    compile_kwargs = {"checkpointer": checkpointer}
     if store is not None:
         compile_kwargs["store"] = store
     return graph.compile(**compile_kwargs)

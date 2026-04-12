@@ -428,6 +428,10 @@ def _build_smart_engagement(account_usecases, ig_usecases, ai_services):
     approval = InMemoryApprovalAdapter()
     audit_log = FileAuditLogAdapter()
     checkpoint_factory = ai_services["checkpoint_factory"]
+    if checkpoint_factory is None:
+        raise RuntimeError(
+            "Smart engagement wiring requires ai_services['checkpoint_factory']."
+        )
 
     rec = SmartEngagementUseCase(
         account_context=account_context,
