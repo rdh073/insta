@@ -20,7 +20,6 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-<<<<<<< HEAD
 from app.application.use_cases.post_job import (
     MEDIA_REQUIRED_ERROR_CODE,
     MEDIA_REQUIRED_ERROR_MESSAGE,
