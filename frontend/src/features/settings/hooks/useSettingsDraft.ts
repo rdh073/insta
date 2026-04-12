@@ -37,8 +37,7 @@ export function useSettingsDraft(): SettingsDraft {
 
   const storeBackendApiKey = useSettingsStore((s) => s.backendApiKey);
 
-  const setBackendUrl = useSettingsStore((s) => s.setBackendUrl);
-  const setBackendApiKey = useSettingsStore((s) => s.setBackendApiKey);
+  const setConnection = useSettingsStore((s) => s.setConnection);
   const setProvider = useSettingsStore((s) => s.setProvider);
   const setModel = useSettingsStore((s) => s.setModel);
   const setApiKey = useSettingsStore((s) => s.setApiKey);
@@ -73,8 +72,7 @@ export function useSettingsDraft(): SettingsDraft {
   }, []);
 
   const handleSave = useCallback(() => {
-    setBackendUrl(draftBackendUrl);
-    setBackendApiKey(draftBackendApiKey);
+    setConnection(draftBackendUrl, draftBackendApiKey);
     setProvider(draftProvider);
     setModel(draftModel);
     (Object.keys(draftApiKeys) as AIProvider[]).forEach((p) => setApiKey(p, draftApiKeys[p]));
@@ -110,8 +108,7 @@ export function useSettingsDraft(): SettingsDraft {
     draftModel,
     draftApiKeys,
     draftBaseUrls,
-    setBackendUrl,
-    setBackendApiKey,
+    setConnection,
     setProvider,
     setModel,
     setApiKey,

@@ -355,6 +355,18 @@ def create_app() -> FastAPI:
             "/api/dashboard/auth/login",
         }
 
+        def _auth_error(message: str, code: str) -> JSONResponse:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": {
+                        "message": message,
+                        "code": code,
+                        "family": "auth",
+                    }
+                },
+            )
+
         @app.middleware("http")
         async def api_key_middleware(request: Request, call_next):
             if request.url.path in _API_KEY_SKIP:
@@ -366,19 +378,13 @@ def create_app() -> FastAPI:
             if sse_token:
                 store: SseTokenStore = app.state.sse_token_store
                 if not store.validate(sse_token):
-                    return JSONResponse(
-                        status_code=401,
-                        content={"detail": "Invalid or expired SSE token"},
-                    )
+                    return _auth_error("Invalid or expired SSE token", "sse_token_invalid")
                 return await call_next(request)
 
             # Header first; raw query param kept as last-resort fallback
             key = request.headers.get("X-API-Key", "") or request.query_params.get("x_api_key", "")
             if not secrets.compare_digest(key, _api_key):
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid or missing API key"},
-                )
+                return _auth_error("Invalid or missing API key", "backend_api_key_invalid")
             return await call_next(request)
 
     from app.adapters.http.rate_limit import load_rate_limit_settings, register_rate_limit

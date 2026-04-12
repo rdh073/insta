@@ -1,10 +1,16 @@
-import { startTransition, useEffect, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { AlertTriangle, Waves, Zap } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { accountsApi } from '../../api/accounts';
 import { postsApi } from '../../api/posts';
 import { describeBackend } from '../../lib/api-base';
+import {
+  buildBulkHydrateSessionKey,
+  classifyStartupHydrationFailure,
+  getHydrationErrorStatus,
+  shouldResetStartupStores,
+} from '../../lib/startup-hydration';
 import { useAccountStore } from '../../store/accounts';
 import { usePostStore } from '../../store/posts';
 import { PROVIDERS, useSettingsStore } from '../../store/settings';
@@ -41,17 +47,23 @@ export function AppLayout() {
   const setJobs = usePostStore((state) => state.setJobs);
   const jobs = usePostStore((state) => state.jobs);
   const backendUrl = useSettingsStore((state) => state.backendUrl);
+  const backendApiKey = useSettingsStore((state) => state.backendApiKey);
+  const dashboardToken = useSettingsStore((state) => state.dashboardToken);
   const provider = useSettingsStore((state) => state.provider);
   const [syncing, setSyncing] = useState(false);
+  const previousBackendUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const normalizedBackendUrl = backendUrl.trim();
+    const shouldReset = shouldResetStartupStores(previousBackendUrlRef.current, normalizedBackendUrl);
+    previousBackendUrlRef.current = normalizedBackendUrl;
 
     const waitForBackend = async (maxRetries = 10, delayMs = 2000): Promise<boolean> => {
       for (let i = 0; i < maxRetries; i++) {
         if (cancelled) return false;
         try {
-          const baseUrl = backendUrl?.trim() || '';
+          const baseUrl = normalizedBackendUrl;
           const healthUrl = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/health` : '/api/../health';
           const res = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });
           if (res.ok) return true;
@@ -64,20 +76,33 @@ export function AppLayout() {
     };
 
     const hydrate = async () => {
-      startTransition(() => {
-        setAccounts([]);
-        setJobs([]);
-      });
+      if (shouldReset) {
+        startTransition(() => {
+          setAccounts([]);
+          setJobs([]);
+        });
+      }
       setSyncing(true);
 
-      // Wait for backend before fetching data — avoids ECONNREFUSED spam
-      const ready = await waitForBackend();
-      if (cancelled) return;
-
-      if (ready) {
-        const [accountsResult, jobsResult] = await Promise.allSettled([accountsApi.list(), postsApi.list()]);
-
+      try {
+        // Wait for backend before fetching data — avoids ECONNREFUSED spam
+        const ready = await waitForBackend();
         if (cancelled) return;
+
+        if (!ready) {
+          console.warn('[startup-hydration]', {
+            outcome: 'backend_unavailable',
+            backendUrl: normalizedBackendUrl || '(vite-proxy)',
+          });
+          return;
+        }
+
+        const [accountsResult, jobsResult] = await Promise.allSettled([accountsApi.list(), postsApi.list()]);
+        if (cancelled) return;
+
+        const failures: unknown[] = [];
+        if (accountsResult.status === 'rejected') failures.push(accountsResult.reason);
+        if (jobsResult.status === 'rejected') failures.push(jobsResult.reason);
 
         startTransition(() => {
           if (accountsResult.status === 'fulfilled') {
@@ -88,25 +113,56 @@ export function AppLayout() {
           }
         });
 
-        // Fire-and-forget: hydrate follower/following counts for all active accounts.
-        // Results arrive via SSE account_updated events — no need to await.
-        // Guard: only call once per session tab to avoid hammering Instagram on
-        // rapid reconnects or navigation (server also enforces a 5-min cooldown).
-        const SESSION_KEY = 'insta_bulk_hydrated';
-        if (!sessionStorage.getItem(SESSION_KEY)) {
-          sessionStorage.setItem(SESSION_KEY, Date.now().toString());
-          accountsApi.bulkHydrateProfiles().catch(() => {/* best-effort */});
+        const failure = classifyStartupHydrationFailure({ backendReady: true, failures });
+        if (failure) {
+          console.warn('[startup-hydration]', {
+            outcome: failure,
+            backendUrl: normalizedBackendUrl || '(vite-proxy)',
+            statusCodes: failures.map(getHydrationErrorStatus).filter((code): code is number => code !== null),
+          });
+        }
+
+        const sessionKey = buildBulkHydrateSessionKey(normalizedBackendUrl);
+        if (failure === 'unauthorized') {
+          // Ensure a later valid credential update can retry startup bulk hydrate.
+          sessionStorage.removeItem(sessionKey);
+          return;
+        }
+
+        // Fire-and-forget-ish: hydrate follower/following counts for all active accounts.
+        // Results arrive via SSE account_updated events — no need to block UI sync.
+        // Guard: one successful request per backend URL per tab session.
+        if (!sessionStorage.getItem(sessionKey)) {
+          try {
+            await accountsApi.bulkHydrateProfiles();
+            sessionStorage.setItem(sessionKey, Date.now().toString());
+          } catch (error) {
+            const bulkFailure = classifyStartupHydrationFailure({
+              backendReady: true,
+              failures: [error],
+            });
+            if (bulkFailure) {
+              console.warn('[startup-hydration]', {
+                outcome: bulkFailure,
+                phase: 'bulk_hydrate_profiles',
+                backendUrl: normalizedBackendUrl || '(vite-proxy)',
+                statusCodes: [getHydrationErrorStatus(error)].filter((code): code is number => code !== null),
+              });
+            }
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setSyncing(false);
         }
       }
-
-      setSyncing(false);
     };
 
     hydrate();
     return () => {
       cancelled = true;
     };
-  }, [backendUrl, setAccounts, setJobs]);
+  }, [backendUrl, backendApiKey, dashboardToken, setAccounts, setJobs]);
 
   const currentMeta =
     routeMeta.find((item) => location.pathname.startsWith(item.startsWith)) ?? routeMeta[routeMeta.length - 1];

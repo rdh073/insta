@@ -94,3 +94,20 @@ def test_exception_handler_hides_internal_errors(monkeypatch):
     assert payload["detail"] == "Internal server error"
     assert "sensitive stack detail" not in response.text
     assert payload["request_id"]
+
+
+def test_api_key_middleware_returns_structured_auth_error(monkeypatch):
+    monkeypatch.setenv("API_KEY", "expected-key")
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get("/api/accounts")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": {
+            "message": "Invalid or missing API key",
+            "code": "backend_api_key_invalid",
+            "family": "auth",
+        }
+    }
