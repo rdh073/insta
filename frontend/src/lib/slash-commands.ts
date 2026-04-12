@@ -1,5 +1,7 @@
 import type { CopilotEvent } from '../api/operator-copilot';
 
+type ApprovalResult = 'approved' | 'rejected' | 'edited';
+
 export interface SlashCommand {
   name: string;
   description: string;
@@ -10,7 +12,7 @@ export interface SlashCommand {
   buildPayload: (args: string, threadId?: string) => Record<string, unknown>;
   buildResumePayload: (
     threadId: string,
-    result: 'approved' | 'rejected' | 'edited',
+    result: ApprovalResult,
     editedCalls?: Record<string, unknown>[],
     approvalPayload?: Record<string, unknown>,
   ) => Record<string, unknown>;
@@ -33,11 +35,22 @@ function extractMentions(args: string): { usernames: string[]; remaining: string
   return { usernames, remaining: rest.join(' ') };
 }
 
-function firstEditedRecord(
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function mergeEditedRecords(
   editedCalls?: Record<string, unknown>[],
 ): Record<string, unknown> | undefined {
   if (!editedCalls || editedCalls.length === 0) return undefined;
-  return editedCalls[0];
+  const merged: Record<string, unknown> = {};
+  for (const call of editedCalls) {
+    for (const [key, value] of Object.entries(call)) {
+      merged[key] = value;
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function readFirstString(
@@ -49,8 +62,22 @@ function readFirstString(
     const value = obj[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
-  for (const value of Object.values(obj)) {
-    if (typeof value === 'string' && value.trim()) return value.trim();
+  return undefined;
+}
+
+function readFirstStringArray(
+  obj: Record<string, unknown> | undefined,
+  keys: string[],
+): string[] | undefined {
+  if (!obj) return undefined;
+  for (const key of keys) {
+    const value = obj[key];
+    if (!Array.isArray(value)) continue;
+    const normalized = value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (normalized.length > 0) return normalized;
   }
   return undefined;
 }
@@ -61,6 +88,69 @@ function readPositiveDecisionOption(
   const options = approvalPayload?.options;
   if (!Array.isArray(options)) return undefined;
   return options.find((item): item is string => typeof item === 'string' && item !== 'abort');
+}
+
+function isRecoverDecision(value: string | undefined): value is 'provide_2fa' | 'approve_proxy_swap' | 'abort' {
+  return value === 'provide_2fa' || value === 'approve_proxy_swap' || value === 'abort';
+}
+
+function extractMonitorParameters(
+  edited: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!edited) return undefined;
+
+  const nestedParameters = asRecord(edited.parameters);
+  const base: Record<string, unknown> = {
+    ...(nestedParameters ?? edited),
+  };
+
+  const usernames = readFirstStringArray(
+    { ...base, ...edited },
+    ['usernames', 'target_usernames', 'targetUsernames'],
+  );
+  if (usernames && usernames.length > 0) {
+    base.usernames = usernames;
+  }
+
+  const caption = readFirstString({ ...base, ...edited }, ['caption']);
+  if (caption) {
+    base.caption = caption;
+  }
+
+  const scheduledAt = readFirstString(
+    { ...base, ...edited },
+    ['scheduled_at', 'scheduledAt'],
+  );
+  if (scheduledAt) {
+    base.scheduled_at = scheduledAt;
+  }
+
+  const mediaPaths = readFirstStringArray(
+    { ...base, ...edited },
+    ['media_paths', 'mediaPaths', 'media_refs', 'mediaRefs'],
+  );
+  if (mediaPaths && mediaPaths.length > 0) {
+    base.media_paths = mediaPaths;
+  }
+
+  return Object.keys(base).length > 0 ? base : undefined;
+}
+
+function ensureEditedValue(
+  commandName: string,
+  fieldName: string,
+  value: unknown,
+): void {
+  if (typeof value === 'string' && value.trim()) return;
+  throw new Error(`/${commandName} edited resume requires ${fieldName}.`);
+}
+
+function ensureEditedParameters(
+  commandName: string,
+  parameters: Record<string, unknown> | undefined,
+): void {
+  if (parameters && Object.keys(parameters).length > 0) return;
+  throw new Error(`/${commandName} edited resume requires non-empty parameters.`);
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -83,7 +173,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       };
     },
     buildResumePayload(threadId, result, editedCalls) {
-      const edited = firstEditedRecord(editedCalls);
+      const edited = mergeEditedRecords(editedCalls);
       const content =
         result === 'edited'
           ? readFirstString(edited, ['content', 'draft_content', 'edited_content', 'text', 'message'])
@@ -114,11 +204,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     buildResumePayload(threadId, result, editedCalls) {
       const decision =
         result === 'approved' ? 'approve' : result === 'edited' ? 'modify' : 'skip';
-      const edited = firstEditedRecord(editedCalls);
+      const edited = mergeEditedRecords(editedCalls);
+      const parameters = result === 'edited' ? extractMonitorParameters(edited) : undefined;
+      if (result === 'edited') {
+        ensureEditedParameters('monitor', parameters);
+      }
       return {
         threadId,
         decision,
-        ...(result === 'edited' && edited ? { parameters: edited } : {}),
+        ...(result === 'edited' ? { parameters } : {}),
       };
     },
   },
@@ -141,15 +235,23 @@ export const SLASH_COMMANDS: SlashCommand[] = [
           : result === 'edited'
           ? 'override_policy'
           : 'abort';
-      const edited = firstEditedRecord(editedCalls);
+      const edited = mergeEditedRecords(editedCalls);
       const overridePolicy =
         result === 'edited'
           ? readFirstString(edited, ['override_policy', 'overridePolicy', 'policy', 'policy_decision'])
           : undefined;
+      const notes =
+        result === 'edited'
+          ? readFirstString(edited, ['notes', 'reason'])
+          : undefined;
+      if (result === 'edited') {
+        ensureEditedValue('risk', 'overridePolicy', overridePolicy);
+      }
       return {
         threadId,
         decision,
         ...(overridePolicy ? { overridePolicy } : {}),
+        ...(notes ? { notes } : {}),
       };
     },
   },
@@ -166,17 +268,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       return { threadId, accountId: username, username };
     },
     buildResumePayload(threadId, result, editedCalls, approvalPayload) {
+      const edited = mergeEditedRecords(editedCalls);
       const suggestedDecision = readPositiveDecisionOption(approvalPayload);
-      const decision =
-        result === 'rejected'
-          ? 'abort'
-          : suggestedDecision === 'provide_2fa' || suggestedDecision === 'approve_proxy_swap'
-          ? suggestedDecision
-          : result === 'edited'
-          ? 'provide_2fa'
-          : 'approve_proxy_swap';
-
-      const edited = firstEditedRecord(editedCalls);
       const twoFaCode =
         result === 'edited'
           ? readFirstString(edited, ['two_fa_code', 'twoFaCode', 'code', 'otp'])
@@ -185,6 +278,28 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         result === 'edited'
           ? readFirstString(edited, ['proxy', 'proxy_candidate'])
           : undefined;
+      const explicitDecision =
+        result === 'edited'
+          ? readFirstString(edited, ['decision'])
+          : undefined;
+      const normalizedExplicitDecision = isRecoverDecision(explicitDecision) ? explicitDecision : undefined;
+      const normalizedSuggestedDecision = isRecoverDecision(suggestedDecision) ? suggestedDecision : undefined;
+
+      const fallbackEditedDecision = twoFaCode ? 'provide_2fa' : 'approve_proxy_swap';
+      const decision =
+        result === 'rejected'
+          ? 'abort'
+          : normalizedExplicitDecision && normalizedExplicitDecision !== 'abort'
+          ? normalizedExplicitDecision
+          : normalizedSuggestedDecision && normalizedSuggestedDecision !== 'abort'
+          ? normalizedSuggestedDecision
+          : result === 'edited'
+          ? fallbackEditedDecision
+          : 'approve_proxy_swap';
+
+      if (result === 'edited' && !twoFaCode && !proxy) {
+        throw new Error('/recover edited resume requires twoFaCode or proxy.');
+      }
 
       return {
         threadId,
@@ -212,15 +327,23 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       };
     },
     buildResumePayload(threadId, result, editedCalls) {
-      const edited = firstEditedRecord(editedCalls);
+      const edited = mergeEditedRecords(editedCalls);
       const editedCaption =
         result === 'edited'
           ? readFirstString(edited, ['edited_caption', 'editedCaption', 'caption', 'content', 'text'])
           : undefined;
+      const reason =
+        result === 'edited'
+          ? readFirstString(edited, ['reason', 'notes'])
+          : undefined;
+      if (result === 'edited') {
+        ensureEditedValue('pipeline', 'editedCaption', editedCaption);
+      }
       return {
         threadId,
         decision: result,
         ...(editedCaption ? { editedCaption } : {}),
+        ...(reason ? { reason } : {}),
       };
     },
   },

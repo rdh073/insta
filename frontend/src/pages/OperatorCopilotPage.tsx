@@ -342,6 +342,22 @@ export function OperatorCopilotPage() {
       return;
     }
 
+    let resumePayload: Record<string, unknown> | undefined;
+    if (activeCommand) {
+      try {
+        resumePayload = activeCommand.buildResumePayload(
+          session.threadId,
+          result,
+          editedCalls,
+          session.approvalPayload,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid edited resume payload.';
+        toast.error(message);
+        return;
+      }
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -350,12 +366,9 @@ export function OperatorCopilotPage() {
     setSession((prev) => ({ ...prev, runState: 'running', approvalPayload: undefined }));
     try {
       if (activeCommand) {
-        const resumePayload = activeCommand.buildResumePayload(
-          session.threadId,
-          result,
-          editedCalls,
-          session.approvalPayload,
-        );
+        if (!resumePayload) {
+          throw new Error('Resume payload missing for slash command.');
+        }
         const stream = activeCommand.transport === 'json'
           ? commandJsonRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal)
           : graphRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal);
