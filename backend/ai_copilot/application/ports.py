@@ -5,11 +5,13 @@ concrete implementations. Adapters provide implementations of these ports.
 
 Contract constants exported from this module:
 - AUDIT_EVENT_TYPES              — canonical event_type values for AuditLogPort
+- AUDIT_EVENT_SCHEMA             — per-event required/optional payload fields
 - APPROVAL_PAYLOAD_REQUIRED_KEYS — minimum keys an approval_request must have
 - LLMResponse                    — TypedDict shape for LLMGatewayPort responses
 
 Contract helpers:
 - validate_approval_payload()    — raises ValueError if payload is incomplete
+- validate_audit_event_payload() — raises ValueError for unknown/malformed audit events
 """
 
 from __future__ import annotations
@@ -19,17 +21,83 @@ from typing import Any, TypedDict
 
 # ── Contract constants ─────────────────────────────────────────────────────────
 
-AUDIT_EVENT_TYPES: frozenset[str] = frozenset({
-    "operator_request",
-    "planner_decision",
-    "policy_gate",
-    "approval_submitted",
-    "approval_result",
-    "tool_execution",
-    "execution_failure",
-    "review_finding",
-    "stop_reason",
-})
+class AuditEventSchema(TypedDict):
+    """Allowed payload keys for one audit event type."""
+
+    required: frozenset[str]
+    optional: frozenset[str]
+
+
+AUDIT_EVENT_SCHEMA: dict[str, AuditEventSchema] = {
+    "operator_request": {
+        "required": frozenset({"thread_id", "operator_request", "step"}),
+        "optional": frozenset(),
+    },
+    "planner_decision": {
+        "required": frozenset({"thread_id", "stage"}),
+        "optional": frozenset({
+            "normalized_goal",
+            "blocked",
+            "block_reason",
+            "conversational",
+            "mentions",
+            "execution_plan",
+            "proposed_tool_calls",
+            "dropped_tool_calls",
+            "runtime_context_keys",
+            "copilot_memory_namespace",
+            "context_available",
+            "error",
+        }),
+    },
+    "policy_gate": {
+        "required": frozenset({
+            "thread_id",
+            "proposed_count",
+            "blocked_names",
+            "executable_count",
+            "flags",
+            "risk_assessment",
+        }),
+        "optional": frozenset(),
+    },
+    "approval_submitted": {
+        "required": frozenset({"thread_id", "approval_request"}),
+        "optional": frozenset(),
+    },
+    "approval_result": {
+        "required": frozenset({"thread_id", "approval_result"}),
+        "optional": frozenset({
+            "edited_call_count",
+            "sanitized_call_count",
+            "dropped_tool_calls",
+            "reason",
+        }),
+    },
+    "tool_execution": {
+        "required": frozenset({"thread_id", "call_id", "tool_name", "args", "result_keys"}),
+        "optional": frozenset(),
+    },
+    "execution_failure": {
+        "required": frozenset({"thread_id", "call_id", "tool_name", "error"}),
+        "optional": frozenset({"failure_kind"}),
+    },
+    "review_finding": {
+        "required": frozenset({"thread_id", "matched_intent", "warnings", "recommendation"}),
+        "optional": frozenset(),
+    },
+    "stop_reason": {
+        "required": frozenset({"thread_id", "stop_reason"}),
+        "optional": frozenset({"reason"}),
+    },
+}
+"""Canonical operator-copilot audit schema.
+
+`required` keys must always exist for that event_type.
+`optional` keys are documented and allowed when relevant.
+"""
+
+AUDIT_EVENT_TYPES: frozenset[str] = frozenset(AUDIT_EVENT_SCHEMA.keys())
 """Canonical event_type values for AuditLogPort.log().
 
 Callers MUST use one of these values.  Tests should reject unknown types.
@@ -86,6 +154,51 @@ def validate_approval_payload(payload: dict) -> None:
             f"Approval payload missing required keys: {sorted(missing)}. "
             f"Required: {sorted(APPROVAL_PAYLOAD_REQUIRED_KEYS)}"
         )
+
+
+def validate_audit_event_payload(
+    event_type: str,
+    data: dict,
+    *,
+    allow_extra_fields: bool = False,
+) -> None:
+    """Assert that an audit event obeys the canonical schema.
+
+    Args:
+        event_type: Canonical audit event_type.
+        data: Event payload dict.
+        allow_extra_fields: If True, skip unknown-field checks.
+
+    Raises:
+        ValueError: For unknown event_type, missing required fields, or
+            undocumented payload keys.
+    """
+    schema = AUDIT_EVENT_SCHEMA.get(event_type)
+    if schema is None:
+        raise ValueError(
+            f"Unknown audit event_type: '{event_type}'. "
+            f"Expected one of: {sorted(AUDIT_EVENT_TYPES)}"
+        )
+    if not isinstance(data, dict):
+        raise ValueError(f"Audit event data for '{event_type}' must be dict, got {type(data).__name__}")
+
+    required = schema["required"]
+    optional = schema["optional"]
+
+    missing = required - data.keys()
+    if missing:
+        raise ValueError(
+            f"Audit event '{event_type}' missing required fields: {sorted(missing)}. "
+            f"Required: {sorted(required)}"
+        )
+
+    if not allow_extra_fields:
+        unknown = data.keys() - required - optional
+        if unknown:
+            raise ValueError(
+                f"Audit event '{event_type}' has undocumented fields: {sorted(unknown)}. "
+                f"Allowed: {sorted(required | optional)}"
+            )
 
 
 class LLMGatewayPort(ABC):

@@ -60,7 +60,7 @@ class OperatorCopilotPlanPolicyNodes:
             "provider_base_url": provider_base_url,
         }
 
-    async def _planner_runtime_context(self) -> dict:
+    async def _planner_runtime_context(self, thread_id: str | None = None) -> dict:
         """Load optional runtime context for the planner without widening the port contract."""
         context_getter = getattr(self.tool_executor, "get_planner_context", None)
         if not callable(context_getter):
@@ -71,6 +71,7 @@ class OperatorCopilotPlanPolicyNodes:
         except Exception as exc:
             await self.audit_log.log("planner_decision", {
                 "stage": "plan_actions_context",
+                "thread_id": thread_id,
                 "context_available": False,
                 "error": str(exc),
             })
@@ -239,7 +240,7 @@ class OperatorCopilotPlanPolicyNodes:
 
         context = runtime_context
         if context is None:
-            context = await self._planner_runtime_context()
+            context = await self._planner_runtime_context(thread_id=state.get("thread_id"))
         return self._build_copilot_memory_namespace(state, runtime_context=context)
 
     async def ingest_request_node(self, state: OperatorCopilotState) -> dict:
@@ -298,6 +299,7 @@ class OperatorCopilotPlanPolicyNodes:
 
         await self.audit_log.log("planner_decision", {
             "stage": "classify_goal",
+            "thread_id": state.get("thread_id"),
             "normalized_goal": normalized_goal,
             "blocked": is_blocked,
             "block_reason": block_reason,
@@ -328,7 +330,7 @@ class OperatorCopilotPlanPolicyNodes:
         normalized_goal = state.get("normalized_goal") or state.get("operator_request", "")
         mentions = state.get("mentions") or []
         tool_schemas = self.tool_executor.get_schemas()
-        runtime_context = await self._planner_runtime_context()
+        runtime_context = await self._planner_runtime_context(thread_id=state.get("thread_id"))
         memory_ns = await self._resolve_copilot_memory_namespace(
             state,
             runtime_context=runtime_context,
@@ -391,6 +393,7 @@ class OperatorCopilotPlanPolicyNodes:
 
         await self.audit_log.log("planner_decision", {
             "stage": "plan_actions",
+            "thread_id": state.get("thread_id"),
             "execution_plan": execution_plan,
             "proposed_tool_calls": proposed_tool_calls,
             "dropped_tool_calls": dropped_tool_calls,
@@ -440,6 +443,7 @@ class OperatorCopilotPlanPolicyNodes:
         }
 
         await self.audit_log.log("policy_gate", {
+            "thread_id": state.get("thread_id"),
             "proposed_count": len(proposed),
             "blocked_names": blocked_names,
             "executable_count": len(executable),

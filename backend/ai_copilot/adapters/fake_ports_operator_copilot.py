@@ -46,7 +46,7 @@ from ai_copilot.application.ports import (
     ApprovalPort,
     AuditLogPort,
     CheckpointFactoryPort,
-    AUDIT_EVENT_TYPES,
+    validate_audit_event_payload,
 )
 
 
@@ -227,8 +227,8 @@ class FakeApprovalPort(ApprovalPort):
 class FakeAuditLogPort(AuditLogPort):
     """Audit log port stub that captures events for assertion in tests.
 
-    Captures every log() call with its event_type and data. Also validates
-    that the event_type is a canonical value (from AUDIT_EVENT_TYPES).
+    Captures every log() call with its event_type and data. In strict mode it
+    validates the full canonical schema (event_type + payload fields).
 
     Args:
         strict: If True (default), raises ValueError for unknown event_types.
@@ -241,11 +241,8 @@ class FakeAuditLogPort(AuditLogPort):
         """All logged events in order: [{"event_type": ..., "data": ...}, ...]"""
 
     async def log(self, event_type: str, data: dict) -> None:
-        if self._strict and event_type not in AUDIT_EVENT_TYPES:
-            raise ValueError(
-                f"Unknown audit event_type: '{event_type}'. "
-                f"Expected one of: {sorted(AUDIT_EVENT_TYPES)}"
-            )
+        if self._strict:
+            validate_audit_event_payload(event_type, data)
         self.events.append({"event_type": event_type, "data": data})
 
     # ── Helpers ────────────────────────────────────────────────────────────────

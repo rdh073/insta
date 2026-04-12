@@ -25,10 +25,11 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
 
     async def request_approval_if_needed_node(self, state: OperatorCopilotState) -> dict:
         """Interrupt execution to request operator approval for write-sensitive calls."""
+        thread_id = state.get("thread_id")
         if state.get("approval_attempted"):
             await self.audit_log.log("stop_reason", {
                 "stop_reason": "approval_limit_reached",
-                "thread_id": state.get("thread_id"),
+                "thread_id": thread_id,
                 "reason": "Approval already attempted this run. Rejection is final.",
             })
             return {
@@ -68,22 +69,21 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
 
         await self.audit_log.log("approval_submitted", {
             "approval_request": approval_request,
-            "thread_id": state.get("thread_id"),
+            "thread_id": thread_id,
         })
 
         decision = interrupt(approval_request)
         approval_result = decision.get("result", "rejected") if isinstance(decision, dict) else str(decision)
         edited_calls = decision.get("edited_calls") if isinstance(decision, dict) else None
 
-        await self.audit_log.log("approval_result", {
-            "approval_result": approval_result,
-            "thread_id": state.get("thread_id"),
-        })
-
         updates: dict = {
             "approval_result": approval_result,
             "approval_request": approval_request,
             "approval_attempted": True,
+        }
+        approval_audit: dict = {
+            "approval_result": approval_result,
+            "thread_id": thread_id,
         }
 
         if approval_result == "approved":
@@ -91,22 +91,28 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
         elif approval_result == "edited" and edited_calls:
             tool_schemas = self.tool_executor.get_schemas()
             sanitized, dropped = _sanitize_proposed_tool_calls(edited_calls, tool_schemas)
-            if dropped:
-                await self.audit_log.log("edited_calls_sanitized", {
-                    "dropped": dropped,
-                    "thread_id": state.get("thread_id"),
-                })
             updates["proposed_tool_calls"] = sanitized
             updates["approved_tool_calls"] = []
+            approval_audit["edited_call_count"] = len(edited_calls) if isinstance(edited_calls, list) else 0
+            approval_audit["sanitized_call_count"] = len(sanitized)
+            if dropped:
+                approval_audit["dropped_tool_calls"] = dropped
+        elif approval_result == "edited":
+            approval_audit["edited_call_count"] = 0
+            approval_audit["sanitized_call_count"] = 0
+            approval_audit["reason"] = "operator returned edited without edited_calls payload"
         elif approval_result in ("rejected", "timeout"):
             updates["stop_reason"] = "rejected"
             updates["approved_tool_calls"] = []
             updates["final_response"] = "Action cancelled by operator."
 
+        await self.audit_log.log("approval_result", approval_audit)
+
         return updates
 
     async def execute_tools_node(self, state: OperatorCopilotState) -> dict:
         """Execute approved tool calls via ToolExecutorPort."""
+        thread_id = state.get("thread_id")
         approved = state.get("approved_tool_calls", [])
         results: dict[str, dict] = {}
         tool_names: dict[str, str] = {}
@@ -123,10 +129,12 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                     results[call_id] = {
                         "error": f"malformed_arguments: could not parse string arguments for {tool_name!r}"
                     }
-                    await self.audit_log.log("execution_skipped", {
+                    await self.audit_log.log("execution_failure", {
+                        "thread_id": thread_id,
                         "call_id": call_id,
                         "tool_name": tool_name,
-                        "reason": "malformed_string_arguments",
+                        "error": "malformed_arguments",
+                        "failure_kind": "malformed_string_arguments",
                     })
                     continue
 
@@ -134,6 +142,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                 result = await self.tool_executor.execute(tool_name, args)
                 results[call_id] = result
                 await self.audit_log.log("tool_execution", {
+                    "thread_id": thread_id,
                     "call_id": call_id,
                     "tool_name": tool_name,
                     "args": args,
@@ -143,6 +152,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                 error_result = {"error": str(exc)}
                 results[call_id] = error_result
                 await self.audit_log.log("execution_failure", {
+                    "thread_id": thread_id,
                     "call_id": call_id,
                     "tool_name": tool_name,
                     "error": str(exc),
@@ -188,6 +198,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             }
 
         await self.audit_log.log("review_finding", {
+            "thread_id": state.get("thread_id"),
             "matched_intent": findings.get("matched_intent"),
             "warnings": findings.get("warnings", []),
             "recommendation": findings.get("recommendation"),

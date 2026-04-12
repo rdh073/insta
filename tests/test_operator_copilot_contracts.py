@@ -2,15 +2,15 @@
 
 Verifies:
 1. validate_approval_payload(): 5-key contract enforced before interrupt()
-2. AUDIT_EVENT_TYPES: all 9 canonical types are present
-3. APPROVAL_PAYLOAD_REQUIRED_KEYS: 5 required keys defined
-4. FakeAuditLogPort strict mode rejects unknown event types
+2. AUDIT_EVENT_TYPES + AUDIT_EVENT_SCHEMA: canonical taxonomy and fields
+3. validate_audit_event_payload(): rejects malformed payloads
+4. Schema document in docs/ stays in sync with contract constants
 5. ToolRegistryBridgeAdapter: BLOCKED tools filtered from get_schemas()
 6. ToolRegistryBridgeAdapter: policy annotation suffixes appended to descriptions
 7. ToolRegistryBridgeAdapter: BLOCKED tools raise ValueError in execute()
 8. ToolRegistryBridgeAdapter: schema cache invalidation works
 9. FakePortCompliance: all fake ports implement their abstract base classes
-10. FakeAuditLogPort: get_events() filtering and has_event() work correctly
+10. FakeAuditLogPort strict mode enforces event_type + payload schema
 11. InMemoryOperatorApprovalAdapter: stores and retrieves pending approvals
 12. FileOperatorAuditLogAdapter: logs events to JSONL file
 
@@ -20,6 +20,7 @@ These contract tests do NOT run the full graph pipeline.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import os
@@ -30,9 +31,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 import pytest
 
 from ai_copilot.application.ports import (
+    AUDIT_EVENT_SCHEMA,
     AUDIT_EVENT_TYPES,
     APPROVAL_PAYLOAD_REQUIRED_KEYS,
     validate_approval_payload,
+    validate_audit_event_payload,
     LLMGatewayPort,
     ToolExecutorPort,
     ApprovalPort,
@@ -58,6 +61,44 @@ def _valid_approval_payload(**overrides):
         "tool_reasons": {"c1": "grow audience"},
         "risk_assessment": {"level": "medium", "reasons": ["write action"], "blocking": False},
         "options": ["approve", "reject", "edit"],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _default_audit_field_value(field: str):
+    defaults = {
+        "thread_id": "thread-1",
+        "operator_request": "show account summary",
+        "step": 1,
+        "stage": "classify_goal",
+        "proposed_count": 1,
+        "blocked_names": [],
+        "executable_count": 1,
+        "flags": {"c1": "read_only"},
+        "risk_assessment": {"level": "low", "reasons": [], "blocking": False},
+        "approval_request": _valid_approval_payload(),
+        "approval_result": "approved",
+        "call_id": "c1",
+        "tool_name": "list_accounts",
+        "args": {},
+        "result_keys": ["accounts"],
+        "error": "boom",
+        "matched_intent": True,
+        "warnings": [],
+        "recommendation": "proceed_to_summary",
+        "stop_reason": "done",
+    }
+    if field not in defaults:
+        raise KeyError(f"No test default for audit field {field!r}")
+    return defaults[field]
+
+
+def _valid_audit_payload(event_type: str, **overrides) -> dict:
+    schema = AUDIT_EVENT_SCHEMA[event_type]
+    payload = {
+        key: _default_audit_field_value(key)
+        for key in schema["required"]
     }
     payload.update(overrides)
     return payload
@@ -144,8 +185,74 @@ def test_audit_event_types_contains_all_required():
     assert required <= AUDIT_EVENT_TYPES
 
 
+def test_audit_event_types_match_schema_keys():
+    assert AUDIT_EVENT_TYPES == frozenset(AUDIT_EVENT_SCHEMA.keys())
+
+
 def test_audit_event_types_is_frozenset():
     assert isinstance(AUDIT_EVENT_TYPES, frozenset)
+
+
+def test_audit_event_schema_required_optional_are_frozensets_and_disjoint():
+    for event_type, schema in AUDIT_EVENT_SCHEMA.items():
+        required = schema["required"]
+        optional = schema["optional"]
+        assert isinstance(required, frozenset), event_type
+        assert isinstance(optional, frozenset), event_type
+        assert required.isdisjoint(optional), event_type
+
+
+def test_validate_audit_event_payload_accepts_optional_fields():
+    payload = _valid_audit_payload("execution_failure", failure_kind="malformed_string_arguments")
+    validate_audit_event_payload("execution_failure", payload)
+
+
+def test_validate_audit_event_payload_rejects_missing_required_field():
+    payload = _valid_audit_payload("stop_reason")
+    del payload["thread_id"]
+    with pytest.raises(ValueError) as exc:
+        validate_audit_event_payload("stop_reason", payload)
+    assert "missing required fields" in str(exc.value)
+
+
+def test_validate_audit_event_payload_rejects_undocumented_field():
+    payload = _valid_audit_payload("operator_request", unexpected="x")
+    with pytest.raises(ValueError) as exc:
+        validate_audit_event_payload("operator_request", payload)
+    assert "undocumented fields" in str(exc.value)
+
+
+def test_audit_schema_document_matches_contract():
+    doc_path = Path(__file__).parent.parent / "docs" / "operator-audit-event-schema.md"
+    text = doc_path.read_text(encoding="utf-8")
+
+    m = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+    assert m, "docs/operator-audit-event-schema.md must contain a fenced JSON schema block"
+    doc_schema = json.loads(m.group(1))
+
+    expected = {
+        event_type: {
+            "required": sorted(schema["required"]),
+            "optional": sorted(schema["optional"]),
+        }
+        for event_type, schema in AUDIT_EVENT_SCHEMA.items()
+    }
+    assert doc_schema == expected
+
+
+def test_operator_nodes_emit_only_canonical_audit_event_types():
+    root = Path(__file__).parent.parent / "backend" / "ai_copilot" / "application" / "graphs" / "operator_copilot"
+    files = [
+        root / "nodes_plan_policy.py",
+        root / "nodes_approval_execution.py",
+    ]
+    pattern = re.compile(r'audit_log\.log\("([a-z_]+)"')
+    emitted = {
+        event_type
+        for path in files
+        for event_type in pattern.findall(path.read_text(encoding="utf-8"))
+    }
+    assert emitted <= AUDIT_EVENT_TYPES
 
 
 # ===========================================================================
@@ -170,8 +277,8 @@ def test_approval_payload_keys_contains_required():
 @pytest.mark.asyncio
 async def test_fake_audit_log_captures_events():
     log = FakeAuditLogPort()
-    await log.log("operator_request", {"request": "hello"})
-    await log.log("policy_gate", {"flags": {}})
+    await log.log("operator_request", _valid_audit_payload("operator_request"))
+    await log.log("policy_gate", _valid_audit_payload("policy_gate"))
 
     assert log.call_count == 2
     assert log.event_types() == ["operator_request", "policy_gate"]
@@ -180,7 +287,7 @@ async def test_fake_audit_log_captures_events():
 @pytest.mark.asyncio
 async def test_fake_audit_log_has_event_true():
     log = FakeAuditLogPort()
-    await log.log("stop_reason", {"stop_reason": "done"})
+    await log.log("stop_reason", _valid_audit_payload("stop_reason"))
     assert log.has_event("stop_reason") is True
     assert log.has_event("tool_execution") is False
 
@@ -188,9 +295,9 @@ async def test_fake_audit_log_has_event_true():
 @pytest.mark.asyncio
 async def test_fake_audit_log_get_events_filters_by_type():
     log = FakeAuditLogPort()
-    await log.log("operator_request", {"req": "a"})
-    await log.log("policy_gate", {"flags": {}})
-    await log.log("operator_request", {"req": "b"})
+    await log.log("operator_request", _valid_audit_payload("operator_request", operator_request="a"))
+    await log.log("policy_gate", _valid_audit_payload("policy_gate"))
+    await log.log("operator_request", _valid_audit_payload("operator_request", operator_request="b"))
 
     events = log.get_events("operator_request")
     assert len(events) == 2
@@ -206,6 +313,14 @@ async def test_fake_audit_log_strict_rejects_unknown():
 
 
 @pytest.mark.asyncio
+async def test_fake_audit_log_strict_rejects_missing_required_payload_field():
+    log = FakeAuditLogPort(strict=True)
+    with pytest.raises(ValueError) as exc:
+        await log.log("stop_reason", {"stop_reason": "done"})
+    assert "missing required fields" in str(exc.value)
+
+
+@pytest.mark.asyncio
 async def test_fake_audit_log_non_strict_accepts_unknown():
     log = FakeAuditLogPort(strict=False)
     await log.log("anything_goes", {"x": 1})  # must not raise
@@ -215,7 +330,7 @@ async def test_fake_audit_log_non_strict_accepts_unknown():
 @pytest.mark.asyncio
 async def test_fake_audit_log_reset():
     log = FakeAuditLogPort()
-    await log.log("operator_request", {})
+    await log.log("operator_request", _valid_audit_payload("operator_request"))
     log.reset()
     assert log.call_count == 0
     assert log.events == []
@@ -535,7 +650,11 @@ async def test_file_audit_log_writes_jsonl():
 
     try:
         adapter = FileOperatorAuditLogAdapter(log_path=path)
-        await adapter.log("operator_request", {"thread_id": "t1", "request": "hello"})
+        await adapter.log("operator_request", {
+            "thread_id": "t1",
+            "operator_request": "hello",
+            "step": 1,
+        })
         await adapter.log("stop_reason", {"thread_id": "t1", "stop_reason": "done"})
 
         with open(path) as f:

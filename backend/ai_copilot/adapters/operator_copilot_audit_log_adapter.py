@@ -5,7 +5,8 @@ Two implementations:
 - FileOperatorAuditLogAdapter — JSONL file (dev/staging, easy to grep)
 
 The interface is log(event_type: str, data: dict) → None, matching
-the canonical event types defined in AuditLogPort:
+the canonical taxonomy in application.ports (AUDIT_EVENT_TYPES /
+AUDIT_EVENT_SCHEMA):
   operator_request, planner_decision, policy_gate, approval_submitted,
   approval_result, tool_execution, execution_failure, review_finding,
   stop_reason
@@ -21,7 +22,7 @@ import os
 import time
 from pathlib import Path
 
-from ai_copilot.application.ports import AuditLogPort
+from ai_copilot.application.ports import AuditLogPort, validate_audit_event_payload
 
 _DEFAULT_LOG_PATH = "/tmp/operator-copilot-audit.jsonl"
 
@@ -43,6 +44,7 @@ class InMemoryOperatorAuditLogAdapter(AuditLogPort):
             event_type: Canonical event type string.
             data: Event payload (must be JSON-serialisable in production).
         """
+        validate_audit_event_payload(event_type, data)
         self._events.append({
             "event_type": event_type,
             "timestamp": time.time(),
@@ -95,6 +97,7 @@ class FileOperatorAuditLogAdapter(AuditLogPort):
             event_type: Canonical event type string.
             data: Event payload dict.
         """
+        validate_audit_event_payload(event_type, data)
         record = {
             "event_type": event_type,
             "timestamp": time.time(),
