@@ -17,7 +17,6 @@ import datetime
 import logging
 import queue
 import threading
-import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -58,8 +57,11 @@ class PostJobQueue:
         self._mark_scheduled = mark_scheduled_fn
         self._queue: queue.Queue[_JobItem | None] = queue.Queue()
         self._workers: list[threading.Thread] = []
+        self._timers: set[threading.Timer] = set()
+        self._timers_lock = threading.Lock()
         self._n_workers = workers
         self._started = False
+        self._stopping = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ class PostJobQueue:
         """Spawn daemon worker threads.  Idempotent."""
         if self._started:
             return
+        self._stopping = False
         for i in range(self._n_workers):
             t = threading.Thread(
                 target=self._worker_loop,
@@ -80,6 +83,13 @@ class PostJobQueue:
 
     def shutdown(self, timeout: float = 10.0) -> None:
         """Signal workers to stop and wait up to *timeout* seconds."""
+        with self._timers_lock:
+            self._stopping = True
+            timers = list(self._timers)
+            self._timers.clear()
+        for timer in timers:
+            timer.cancel()
+
         for _ in self._workers:
             self._queue.put(None)  # poison pill
         for t in self._workers:
@@ -92,17 +102,98 @@ class PostJobQueue:
 
     def enqueue(self, job_id: str, scheduled_at: Optional[str] = None) -> None:
         """Add a job to the dispatch queue.  Non-blocking."""
-        self._queue.put(_JobItem(job_id=job_id, scheduled_at=scheduled_at))
+        item = _JobItem(job_id=job_id, scheduled_at=scheduled_at)
+        delay = self._parse_delay_seconds(item)
+        if delay is None or delay <= 0:
+            self._queue.put(_JobItem(job_id=job_id))
+            return
+
+        if self._mark_scheduled:
+            try:
+                self._mark_scheduled(job_id)
+            except Exception:
+                logger.exception("Failed to mark job %s as scheduled", job_id)
+        self._schedule_delayed_enqueue(job_id, delay)
 
     @property
     def pending_count(self) -> int:
-        return self._queue.qsize()
+        with self._timers_lock:
+            delayed_count = len(self._timers)
+        return self._queue.qsize() + delayed_count
 
     # ── backward-compat shim (used by posts router) ──────────────────────
 
     def schedule_post_job_sync(self, job_id: str, scheduled_at: Optional[str] = None) -> None:
         """Drop-in replacement for ``AsyncioScheduler.schedule_post_job_sync``."""
         self.enqueue(job_id, scheduled_at)
+
+    def _parse_delay_seconds(self, item: _JobItem) -> float | None:
+        """Return delay in seconds, or ``None`` when job should run immediately."""
+        if not item.scheduled_at:
+            return None
+        if not isinstance(item.scheduled_at, str):
+            logger.warning(
+                "Job %s has non-string scheduled_at=%r; executing immediately",
+                item.job_id,
+                item.scheduled_at,
+            )
+            return None
+
+        try:
+            run_at = datetime.datetime.fromisoformat(item.scheduled_at.replace("Z", "+00:00"))
+        except (ValueError, OverflowError):
+            logger.warning(
+                "Job %s has invalid scheduled_at=%r; executing immediately",
+                item.job_id,
+                item.scheduled_at,
+            )
+            return None
+
+        if run_at.tzinfo is None or run_at.tzinfo.utcoffset(run_at) is None:
+            logger.warning(
+                "Job %s has naive scheduled_at=%r; assuming UTC",
+                item.job_id,
+                item.scheduled_at,
+            )
+            run_at = run_at.replace(tzinfo=datetime.timezone.utc)
+        else:
+            run_at = run_at.astimezone(datetime.timezone.utc)
+
+        return (run_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+
+    def _schedule_delayed_enqueue(self, job_id: str, delay: float) -> None:
+        """Schedule delayed enqueue on a timer so workers never block on sleep."""
+        timer = threading.Timer(delay, self._enqueue_due_job, args=(job_id,))
+        timer.daemon = True
+
+        enqueue_immediately = False
+        with self._timers_lock:
+            if self._stopping:
+                enqueue_immediately = True
+            else:
+                self._timers.add(timer)
+
+        if enqueue_immediately:
+            logger.warning(
+                "Queue is shutting down; job %s scheduled for delay %.1fs is enqueued immediately",
+                job_id,
+                delay,
+            )
+            self._queue.put(_JobItem(job_id=job_id))
+            return
+
+        logger.info("Job %s scheduled for %.1fs", job_id, delay)
+        timer.start()
+
+    def _enqueue_due_job(self, job_id: str) -> None:
+        current = threading.current_thread()
+        with self._timers_lock:
+            if isinstance(current, threading.Timer):
+                self._timers.discard(current)
+            if self._stopping:
+                logger.info("Skipping delayed enqueue for job %s during shutdown", job_id)
+                return
+        self._queue.put(_JobItem(job_id=job_id))
 
     # ── worker ────────────────────────────────────────────────────────────
 
@@ -171,25 +262,6 @@ class PostJobQueue:
     def _handle(self, item: _JobItem) -> None:
         if not self._is_runnable_before_run(item.job_id):
             return
-
-        # Optional delay for scheduled posts.
-        if item.scheduled_at:
-            try:
-                run_at = datetime.datetime.fromisoformat(
-                    item.scheduled_at.replace("Z", "+00:00"),
-                )
-                delay = (run_at - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
-                if delay > 0:
-                    if self._mark_scheduled:
-                        self._mark_scheduled(item.job_id)
-                    logger.info("Job %s scheduled, sleeping %.1fs", item.job_id, delay)
-                    time.sleep(delay)
-            except (ValueError, OverflowError):
-                pass  # bad timestamp — run immediately
-
-        if not self._is_runnable_before_run(item.job_id):
-            return
-
         logger.info("Executing job %s", item.job_id)
         self._run_fn(item.job_id)
         logger.info("Job %s finished", item.job_id)
