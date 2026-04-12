@@ -14,6 +14,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectThreadSummary,
     DirectThreadDetail,
     DirectMessageSummary,
+    DirectSearchUserSummary,
     DirectActionReceipt,
 )
 
@@ -117,16 +118,16 @@ class InstagramDirectReader(Protocol):
         self,
         account_id: str,
         query: str,
-    ) -> list[DirectThreadSummary]:
+    ) -> list[DirectSearchUserSummary]:
         """
-        Search for direct message threads by query.
+        Search for direct users by query.
 
         Args:
             account_id: The application account ID (for client lookup).
-            query: Search query (username, thread name, etc.).
+            query: Search query (username, full name, etc.).
 
         Returns:
-            List of matching DirectThreadSummary.
+            List of matching DirectSearchUserSummary.
 
         Raises:
             Exception: If search fails or account not authenticated.

@@ -25,6 +25,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectThreadSummary,
     DirectThreadDetail,
     DirectMessageSummary,
+    DirectSearchUserSummary,
     DirectActionReceipt,
 )
 from app.application.ports.instagram_direct import (
@@ -204,15 +205,15 @@ class DirectUseCases:
         self,
         account_id: str,
         query: str,
-    ) -> list[DirectThreadSummary]:
-        """Search direct message threads by query.
+    ) -> list[DirectSearchUserSummary]:
+        """Search direct users by query.
 
         Args:
             account_id: Application account ID.
             query: Search query (must not be empty after stripping).
 
         Returns:
-            List of matching DirectThreadSummary.
+            List of matching DirectSearchUserSummary.
 
         Raises:
             ValueError: If account not found, not authenticated, or query is empty.

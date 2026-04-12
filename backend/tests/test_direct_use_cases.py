@@ -24,6 +24,7 @@ import pytest
 from app.application.dto.instagram_direct_dto import (
     DirectActionReceipt,
     DirectMessageSummary,
+    DirectSearchUserSummary,
     DirectThreadDetail,
     DirectThreadSummary,
 )
@@ -45,6 +46,10 @@ def _make_thread_detail(direct_thread_id: str = "thread-1") -> DirectThreadDetai
 
 def _make_message(direct_message_id: str = "msg-1") -> DirectMessageSummary:
     return DirectMessageSummary(direct_message_id=direct_message_id)
+
+
+def _make_search_user(user_id: int = 42, username: str = "john") -> DirectSearchUserSummary:
+    return DirectSearchUserSummary(user_id=user_id, username=username)
 
 
 def _make_receipt(action_id: str = "act-1") -> DirectActionReceipt:
@@ -444,6 +449,16 @@ class TestDTOBoundary:
         result = uc.delete_message("acc-1", "thread-1", "msg-1")
 
         assert isinstance(result, DirectActionReceipt)
+
+    def test_search_threads_returns_search_user_summaries(self):
+        uc, reader, _, _ = _build_use_cases()
+        reader.search_threads.return_value = [_make_search_user(7, "alice")]
+
+        results = uc.search_threads("acc-1", "alice")
+
+        assert all(isinstance(r, DirectSearchUserSummary) for r in results)
+        assert results[0].user_id == 7
+        assert results[0].username == "alice"
 
     def test_send_to_username_returns_message_summary(self):
         uc, _, writer, identity = _build_use_cases()

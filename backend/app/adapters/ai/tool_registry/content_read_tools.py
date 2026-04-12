@@ -64,6 +64,17 @@ def _thread_to_dict(thread) -> dict:
     }
 
 
+def _direct_search_user_to_dict(user) -> dict:
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "profile_pic_url": user.profile_pic_url,
+        "is_private": user.is_private,
+        "is_verified": user.is_verified,
+    }
+
+
 def _message_to_dict(message) -> dict:
     return {
         "message_id": message.direct_message_id,
@@ -367,10 +378,10 @@ def register_direct_inbox_read_tools(registry: ToolRegistry, context: "ToolBuild
         if not account_id:
             return {"error": f"Account @{username} not found"}
         try:
-            threads = context.direct_use_cases.search_threads(account_id, args["query"])
+            users = context.direct_use_cases.search_threads(account_id, args["query"])
             return {
-                "count": len(threads),
-                "threads": [_thread_to_dict(thread) for thread in threads],
+                "count": len(users),
+                "users": [_direct_search_user_to_dict(user) for user in users],
             }
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
@@ -416,7 +427,7 @@ def register_direct_inbox_read_tools(registry: ToolRegistry, context: "ToolBuild
         search_threads_handler,
         schema(
             "search_threads",
-            "Search direct message threads by participant username or keyword.",
+            "Search direct users by username or keyword in direct inbox.",
             properties={
                 "username": {"type": "string", "description": "Authenticated account username"},
                 "query": {"type": "string", "description": "Search query (username or keyword)"},

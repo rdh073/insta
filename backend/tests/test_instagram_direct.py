@@ -13,6 +13,7 @@ from unittest.mock import Mock
 from app.application.dto.instagram_direct_dto import (
     DirectParticipantSummary,
     DirectMessageSummary,
+    DirectSearchUserSummary,
     DirectThreadSummary,
     DirectThreadDetail,
     DirectActionReceipt,
@@ -122,11 +123,11 @@ class TestDirectReaderAdapter:
         assert results[1].direct_message_id == "msg-2"
 
     def test_search_threads(self):
-        """Verify direct_search() maps search results."""
+        """Verify direct_search() maps UserShort results (not thread summaries)."""
         # Create mock client
         mock_client = Mock()
-        mock_threads = [self._create_mock_thread(id="search-result-1")]
-        mock_client.direct_search.return_value = mock_threads
+        mock_users = [self._create_mock_user_short(pk=777, username="search-result-1")]
+        mock_client.direct_search.return_value = mock_users
 
         # Create mock repo
         mock_repo = Mock()
@@ -137,7 +138,10 @@ class TestDirectReaderAdapter:
         results = adapter.search_threads("acc-123", "username")
 
         assert len(results) == 1
-        assert results[0].direct_thread_id == "search-result-1"
+        assert isinstance(results[0], DirectSearchUserSummary)
+        assert results[0].user_id == 777
+        assert results[0].username == "search-result-1"
+        assert not hasattr(results[0], "direct_thread_id")
 
     def test_participants_extraction(self):
         """Verify thread participants are extracted."""
@@ -233,6 +237,18 @@ class TestDirectReaderAdapter:
         mock.timestamp = datetime(2023, 1, 1, tzinfo=timezone.utc)
         mock.item_type = "text"
         mock.is_shh_mode = False
+        return mock
+
+    @staticmethod
+    def _create_mock_user_short(pk=1, username="user", full_name="User Name"):
+        """Create a mock UserShort-like object."""
+        mock = Mock()
+        mock.pk = pk
+        mock.username = username
+        mock.full_name = full_name
+        mock.profile_pic_url = "https://example.com/pic.jpg"
+        mock.is_private = False
+        mock.is_verified = True
         return mock
 
 
@@ -492,6 +508,12 @@ class TestDirectDTOs:
         with pytest.raises(AttributeError):
             receipt.success = False
 
+    def test_search_user_summary_frozen(self):
+        """Verify DirectSearchUserSummary is immutable."""
+        user = DirectSearchUserSummary(user_id=1, username="john")
+        with pytest.raises(AttributeError):
+            user.username = "jane"
+
     def test_naming_uses_direct_thread_id(self):
         """Verify DTO uses direct_thread_id, not plain thread_id."""
         thread = DirectThreadSummary(direct_thread_id="thread-123")
@@ -513,6 +535,12 @@ class TestDirectDTOs:
         assert thread.participants == []
         assert thread.last_message is None
         assert thread.is_pending is False
+
+    def test_search_user_summary_has_no_thread_fields(self):
+        """Verify direct search DTO does not expose thread attributes."""
+        user = DirectSearchUserSummary(user_id=1, username="john")
+        assert not hasattr(user, "direct_thread_id")
+        assert not hasattr(user, "participants")
 
 
 class TestDirectContractProofing:
@@ -556,6 +584,23 @@ class TestDirectContractProofing:
         assert isinstance(results[0], DirectMessageSummary)
         # Vendor DirectMessage fields should not be accessible
         assert not hasattr(results[0], "item_type_enum")  # vendor field
+
+    def test_search_reader_returns_user_dtos_without_thread_fields(self):
+        """Verify search reader returns user DTOs and never thread DTO fields."""
+        mock_client = Mock()
+        mock_client.direct_search.return_value = [
+            TestDirectReaderAdapter._create_mock_user_short(pk=9001, username="john")
+        ]
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramDirectReaderAdapter(mock_repo)
+        results = adapter.search_threads("acc-123", "john")
+
+        assert isinstance(results[0], DirectSearchUserSummary)
+        assert results[0].user_id == 9001
+        assert not hasattr(results[0], "direct_thread_id")
+        assert not hasattr(results[0], "participants")
 
     def test_naming_convention_respected(self):
         """Verify direct_thread_id and direct_message_id used throughout."""

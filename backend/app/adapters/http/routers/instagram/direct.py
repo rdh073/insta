@@ -15,7 +15,13 @@ from app.adapters.http.schemas.instagram import (
 )
 from app.adapters.http.utils import format_error
 
-from .mappers import _to_direct_message, _to_direct_receipt, _to_direct_thread_detail, _to_direct_thread_summary
+from .mappers import (
+    _to_direct_message,
+    _to_direct_receipt,
+    _to_direct_search_user,
+    _to_direct_thread_detail,
+    _to_direct_thread_summary,
+)
 
 router = APIRouter()
 
@@ -280,18 +286,18 @@ def search_direct_threads(
     query: str = Query(..., description="Search query"),
     usecases=Depends(get_direct_usecases),
 ):
-    """Search direct threads via DirectUseCases."""
+    """Search direct users via DirectUseCases."""
     try:
-        threads = usecases.search_threads(account_id, query)
+        users = usecases.search_threads(account_id, query)
         return {
-            "count": len(threads),
-            "threads": [_to_direct_thread_summary(t) for t in threads],
+            "count": len(users),
+            "users": [_to_direct_search_user(user) for user in users],
         }
     except ValueError as exc:
         raise HTTPException(
-            status_code=400, detail=format_error(exc, "Search direct threads failed")
+            status_code=400, detail=format_error(exc, "Search direct users failed")
         )
     except Exception as exc:
         raise HTTPException(
-            status_code=400, detail=format_error(exc, "Search direct threads failed")
+            status_code=400, detail=format_error(exc, "Search direct users failed")
         )

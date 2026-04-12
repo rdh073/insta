@@ -121,6 +121,17 @@ def _to_direct_participant(p) -> dict:
     }
 
 
+def _to_direct_search_user(u) -> dict:
+    return {
+        "userId": u.user_id,
+        "username": u.username,
+        "fullName": u.full_name,
+        "profilePicUrl": u.profile_pic_url,
+        "isPrivate": u.is_private,
+        "isVerified": u.is_verified,
+    }
+
+
 def _to_direct_message(m) -> dict:
     return {
         "directMessageId": m.direct_message_id,

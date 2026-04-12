@@ -1,7 +1,7 @@
 """
 Instagram direct message reader adapter.
 
-Maps instagrapi DirectThread and DirectMessage objects to stable DTOs.
+Maps instagrapi DirectThread, DirectMessage, and UserShort objects to stable DTOs.
 Handles thread listing, search, and message retrieval.
 """
 
@@ -12,6 +12,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectMessageSummary,
     DirectThreadSummary,
     DirectThreadDetail,
+    DirectSearchUserSummary,
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.error_utils import translate_instagram_error
@@ -21,7 +22,7 @@ class InstagramDirectReaderAdapter:
     """
     Adapter for reading Instagram direct messages via instagrapi.
 
-    Maps vendor DirectThread and DirectMessage objects to stable DTOs.
+    Maps vendor DirectThread/DirectMessage/UserShort objects to stable DTOs.
     Centralizes vendor-to-DTO translation for direct message reads.
     """
 
@@ -197,16 +198,16 @@ class InstagramDirectReaderAdapter:
         self,
         account_id: str,
         query: str,
-    ) -> list[DirectThreadSummary]:
+    ) -> list[DirectSearchUserSummary]:
         """
-        Search for direct message threads.
+        Search for direct users.
 
         Args:
             account_id: The application account ID (for client lookup).
             query: Search query.
 
         Returns:
-            List of DirectThreadSummary matching query.
+            List of DirectSearchUserSummary matching query.
 
         Raises:
             ValueError: If account not found or client not authenticated.
@@ -217,10 +218,10 @@ class InstagramDirectReaderAdapter:
 
         try:
             # Call vendor method to search
-            threads = client.direct_search(query)
+            users = client.direct_search(query)
 
-            # Map each thread to DTO
-            return [self._map_thread_to_summary(t, is_pending=False) for t in threads]
+            # direct_search returns UserShort-like results, not thread objects.
+            return [self._map_search_user_to_summary(user) for user in users]
 
         except Exception as e:
             failure = translate_instagram_error(
@@ -293,6 +294,28 @@ class InstagramDirectReaderAdapter:
             item_type=getattr(message, "item_type", None),
             text=getattr(message, "text", None),
             is_shh_mode=getattr(message, "is_shh_mode", None),
+        )
+
+    @staticmethod
+    def _map_search_user_to_summary(user: Any) -> DirectSearchUserSummary:
+        """
+        Map instagrapi UserShort-like direct_search result to DTO.
+
+        Args:
+            user: instagrapi UserShort-like object.
+
+        Returns:
+            DirectSearchUserSummary DTO.
+        """
+        return DirectSearchUserSummary(
+            user_id=getattr(user, "pk"),
+            username=getattr(user, "username", ""),
+            full_name=getattr(user, "full_name", None),
+            profile_pic_url=InstagramDirectReaderAdapter._to_string(
+                getattr(user, "profile_pic_url", None)
+            ),
+            is_private=getattr(user, "is_private", None),
+            is_verified=getattr(user, "is_verified", None),
         )
 
     @staticmethod

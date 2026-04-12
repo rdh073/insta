@@ -51,13 +51,27 @@ class DirectThreadSummary:
     """Direct thread (conversation) metadata without messages.
 
     Represents a direct conversation without full message history.
-    Used for inbox listing and search results.
+    Used for inbox listing.
     """
     direct_thread_id: str
     pk: Optional[int] = None
     participants: list[DirectParticipantSummary] = field(default_factory=list)
     last_message: Optional[DirectMessageSummary] = None
     is_pending: bool = False
+
+
+@dataclass(frozen=True)
+class DirectSearchUserSummary:
+    """Direct search result user metadata.
+
+    Represents an instagrapi UserShort result from direct_search().
+    """
+    user_id: int
+    username: str
+    full_name: Optional[str] = None
+    profile_pic_url: Optional[str] = None
+    is_private: Optional[bool] = None
+    is_verified: Optional[bool] = None
 
 
 @dataclass(frozen=True)
