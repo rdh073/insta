@@ -40,6 +40,25 @@ from .state import (
 
 # === New Ports (Todo-3) ===
 
+SMART_ENGAGEMENT_AUDIT_EVENT_TYPES: frozenset[str] = frozenset({
+    "goal_ingested",
+    "session_refresh_attempted",
+    "session_refresh_result",
+    "account_loaded",
+    "candidates_discovered",
+    "target_selected",
+    "action_drafted",
+    "scored",
+    "approval_requested",
+    "approval_decided",
+    "action_executed",
+    "action_skipped",
+    "execution_error",
+    "node_error",
+    "workflow_completed",
+})
+"""Canonical smart-engagement audit event_type values emitted by nodes."""
+
 
 class AccountContextPort(ABC):
     """Port for fetching account context and health."""
@@ -354,7 +373,7 @@ class AuditLogPort(ABC):
 
     Port Contract:
     - Receive explicit events per node decision (not implicit state changes)
-    - event_type in: target_selected, scored, approval_requested, action_skipped, action_executed
+    - event_type in SMART_ENGAGEMENT_AUDIT_EVENT_TYPES
     - event_data varies by event_type (encapsulate all context)
     """
 
@@ -367,7 +386,7 @@ class AuditLogPort(ABC):
 
         Args:
             event: AuditEvent with:
-                - event_type: target_selected, scored, approval_requested, action_skipped, action_executed
+                - event_type: value from SMART_ENGAGEMENT_AUDIT_EVENT_TYPES
                 - node_name: which node emitted this
                 - event_data: event-specific data (includes all context)
                 - timestamp: when event occurred

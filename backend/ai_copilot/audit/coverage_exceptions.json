@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "gap_key": "capability_gap:profile_usecases.list_accounts",
+      "justification": "Superseded by get_accounts_summary to keep tool output normalized and stable."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.bulk_logout_accounts",
+      "justification": "Bulk logout is a high-blast-radius mass action and intentionally not tool-exposed."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.bulk_relogin_accounts",
+      "justification": "Bulk relogin can trigger account lock/challenge waves and remains operator-only."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.complete_2fa_login",
+      "justification": "2FA completion requires interactive challenge handling not suitable for autonomous tool calls."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.find_by_username",
+      "justification": "Lookup helper only; not a standalone operator tool capability."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.hydrate_account_profile",
+      "justification": "Internal post-auth hydration step, not intended as externally invocable operation."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.login_account",
+      "justification": "Raw credential login is intentionally excluded from LLM-callable tools."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.refresh_follower_counts",
+      "justification": "Maintenance/refresh routine managed by workflows, not by direct operator tool calls."
+    },
+    {
+      "gap_key": "capability_gap:auth_usecases.relogin_account",
+      "justification": "Account-id variant is intentionally hidden; username-scoped relogin tool is exposed."
+    },
+    {
+      "gap_key": "capability_gap:proxy_usecases.bulk_set_proxy",
+      "justification": "Bulk proxy mutation has high blast radius and is intentionally not exposed."
+    },
+    {
+      "gap_key": "capability_gap:postjob_usecases.create_post_job",
+      "justification": "Low-level constructor API; tool layer exposes validated scheduling entrypoints instead."
+    },
+    {
+      "gap_key": "capability_gap:postjob_usecases.create_scheduled_post_draft",
+      "justification": "Draft-primitive API is intentionally hidden behind username-based scheduling wrapper."
+    },
+    {
+      "gap_key": "capability_gap:postjob_usecases.delete_job",
+      "justification": "Job deletion is intentionally UI/operator-controlled and not exposed to autonomous tooling."
+    },
+    {
+      "gap_key": "capability_gap:postjob_usecases.list_posts",
+      "justification": "Legacy list endpoint; list_recent_posts is the supported tool-facing read surface."
+    },
+    {
+      "gap_key": "capability_gap:postjob_usecases.retry_job",
+      "justification": "Retry semantics are intentionally controlled by explicit UI/operator workflows."
+    },
+    {
+      "gap_key": "capability_gap:story_use_cases.get_story_pk_from_url",
+      "justification": "Parsing helper utility, not a first-class capability for graph planning."
+    },
+    {
+      "gap_key": "capability_gap:story_use_cases.publish_story",
+      "justification": "Story publishing has high payload complexity and side-effect risk; intentionally withheld."
+    },
+    {
+      "gap_key": "capability_gap:highlight_use_cases.get_highlight_pk_from_url",
+      "justification": "Parsing helper utility, intentionally not exposed as a standalone tool."
+    },
+    {
+      "gap_key": "capability_gap:comment_use_cases.list_comments_page",
+      "justification": "Low-level pagination primitive; list_comments provides the stable tool-facing surface."
+    },
+    {
+      "gap_key": "capability_gap:direct_use_cases.find_or_create_thread",
+      "justification": "Numeric participant-id variant is intentionally replaced by username-based tool API."
+    },
+    {
+      "gap_key": "capability_gap:direct_use_cases.send_to_users",
+      "justification": "Numeric user-id bulk message path is intentionally not exposed; username send path is used."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.batch_follow",
+      "justification": "Mass-follow action is intentionally not exposed due abuse/rate-limit risk."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.batch_unfollow",
+      "justification": "Mass-unfollow action is intentionally not exposed due abuse/rate-limit risk."
+    }
+  ]
+}

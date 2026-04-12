@@ -3,6 +3,27 @@
 This document records Instagram use-case capabilities that are intentionally
 not exposed as LangGraph-callable tools, and why.
 
+## Automated Scanner / CI Contract
+
+This denylist is now enforced by an automated scanner:
+
+- Scanner module: `backend/ai_copilot/audit/coverage_scanner.py`
+- Exception manifest: `backend/ai_copilot/audit/coverage_exceptions.json`
+- CI gate test: `tests/test_langgraph_audit_coverage_scanner.py`
+
+Run locally:
+
+```bash
+./scripts/langgraph-audit-scan.sh --format text
+./scripts/langgraph-audit-scan.sh --format json --output artifacts/langgraph-audit-report.json --enforce
+```
+
+Notes:
+
+- `--enforce` exits non-zero on unexplained gaps, stale exceptions, or invalid exceptions.
+- Report includes `potentially_incomplete: yes/no` when dynamic probes (e.g. optional runtime deps) are unavailable.
+- Exception entries must include non-empty `justification`.
+
 ## Approved New Exposure Subset
 
 The following previously-missing capabilities are now exposed:
