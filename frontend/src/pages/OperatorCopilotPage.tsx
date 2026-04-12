@@ -337,6 +337,10 @@ export function OperatorCopilotPage() {
 
   async function handleApproval(result: 'approved' | 'rejected' | 'edited', editedCalls?: Record<string, unknown>[]) {
     if (!session.threadId) { toast.error('No active thread'); return; }
+    if (result === 'edited' && (!editedCalls || editedCalls.length === 0)) {
+      toast.error('Edited approval requires at least one edited call.');
+      return;
+    }
 
     abortRef.current?.abort();
     const controller = new AbortController();

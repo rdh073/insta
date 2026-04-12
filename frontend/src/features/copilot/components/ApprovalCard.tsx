@@ -8,14 +8,30 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function buildEditableDraft(payload: Record<string, unknown>): Record<string, unknown>[] {
-  const explicitCalls =
-    payload.proposed_calls ??
-    payload.proposed_tool_calls ??
-    payload.tool_calls ??
-    payload.edited_calls;
-  if (Array.isArray(explicitCalls) && explicitCalls.length > 0) {
-    return explicitCalls.filter((item): item is Record<string, unknown> => !!asRecord(item));
+const CALL_KEYS = ['proposed_tool_calls', 'proposed_calls', 'tool_calls', 'edited_calls'] as const;
+
+export function normalizeEditedCalls(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is Record<string, unknown> => !!asRecord(item));
+  }
+  const single = asRecord(value);
+  return single ? [single] : [];
+}
+
+function extractExplicitCalls(payload: Record<string, unknown>): Record<string, unknown>[] {
+  for (const key of CALL_KEYS) {
+    const normalized = normalizeEditedCalls(payload[key]);
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  return [];
+}
+
+export function buildEditableDraft(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const explicitCalls = extractExplicitCalls(payload);
+  if (explicitCalls.length > 0) {
+    return explicitCalls;
   }
 
   if (typeof payload.caption === 'string' && payload.caption.trim()) {
@@ -57,11 +73,7 @@ export function ApprovalCard({
   function handleSubmitEdit() {
     try {
       const parsed = JSON.parse(jsonText) as unknown;
-      const normalized = Array.isArray(parsed)
-        ? parsed.filter((item): item is Record<string, unknown> => !!asRecord(item))
-        : asRecord(parsed)
-        ? [parsed]
-        : [];
+      const normalized = normalizeEditedCalls(parsed);
       if (normalized.length === 0) {
         setParseError('Edited payload must be an object or an array of objects.');
         return;
