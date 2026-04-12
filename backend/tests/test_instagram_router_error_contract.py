@@ -1,4 +1,16 @@
-"""HTTP contract tests for Instagram router error semantics."""
+"""HTTP contract tests for Instagram router error semantics.
+
+Coverage notes (route-contract matrix):
+- media: 4 endpoints
+- direct: 12 endpoints
+- comment: 8 endpoints
+- story: 6 endpoints
+- highlight: 8 endpoints
+- relationships (read routes): 4 endpoints
+
+Each endpoint is asserted for translated 401/429 status mapping and structured
+error detail payload shape (message/code/family).
+"""
 
 from __future__ import annotations
 
@@ -44,15 +56,104 @@ class RouteCase:
 
 
 ROUTE_CASES: tuple[RouteCase, ...] = (
+    # Media router
     RouteCase(
-        name="media",
+        name="media:get_media_by_pk",
         dependency=get_media_usecases,
         method_name="get_media_by_pk",
         http_method="GET",
         path="/api/instagram/media/acc-1/pk/123",
     ),
     RouteCase(
-        name="direct",
+        name="media:get_media_by_code",
+        dependency=get_media_usecases,
+        method_name="get_media_by_code",
+        http_method="GET",
+        path="/api/instagram/media/acc-1/code/ABC123",
+    ),
+    RouteCase(
+        name="media:get_user_medias",
+        dependency=get_media_usecases,
+        method_name="get_user_medias",
+        http_method="GET",
+        path="/api/instagram/media/acc-1/user/777",
+        params={"amount": 5},
+    ),
+    RouteCase(
+        name="media:get_media_oembed",
+        dependency=get_media_usecases,
+        method_name="get_media_oembed",
+        http_method="GET",
+        path="/api/instagram/media/acc-1/oembed",
+        params={"url": "https://www.instagram.com/p/ABC123/"},
+    ),
+    # Direct router
+    RouteCase(
+        name="direct:send_to_username",
+        dependency=get_direct_usecases,
+        method_name="send_to_username",
+        http_method="POST",
+        path="/api/instagram/direct/send",
+        json_body={"account_id": "acc-1", "username": "target", "text": "hello"},
+    ),
+    RouteCase(
+        name="direct:find_or_create_thread",
+        dependency=get_direct_usecases,
+        method_name="find_or_create_thread",
+        http_method="POST",
+        path="/api/instagram/direct/find-or-create",
+        json_body={"account_id": "acc-1", "participant_user_ids": [1, 2]},
+    ),
+    RouteCase(
+        name="direct:send_to_thread",
+        dependency=get_direct_usecases,
+        method_name="send_to_thread",
+        http_method="POST",
+        path="/api/instagram/direct/send-thread",
+        json_body={
+            "account_id": "acc-1",
+            "direct_thread_id": "thread-1",
+            "text": "hello thread",
+        },
+    ),
+    RouteCase(
+        name="direct:send_to_users",
+        dependency=get_direct_usecases,
+        method_name="send_to_users",
+        http_method="POST",
+        path="/api/instagram/direct/send-users",
+        json_body={"account_id": "acc-1", "user_ids": [1, 2], "text": "hello users"},
+    ),
+    RouteCase(
+        name="direct:delete_message",
+        dependency=get_direct_usecases,
+        method_name="delete_message",
+        http_method="POST",
+        path="/api/instagram/direct/delete-message",
+        json_body={
+            "account_id": "acc-1",
+            "direct_thread_id": "thread-1",
+            "direct_message_id": "msg-1",
+        },
+    ),
+    RouteCase(
+        name="direct:approve_pending_thread",
+        dependency=get_direct_usecases,
+        method_name="approve_pending_thread",
+        http_method="POST",
+        path="/api/instagram/direct/approve-pending",
+        json_body={"account_id": "acc-1", "direct_thread_id": "thread-1"},
+    ),
+    RouteCase(
+        name="direct:mark_thread_seen",
+        dependency=get_direct_usecases,
+        method_name="mark_thread_seen",
+        http_method="POST",
+        path="/api/instagram/direct/mark-seen",
+        json_body={"account_id": "acc-1", "direct_thread_id": "thread-1"},
+    ),
+    RouteCase(
+        name="direct:list_inbox_threads",
         dependency=get_direct_usecases,
         method_name="list_inbox_threads",
         http_method="GET",
@@ -60,7 +161,48 @@ ROUTE_CASES: tuple[RouteCase, ...] = (
         params={"amount": 20},
     ),
     RouteCase(
-        name="comment",
+        name="direct:list_pending_threads",
+        dependency=get_direct_usecases,
+        method_name="list_pending_threads",
+        http_method="GET",
+        path="/api/instagram/direct/acc-1/pending",
+        params={"amount": 20},
+    ),
+    RouteCase(
+        name="direct:get_thread",
+        dependency=get_direct_usecases,
+        method_name="get_thread",
+        http_method="GET",
+        path="/api/instagram/direct/acc-1/thread/thread-1",
+        params={"amount": 20},
+    ),
+    RouteCase(
+        name="direct:list_messages",
+        dependency=get_direct_usecases,
+        method_name="list_messages",
+        http_method="GET",
+        path="/api/instagram/direct/acc-1/thread/thread-1/messages",
+        params={"amount": 20},
+    ),
+    RouteCase(
+        name="direct:search_threads",
+        dependency=get_direct_usecases,
+        method_name="search_threads",
+        http_method="GET",
+        path="/api/instagram/direct/acc-1/search",
+        params={"query": "target"},
+    ),
+    # Comment router
+    RouteCase(
+        name="comment:create_comment",
+        dependency=get_comment_usecases,
+        method_name="create_comment",
+        http_method="POST",
+        path="/api/instagram/comment",
+        json_body={"account_id": "acc-1", "media_id": "media-1", "text": "nice post"},
+    ),
+    RouteCase(
+        name="comment:list_comments",
         dependency=get_comment_usecases,
         method_name="list_comments",
         http_method="GET",
@@ -68,7 +210,64 @@ ROUTE_CASES: tuple[RouteCase, ...] = (
         params={"amount": 0},
     ),
     RouteCase(
-        name="story",
+        name="comment:list_comments_page",
+        dependency=get_comment_usecases,
+        method_name="list_comments_page",
+        http_method="GET",
+        path="/api/instagram/comment/acc-1/media-123/page",
+        params={"page_size": 20, "cursor": "cursor-1"},
+    ),
+    RouteCase(
+        name="comment:delete_comment",
+        dependency=get_comment_usecases,
+        method_name="delete_comment",
+        http_method="POST",
+        path="/api/instagram/comment/delete",
+        json_body={"account_id": "acc-1", "media_id": "media-1", "comment_id": 99},
+    ),
+    RouteCase(
+        name="comment:like_comment",
+        dependency=get_comment_usecases,
+        method_name="like_comment",
+        http_method="POST",
+        path="/api/instagram/comment/like",
+        json_body={"account_id": "acc-1", "comment_id": 99},
+    ),
+    RouteCase(
+        name="comment:unlike_comment",
+        dependency=get_comment_usecases,
+        method_name="unlike_comment",
+        http_method="POST",
+        path="/api/instagram/comment/unlike",
+        json_body={"account_id": "acc-1", "comment_id": 99},
+    ),
+    RouteCase(
+        name="comment:pin_comment",
+        dependency=get_comment_usecases,
+        method_name="pin_comment",
+        http_method="POST",
+        path="/api/instagram/comment/pin",
+        json_body={"account_id": "acc-1", "media_id": "media-1", "comment_id": 99},
+    ),
+    RouteCase(
+        name="comment:unpin_comment",
+        dependency=get_comment_usecases,
+        method_name="unpin_comment",
+        http_method="POST",
+        path="/api/instagram/comment/unpin",
+        json_body={"account_id": "acc-1", "media_id": "media-1", "comment_id": 99},
+    ),
+    # Story router
+    RouteCase(
+        name="story:get_story_pk_from_url",
+        dependency=get_story_usecases,
+        method_name="get_story_pk_from_url",
+        http_method="GET",
+        path="/api/instagram/story/pk-from-url",
+        params={"url": "https://www.instagram.com/stories/user/123/"},
+    ),
+    RouteCase(
+        name="story:get_story",
         dependency=get_story_usecases,
         method_name="get_story",
         http_method="GET",
@@ -76,19 +275,144 @@ ROUTE_CASES: tuple[RouteCase, ...] = (
         params={"use_cache": "true"},
     ),
     RouteCase(
-        name="highlight",
+        name="story:list_user_stories",
+        dependency=get_story_usecases,
+        method_name="list_user_stories",
+        http_method="GET",
+        path="/api/instagram/story/acc-1/user/777",
+        params={"amount": 5},
+    ),
+    RouteCase(
+        name="story:publish_story",
+        dependency=get_story_usecases,
+        method_name="publish_story",
+        http_method="POST",
+        path="/api/instagram/story/publish",
+        json_body={
+            "account_id": "acc-1",
+            "media_kind": "photo",
+            "media_path": "/tmp/story.jpg",
+            "caption": "story",
+            "audience": "default",
+        },
+    ),
+    RouteCase(
+        name="story:delete_story",
+        dependency=get_story_usecases,
+        method_name="delete_story",
+        http_method="POST",
+        path="/api/instagram/story/delete",
+        json_body={"account_id": "acc-1", "story_pk": 123},
+    ),
+    RouteCase(
+        name="story:mark_seen",
+        dependency=get_story_usecases,
+        method_name="mark_seen",
+        http_method="POST",
+        path="/api/instagram/story/mark-seen",
+        json_body={"account_id": "acc-1", "story_pks": [1, 2], "skipped_story_pks": [3]},
+    ),
+    # Highlight router
+    RouteCase(
+        name="highlight:get_highlight_pk_from_url",
+        dependency=get_highlight_usecases,
+        method_name="get_highlight_pk_from_url",
+        http_method="GET",
+        path="/api/instagram/highlight/pk-from-url",
+        params={"url": "https://www.instagram.com/stories/highlights/123/"},
+    ),
+    RouteCase(
+        name="highlight:get_highlight",
         dependency=get_highlight_usecases,
         method_name="get_highlight",
         http_method="GET",
         path="/api/instagram/highlight/acc-1/123",
     ),
     RouteCase(
-        name="relationships",
+        name="highlight:list_user_highlights",
+        dependency=get_highlight_usecases,
+        method_name="list_user_highlights",
+        http_method="GET",
+        path="/api/instagram/highlight/acc-1/user/777",
+        params={"amount": 1},
+    ),
+    RouteCase(
+        name="highlight:create_highlight",
+        dependency=get_highlight_usecases,
+        method_name="create_highlight",
+        http_method="POST",
+        path="/api/instagram/highlight/create",
+        json_body={
+            "account_id": "acc-1",
+            "title": "Best",
+            "story_ids": [1, 2],
+            "cover_story_id": 1,
+        },
+    ),
+    RouteCase(
+        name="highlight:change_title",
+        dependency=get_highlight_usecases,
+        method_name="change_title",
+        http_method="POST",
+        path="/api/instagram/highlight/change-title",
+        json_body={"account_id": "acc-1", "highlight_pk": 123, "title": "Updated"},
+    ),
+    RouteCase(
+        name="highlight:add_stories",
+        dependency=get_highlight_usecases,
+        method_name="add_stories",
+        http_method="POST",
+        path="/api/instagram/highlight/add-stories",
+        json_body={"account_id": "acc-1", "highlight_pk": 123, "story_ids": [3]},
+    ),
+    RouteCase(
+        name="highlight:remove_stories",
+        dependency=get_highlight_usecases,
+        method_name="remove_stories",
+        http_method="POST",
+        path="/api/instagram/highlight/remove-stories",
+        json_body={"account_id": "acc-1", "highlight_pk": 123, "story_ids": [3]},
+    ),
+    RouteCase(
+        name="highlight:delete_highlight",
+        dependency=get_highlight_usecases,
+        method_name="delete_highlight",
+        http_method="POST",
+        path="/api/instagram/highlight/delete",
+        json_body={"account_id": "acc-1", "highlight_pk": 123},
+    ),
+    # Relationship read routes
+    RouteCase(
+        name="relationships:list_followers",
         dependency=get_relationship_usecases,
         method_name="list_followers",
         http_method="GET",
         path="/api/instagram/relationships/acc-1/followers",
         params={"username": "target", "amount": 1},
+    ),
+    RouteCase(
+        name="relationships:list_following",
+        dependency=get_relationship_usecases,
+        method_name="list_following",
+        http_method="GET",
+        path="/api/instagram/relationships/acc-1/following",
+        params={"username": "target", "amount": 1},
+    ),
+    RouteCase(
+        name="relationships:search_followers",
+        dependency=get_relationship_usecases,
+        method_name="search_followers",
+        http_method="GET",
+        path="/api/instagram/relationships/acc-1/followers/search",
+        params={"username": "target", "query": "ta"},
+    ),
+    RouteCase(
+        name="relationships:search_following",
+        dependency=get_relationship_usecases,
+        method_name="search_following",
+        http_method="GET",
+        path="/api/instagram/relationships/acc-1/following/search",
+        params={"username": "target", "query": "ta"},
     ),
 )
 
