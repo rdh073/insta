@@ -35,13 +35,27 @@ def get_media_insight(
 @router.get("/insight/{account_id}/list")
 def list_media_insights(
     account_id: str,
-    post_type: str = Query("ALL", description="ALL | PHOTO | VIDEO | CAROUSEL"),
+    post_type: str = Query(
+        "ALL",
+        description=(
+            "ALL | CAROUSEL_V2 | IMAGE | SHOPPING | VIDEO "
+            "(legacy aliases accepted: PHOTO, CAROUSEL)"
+        ),
+    ),
     time_frame: str = Query(
-        "TWO_YEARS", description="TWO_YEARS | ONE_YEAR | SIX_MONTHS | MONTH | WEEK"
+        "TWO_YEARS",
+        description=(
+            "ONE_WEEK | ONE_MONTH | THREE_MONTHS | SIX_MONTHS | ONE_YEAR | TWO_YEARS "
+            "(legacy aliases accepted: WEEK, MONTH)"
+        ),
     ),
     ordering: str = Query(
         "REACH_COUNT",
-        description="REACH_COUNT | IMPRESSIONS | ENGAGEMENT | LIKE_COUNT | ...",
+        description=(
+            "REACH_COUNT | LIKE_COUNT | FOLLOW | SHARE_COUNT | BIO_LINK_CLICK | "
+            "COMMENT_COUNT | IMPRESSION_COUNT | PROFILE_VIEW | VIDEO_VIEW_COUNT | "
+            "SAVE_COUNT (legacy aliases accepted: IMPRESSIONS, ENGAGEMENT)"
+        ),
     ),
     count: int = Query(0, ge=0),
     usecases=Depends(get_insight_usecases),

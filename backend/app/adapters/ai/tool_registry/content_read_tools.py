@@ -582,27 +582,48 @@ def register_insight_read_tools(registry: ToolRegistry, context: "ToolBuilderCon
                 "username": {"type": "string", "description": "Authenticated account username"},
                 "post_type": {
                     "type": "string",
-                    "description": "Filter by post type: ALL, PHOTO, VIDEO, CAROUSEL",
-                    "enum": ["ALL", "PHOTO", "VIDEO", "CAROUSEL"],
+                    "description": (
+                        "Filter by post type: ALL, CAROUSEL_V2, IMAGE, SHOPPING, VIDEO "
+                        "(legacy aliases accepted: PHOTO, CAROUSEL)"
+                    ),
+                    "enum": ["ALL", "CAROUSEL_V2", "IMAGE", "SHOPPING", "VIDEO"],
                     "default": "ALL",
                 },
                 "time_frame": {
                     "type": "string",
-                    "description": "Time range: TWO_YEARS, ONE_YEAR, SIX_MONTHS, MONTH, WEEK",
-                    "enum": ["TWO_YEARS", "ONE_YEAR", "SIX_MONTHS", "MONTH", "WEEK"],
+                    "description": (
+                        "Time range: ONE_WEEK, ONE_MONTH, THREE_MONTHS, SIX_MONTHS, "
+                        "ONE_YEAR, TWO_YEARS (legacy aliases accepted: WEEK, MONTH)"
+                    ),
+                    "enum": [
+                        "ONE_WEEK",
+                        "ONE_MONTH",
+                        "THREE_MONTHS",
+                        "SIX_MONTHS",
+                        "ONE_YEAR",
+                        "TWO_YEARS",
+                    ],
                     "default": "TWO_YEARS",
                 },
                 "ordering": {
                     "type": "string",
-                    "description": "Sort by: REACH_COUNT, IMPRESSIONS, ENGAGEMENT, LIKE_COUNT, COMMENT_COUNT, SHARE_COUNT, SAVE_COUNT",
+                    "description": (
+                        "Sort by: REACH_COUNT, LIKE_COUNT, FOLLOW, SHARE_COUNT, "
+                        "BIO_LINK_CLICK, COMMENT_COUNT, IMPRESSION_COUNT, "
+                        "PROFILE_VIEW, VIDEO_VIEW_COUNT, SAVE_COUNT "
+                        "(legacy aliases accepted: IMPRESSIONS, ENGAGEMENT)"
+                    ),
                     "enum": [
-                        "REACH_COUNT",
-                        "IMPRESSIONS",
-                        "ENGAGEMENT",
-                        "LIKE_COUNT",
+                        "BIO_LINK_CLICK",
                         "COMMENT_COUNT",
+                        "FOLLOW",
+                        "IMPRESSION_COUNT",
+                        "LIKE_COUNT",
+                        "PROFILE_VIEW",
+                        "REACH_COUNT",
                         "SHARE_COUNT",
                         "SAVE_COUNT",
+                        "VIDEO_VIEW_COUNT",
                     ],
                     "default": "REACH_COUNT",
                 },

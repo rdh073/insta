@@ -17,7 +17,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 import pytest
 
@@ -136,6 +136,15 @@ class TestPostTypeNormalization:
         kwargs = reader.list_media_insights.call_args[1]
         assert kwargs["post_type"] == "ALL"
 
+    def test_accepts_vendor_post_type(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_insights.return_value = []
+
+        uc.list_media_insights("acc-1", post_type="SHOPPING")
+
+        kwargs = reader.list_media_insights.call_args[1]
+        assert kwargs["post_type"] == "SHOPPING"
+
     def test_accepts_lowercase_and_normalizes(self):
         uc, reader = _build_use_cases()
         reader.list_media_insights.return_value = []
@@ -143,7 +152,7 @@ class TestPostTypeNormalization:
         uc.list_media_insights("acc-1", post_type="photo")
 
         kwargs = reader.list_media_insights.call_args[1]
-        assert kwargs["post_type"] == "PHOTO"
+        assert kwargs["post_type"] == "IMAGE"
 
     def test_accepts_mixed_case(self):
         uc, reader = _build_use_cases()
@@ -161,7 +170,7 @@ class TestPostTypeNormalization:
         uc.list_media_insights("acc-1", post_type="  carousel  ")
 
         kwargs = reader.list_media_insights.call_args[1]
-        assert kwargs["post_type"] == "CAROUSEL"
+        assert kwargs["post_type"] == "CAROUSEL_V2"
 
     def test_rejects_invalid_post_type(self):
         uc, _ = _build_use_cases()
@@ -199,7 +208,16 @@ class TestTimeFrameNormalization:
         uc.list_media_insights("acc-1", time_frame="month")
 
         kwargs = reader.list_media_insights.call_args[1]
-        assert kwargs["time_frame"] == "MONTH"
+        assert kwargs["time_frame"] == "ONE_MONTH"
+
+    def test_maps_week_alias(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_insights.return_value = []
+
+        uc.list_media_insights("acc-1", time_frame="week")
+
+        kwargs = reader.list_media_insights.call_args[1]
+        assert kwargs["time_frame"] == "ONE_WEEK"
 
     def test_rejects_invalid_time_frame(self):
         uc, _ = _build_use_cases()
@@ -225,10 +243,10 @@ class TestOrderingNormalization:
         uc, reader = _build_use_cases()
         reader.list_media_insights.return_value = []
 
-        uc.list_media_insights("acc-1", ordering="IMPRESSIONS")
+        uc.list_media_insights("acc-1", ordering="IMPRESSION_COUNT")
 
         kwargs = reader.list_media_insights.call_args[1]
-        assert kwargs["ordering"] == "IMPRESSIONS"
+        assert kwargs["ordering"] == "IMPRESSION_COUNT"
 
     def test_normalizes_lowercase(self):
         uc, reader = _build_use_cases()
@@ -238,6 +256,33 @@ class TestOrderingNormalization:
 
         kwargs = reader.list_media_insights.call_args[1]
         assert kwargs["ordering"] == "LIKE_COUNT"
+
+    def test_maps_impressions_alias(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_insights.return_value = []
+
+        uc.list_media_insights("acc-1", ordering="impressions")
+
+        kwargs = reader.list_media_insights.call_args[1]
+        assert kwargs["ordering"] == "IMPRESSION_COUNT"
+
+    def test_maps_engagement_alias_by_policy(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_insights.return_value = []
+
+        uc.list_media_insights("acc-1", ordering="ENGAGEMENT")
+
+        kwargs = reader.list_media_insights.call_args[1]
+        assert kwargs["ordering"] == "LIKE_COUNT"
+
+    def test_accepts_new_vendor_ordering(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_insights.return_value = []
+
+        uc.list_media_insights("acc-1", ordering="FOLLOW")
+
+        kwargs = reader.list_media_insights.call_args[1]
+        assert kwargs["ordering"] == "FOLLOW"
 
     def test_rejects_invalid_ordering(self):
         uc, _ = _build_use_cases()
@@ -333,6 +378,14 @@ class TestHappyPath:
 
         with pytest.raises(ValueError):
             uc.list_media_insights("acc-1", post_type="INVALID")
+
+        reader.list_media_insights.assert_not_called()
+
+    def test_port_not_called_when_ordering_invalid(self):
+        uc, reader = _build_use_cases()
+
+        with pytest.raises(ValueError):
+            uc.list_media_insights("acc-1", ordering="UNSUPPORTED")
 
         reader.list_media_insights.assert_not_called()
 

@@ -46,9 +46,9 @@ class InstagramInsightReader(Protocol):
 
         Args:
             account_id: The application account ID (for client lookup).
-            post_type: Type of posts to retrieve (e.g. "ALL", "PHOTO", "VIDEO", "CAROUSEL").
-            time_frame: Time window for insights (e.g. "TWO_YEARS", "ONE_YEAR", "MONTH").
-            ordering: Sort order for results (e.g. "REACH_COUNT", "IMPRESSIONS", "ENGAGEMENT").
+            post_type: Type of posts to retrieve (e.g. "ALL", "IMAGE", "VIDEO", "CAROUSEL_V2").
+            time_frame: Time window for insights (e.g. "TWO_YEARS", "ONE_YEAR", "ONE_MONTH").
+            ordering: Sort order for results (e.g. "REACH_COUNT", "IMPRESSION_COUNT", "LIKE_COUNT").
             count: Maximum posts to retrieve (0 = all available).
 
         Returns:

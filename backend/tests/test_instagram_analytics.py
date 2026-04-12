@@ -148,16 +148,16 @@ class TestInsightReaderAdapter:
         results = adapter.list_media_insights(
             "acc-123",
             post_type="VIDEO",
-            time_frame="MONTH",
-            ordering="IMPRESSIONS",
+            time_frame="ONE_MONTH",
+            ordering="IMPRESSION_COUNT",
             count=50,
         )
 
         # Verify parameters passed to vendor
         mock_client.insights_media_feed_all.assert_called_once_with(
             post_type="VIDEO",
-            time_frame="MONTH",
-            data_ordering="IMPRESSIONS",
+            time_frame="ONE_MONTH",
+            data_ordering="IMPRESSION_COUNT",
             count=50,
         )
         assert results == []

@@ -5,8 +5,8 @@ delegating to the InstagramInsightReader port. Consumers (router, tool_registry,
 ai_copilot) must use this class instead of the adapter directly.
 
 Filter normalization policy (owned here, not in router):
-  - post_type, time_frame, ordering are uppercased and validated against
-    known enum sets before the port is called.
+  - post_type, time_frame, ordering are uppercased, alias-mapped, and validated
+    against instagrapi-supported enum sets before the port is called.
   - Unknown values raise ValueError with a helpful message listing accepted values.
   - count=0 is passed through (means "all available").
 """
@@ -18,24 +18,46 @@ from app.application.ports.instagram_insights import InstagramInsightReader
 from app.application.ports.repositories import AccountRepository, ClientRepository
 
 # ---------------------------------------------------------------------------
-# Accepted filter sets (application-owned enums)
+# Accepted filter sets (instagrapi 2.3.0 enums)
 # ---------------------------------------------------------------------------
 
-_VALID_POST_TYPES = frozenset({"ALL", "PHOTO", "VIDEO", "CAROUSEL"})
-_VALID_TIME_FRAMES = frozenset({"TWO_YEARS", "ONE_YEAR", "SIX_MONTHS", "MONTH", "WEEK"})
+_VALID_POST_TYPES = frozenset({"ALL", "CAROUSEL_V2", "IMAGE", "SHOPPING", "VIDEO"})
+_VALID_TIME_FRAMES = frozenset(
+    {"ONE_WEEK", "ONE_MONTH", "THREE_MONTHS", "SIX_MONTHS", "ONE_YEAR", "TWO_YEARS"}
+)
 _VALID_ORDERINGS = frozenset({
-    "REACH_COUNT",
-    "IMPRESSIONS",
-    "ENGAGEMENT",
-    "LIKE_COUNT",
+    "BIO_LINK_CLICK",
     "COMMENT_COUNT",
+    "FOLLOW",
+    "IMPRESSION_COUNT",
+    "LIKE_COUNT",
+    "PROFILE_VIEW",
+    "REACH_COUNT",
     "SHARE_COUNT",
     "SAVE_COUNT",
+    "VIDEO_VIEW_COUNT",
 })
 
 _DEFAULT_POST_TYPE = "ALL"
 _DEFAULT_TIME_FRAME = "TWO_YEARS"
 _DEFAULT_ORDERING = "REACH_COUNT"
+
+_POST_TYPE_ALIASES = {
+    "PHOTO": "IMAGE",
+    "CAROUSEL": "CAROUSEL_V2",
+}
+
+_TIME_FRAME_ALIASES = {
+    "WEEK": "ONE_WEEK",
+    "MONTH": "ONE_MONTH",
+}
+
+_ORDERING_ALIASES = {
+    "IMPRESSIONS": "IMPRESSION_COUNT",
+    # Legacy pseudo-ordering used by older clients. Policy: map to the closest
+    # vendor-supported engagement proxy.
+    "ENGAGEMENT": "LIKE_COUNT",
+}
 
 
 class InsightUseCases:
@@ -69,49 +91,55 @@ class InsightUseCases:
             raise ValueError(f"Account {account_id!r} is not authenticated")
 
     @staticmethod
-    def _normalize_post_type(value: str) -> str:
-        """Uppercase and validate post_type.
+    def _normalize_enum(
+        value: str,
+        *,
+        field: str,
+        valid_values: frozenset[str],
+        aliases: dict[str, str] | None = None,
+    ) -> str:
+        """Uppercase, alias-map, and validate enum-like string values."""
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be a string, got {value!r}")
 
-        Raises:
-            ValueError: When value is not one of the accepted post types.
-        """
         normalized = value.strip().upper()
-        if normalized not in _VALID_POST_TYPES:
-            accepted = ", ".join(sorted(_VALID_POST_TYPES))
+        canonical = aliases.get(normalized, normalized) if aliases else normalized
+        if canonical not in valid_values:
+            accepted = ", ".join(sorted(valid_values))
             raise ValueError(
-                f"Invalid post_type {value!r}. Accepted values: {accepted}"
+                f"Invalid {field} {value!r}. Accepted values: {accepted}"
             )
-        return normalized
+        return canonical
+
+    @staticmethod
+    def _normalize_post_type(value: str) -> str:
+        """Normalize post_type to an instagrapi-supported value."""
+        return InsightUseCases._normalize_enum(
+            value,
+            field="post_type",
+            valid_values=_VALID_POST_TYPES,
+            aliases=_POST_TYPE_ALIASES,
+        )
 
     @staticmethod
     def _normalize_time_frame(value: str) -> str:
-        """Uppercase and validate time_frame.
-
-        Raises:
-            ValueError: When value is not one of the accepted time frames.
-        """
-        normalized = value.strip().upper()
-        if normalized not in _VALID_TIME_FRAMES:
-            accepted = ", ".join(sorted(_VALID_TIME_FRAMES))
-            raise ValueError(
-                f"Invalid time_frame {value!r}. Accepted values: {accepted}"
-            )
-        return normalized
+        """Normalize time_frame to an instagrapi-supported value."""
+        return InsightUseCases._normalize_enum(
+            value,
+            field="time_frame",
+            valid_values=_VALID_TIME_FRAMES,
+            aliases=_TIME_FRAME_ALIASES,
+        )
 
     @staticmethod
     def _normalize_ordering(value: str) -> str:
-        """Uppercase and validate ordering.
-
-        Raises:
-            ValueError: When value is not one of the accepted orderings.
-        """
-        normalized = value.strip().upper()
-        if normalized not in _VALID_ORDERINGS:
-            accepted = ", ".join(sorted(_VALID_ORDERINGS))
-            raise ValueError(
-                f"Invalid ordering {value!r}. Accepted values: {accepted}"
-            )
-        return normalized
+        """Normalize ordering to an instagrapi-supported value."""
+        return InsightUseCases._normalize_enum(
+            value,
+            field="ordering",
+            valid_values=_VALID_ORDERINGS,
+            aliases=_ORDERING_ALIASES,
+        )
 
     # -------------------------------------------------------------------------
     # Read operations
@@ -154,10 +182,16 @@ class InsightUseCases:
 
         Args:
             account_id: Application account ID.
-            post_type: Post type filter. One of: ALL, PHOTO, VIDEO, CAROUSEL.
-            time_frame: Time window. One of: TWO_YEARS, ONE_YEAR, SIX_MONTHS, MONTH, WEEK.
-            ordering: Sort order. One of: REACH_COUNT, IMPRESSIONS, ENGAGEMENT,
-                      LIKE_COUNT, COMMENT_COUNT, SHARE_COUNT, SAVE_COUNT.
+            post_type: Post type filter. One of: ALL, CAROUSEL_V2, IMAGE, SHOPPING,
+                       VIDEO. Legacy aliases: PHOTO -> IMAGE, CAROUSEL -> CAROUSEL_V2.
+            time_frame: Time window. One of: ONE_WEEK, ONE_MONTH, THREE_MONTHS,
+                        SIX_MONTHS, ONE_YEAR, TWO_YEARS.
+                        Legacy aliases: WEEK -> ONE_WEEK, MONTH -> ONE_MONTH.
+            ordering: Sort order. One of: REACH_COUNT, LIKE_COUNT, FOLLOW, SHARE_COUNT,
+                      BIO_LINK_CLICK, COMMENT_COUNT, IMPRESSION_COUNT, PROFILE_VIEW,
+                      VIDEO_VIEW_COUNT, SAVE_COUNT.
+                      Legacy aliases: IMPRESSIONS -> IMPRESSION_COUNT,
+                      ENGAGEMENT -> LIKE_COUNT.
             count: Maximum posts to retrieve. 0 = all available.
 
         Returns:
