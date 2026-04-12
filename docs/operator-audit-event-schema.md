@@ -73,7 +73,10 @@ Each event lists `required` payload keys and `optional` payload keys.
       "thread_id",
       "tool_name"
     ],
-    "optional": []
+    "optional": [
+      "error",
+      "status"
+    ]
   },
   "execution_failure": {
     "required": [
@@ -83,7 +86,8 @@ Each event lists `required` payload keys and `optional` payload keys.
       "tool_name"
     ],
     "optional": [
-      "failure_kind"
+      "failure_kind",
+      "status"
     ]
   },
   "review_finding": {

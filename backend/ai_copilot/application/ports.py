@@ -76,11 +76,11 @@ AUDIT_EVENT_SCHEMA: dict[str, AuditEventSchema] = {
     },
     "tool_execution": {
         "required": frozenset({"thread_id", "call_id", "tool_name", "args", "result_keys"}),
-        "optional": frozenset(),
+        "optional": frozenset({"status", "error"}),
     },
     "execution_failure": {
         "required": frozenset({"thread_id", "call_id", "tool_name", "error"}),
-        "optional": frozenset({"failure_kind"}),
+        "optional": frozenset({"failure_kind", "status"}),
     },
     "review_finding": {
         "required": frozenset({"thread_id", "matched_intent", "warnings", "recommendation"}),
@@ -377,7 +377,7 @@ class AuditLogPort(ABC):
                 - "approval_submitted" — payload sent to approval port
                 - "approval_result"   — operator decision received
                 - "tool_execution"    — tool executed with result
-                - "execution_failure" — tool execution raised an error
+                - "execution_failure" — tool raised or returned an error payload
                 - "review_finding"    — reviewer finding before final response
                 - "stop_reason"       — why the run ended
             data: Event-specific payload (all fields must be JSON-serialisable)

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 import pytest
 
+from app.adapters.ai.tool_registry.core import ToolRegistry
 from ai_copilot.application.operator_copilot_policy import ToolPolicy, ToolPolicyRegistry
 from ai_copilot.application.state import (
     VALID_APPROVAL_RESULTS,
@@ -88,6 +89,19 @@ def _base_state(**overrides):
     }
     state.update(overrides)
     return state
+
+
+class RegistryBackedToolExecutor:
+    """Test executor that forwards to app ToolRegistry."""
+
+    def __init__(self, registry: ToolRegistry):
+        self.registry = registry
+
+    async def execute(self, tool_name: str, args: dict) -> dict:
+        return await self.registry.execute(tool_name, args)
+
+    def get_schemas(self) -> list[dict]:
+        return self.registry.get_schemas()
 
 
 # ===========================================================================
@@ -619,7 +633,7 @@ async def test_execute_tools_calls_executor():
 
 
 @pytest.mark.asyncio
-async def test_execute_tools_captures_errors():
+async def test_execute_tools_captures_handler_exceptions():
     executor = FakeToolExecutor(results={})  # empty → will raise ValueError
     audit = FakeAuditLogPort()
     nodes = _make_nodes(executor=executor, audit=audit)
@@ -631,6 +645,12 @@ async def test_execute_tools_captures_errors():
     assert "c1" in result["tool_results"]
     assert "error" in result["tool_results"]["c1"]
     assert audit.has_event("execution_failure")
+    failure = audit.get_events("execution_failure")[0]["data"]
+    assert failure["call_id"] == "c1"
+    assert failure["tool_name"] == "list_accounts"
+    assert failure["status"] == "failure"
+    assert "not in results map" in failure["error"]
+    assert audit.has_event("tool_execution") is False
 
 
 @pytest.mark.asyncio
@@ -643,6 +663,56 @@ async def test_execute_tools_logs_tool_execution():
     )
     await nodes.execute_tools_node(state)
     assert audit.has_event("tool_execution")
+    event = audit.get_events("tool_execution")[0]["data"]
+    assert event["call_id"] == "c1"
+    assert event["tool_name"] == "list_accounts"
+    assert event["status"] == "success"
+    assert event["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_treats_error_payload_as_failure():
+    executor = FakeToolExecutor(results={"list_accounts": {"error": "upstream timeout"}})
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}]
+    )
+
+    result = await nodes.execute_tools_node(state)
+
+    assert result["tool_results"]["c1"]["error"] == "upstream timeout"
+    assert audit.has_event("tool_execution") is False
+    assert audit.has_event("execution_failure")
+    failure = audit.get_events("execution_failure")[0]["data"]
+    assert failure["call_id"] == "c1"
+    assert failure["tool_name"] == "list_accounts"
+    assert failure["status"] == "failure"
+    assert failure["error"] == "upstream timeout"
+    assert failure["failure_kind"] == "error_return_payload"
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_treats_unknown_tool_payload_as_failure():
+    registry = ToolRegistry()
+    executor = RegistryBackedToolExecutor(registry)
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "totally_missing_tool", "arguments": {}}]
+    )
+
+    result = await nodes.execute_tools_node(state)
+
+    assert "Unknown tool" in result["tool_results"]["c1"]["error"]
+    assert audit.has_event("tool_execution") is False
+    assert audit.has_event("execution_failure")
+    failure = audit.get_events("execution_failure")[0]["data"]
+    assert failure["call_id"] == "c1"
+    assert failure["tool_name"] == "totally_missing_tool"
+    assert failure["status"] == "failure"
+    assert "Unknown tool" in failure["error"]
+    assert failure["failure_kind"] == "error_return_payload"
 
 
 @pytest.mark.asyncio
@@ -660,6 +730,33 @@ async def test_execute_tools_with_json_string_args():
     assert "c1" in result["tool_results"]
     _, args = executor.calls[0]
     assert args == {"limit": 5}
+
+
+@pytest.mark.asyncio
+async def test_execute_tools_logs_failure_for_malformed_json_args():
+    executor = FakeToolExecutor(results={"get_posts": {"posts": []}})
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(executor=executor, audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{
+            "id": "c1",
+            "name": "get_posts",
+            "arguments": "{not valid json",
+        }]
+    )
+
+    result = await nodes.execute_tools_node(state)
+
+    assert "malformed_arguments" in result["tool_results"]["c1"]["error"]
+    assert executor.calls == []
+    assert audit.has_event("tool_execution") is False
+    assert audit.has_event("execution_failure")
+    failure = audit.get_events("execution_failure")[0]["data"]
+    assert failure["call_id"] == "c1"
+    assert failure["tool_name"] == "get_posts"
+    assert failure["status"] == "failure"
+    assert failure["error"] == "malformed_arguments"
+    assert failure["failure_kind"] == "malformed_string_arguments"
 
 
 # ===========================================================================

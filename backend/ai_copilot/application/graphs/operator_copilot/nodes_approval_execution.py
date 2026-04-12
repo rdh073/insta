@@ -20,6 +20,30 @@ from .prompts import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_tool_error(result: object) -> str | None:
+    """Normalize tool error payloads for deterministic audit logging.
+
+    Tool handlers in this codebase often return {"error": ...} instead of
+    raising exceptions. This helper converts that shape into a canonical
+    non-empty string when present.
+    """
+    if not isinstance(result, dict):
+        return None
+
+    if "error" not in result:
+        return None
+
+    raw_error = result.get("error")
+    if raw_error is None:
+        return "unknown_error"
+
+    if isinstance(raw_error, str):
+        stripped = raw_error.strip()
+        return stripped or "unknown_error"
+
+    return str(raw_error)
+
+
 class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
     """Node mix for approval, execution, review, summarization, and finish."""
 
@@ -126,6 +150,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                 try:
                     args = json.loads(args)
                 except (TypeError, json.JSONDecodeError):
+                    error = "malformed_arguments"
                     results[call_id] = {
                         "error": f"malformed_arguments: could not parse string arguments for {tool_name!r}"
                     }
@@ -133,7 +158,8 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                         "thread_id": thread_id,
                         "call_id": call_id,
                         "tool_name": tool_name,
-                        "error": "malformed_arguments",
+                        "status": "failure",
+                        "error": error,
                         "failure_kind": "malformed_string_arguments",
                     })
                     continue
@@ -141,10 +167,24 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             try:
                 result = await self.tool_executor.execute(tool_name, args)
                 results[call_id] = result
+                error = _extract_tool_error(result)
+                if error is not None:
+                    await self.audit_log.log("execution_failure", {
+                        "thread_id": thread_id,
+                        "call_id": call_id,
+                        "tool_name": tool_name,
+                        "status": "failure",
+                        "error": error,
+                        "failure_kind": "error_return_payload",
+                    })
+                    continue
+
                 await self.audit_log.log("tool_execution", {
                     "thread_id": thread_id,
                     "call_id": call_id,
                     "tool_name": tool_name,
+                    "status": "success",
+                    "error": None,
                     "args": args,
                     "result_keys": list(result.keys()) if isinstance(result, dict) else None,
                 })
@@ -155,6 +195,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                     "thread_id": thread_id,
                     "call_id": call_id,
                     "tool_name": tool_name,
+                    "status": "failure",
                     "error": str(exc),
                 })
 

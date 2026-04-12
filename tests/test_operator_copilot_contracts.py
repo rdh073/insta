@@ -83,6 +83,7 @@ def _default_audit_field_value(field: str):
         "tool_name": "list_accounts",
         "args": {},
         "result_keys": ["accounts"],
+        "status": "success",
         "error": "boom",
         "matched_intent": True,
         "warnings": [],
@@ -204,6 +205,16 @@ def test_audit_event_schema_required_optional_are_frozensets_and_disjoint():
 
 def test_validate_audit_event_payload_accepts_optional_fields():
     payload = _valid_audit_payload("execution_failure", failure_kind="malformed_string_arguments")
+    validate_audit_event_payload("execution_failure", payload)
+
+
+def test_validate_audit_event_payload_accepts_tool_execution_outcome_fields():
+    payload = _valid_audit_payload("tool_execution", status="success", error=None)
+    validate_audit_event_payload("tool_execution", payload)
+
+
+def test_validate_audit_event_payload_accepts_execution_failure_status():
+    payload = _valid_audit_payload("execution_failure", status="failure")
     validate_audit_event_payload("execution_failure", payload)
 
 
