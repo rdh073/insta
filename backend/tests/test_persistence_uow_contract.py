@@ -144,7 +144,18 @@ class _StubInstagram:
     def complete_2fa(self, username: str, password: str, code: str, proxy=None):
         return _StubClient()
 
-    def relogin_account(self, account_id: str):
+    def relogin_account(
+        self,
+        account_id: str,
+        *,
+        username: str = "",
+        password: str = "",
+        proxy=None,
+        totp_secret=None,
+        mode=None,
+        verify_session: bool = False,
+    ):
+        del username, password, proxy, totp_secret, mode, verify_session
         return {"id": account_id, "username": "operator", "status": "active"}
 
 

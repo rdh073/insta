@@ -107,6 +107,13 @@ from app.adapters.persistence.factory import build_proxy_repository, build_templ
 from app.application.use_cases.templates import TemplatesUseCase
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _build_persistence():
     """Build persistence adapters and repositories."""
     (account_repo, client_repo, status_repo, job_repo, uow) = (
@@ -142,7 +149,7 @@ def _build_instagram_adapters(client_repo):
     }
 
 
-def _build_account_usecases(repos, ig, infra):
+def _build_account_usecases(repos, ig, infra, *, verify_session_on_restore: bool):
     """Build all account-related use case instances."""
     account_repo, client_repo, status_repo, uow = repos
     instagram, totp, identity_reader = ig
@@ -155,6 +162,7 @@ def _build_account_usecases(repos, ig, infra):
         logger=activity_log,
         error_handler=instagram_exception_handler,
         uow=uow,
+        verify_session_on_restore=verify_session_on_restore,
     )
 
     legacy = AccountUseCases(
@@ -170,6 +178,7 @@ def _build_account_usecases(repos, ig, infra):
         uow=uow,
         proxy_checker=proxy_checker,
         relogin_usecases=relogin,
+        verify_session_on_restore=verify_session_on_restore,
     )
     auth = AccountAuthUseCases(
         account_repo=account_repo,
@@ -183,6 +192,7 @@ def _build_account_usecases(repos, ig, infra):
         identity_reader=identity_reader,
         uow=uow,
         relogin_usecases=relogin,
+        verify_session_on_restore=verify_session_on_restore,
     )
     profile = AccountProfileUseCases(
         account_repo=account_repo,
@@ -216,6 +226,7 @@ def _build_account_usecases(repos, ig, infra):
         error_handler=instagram_exception_handler,
         identity_reader=identity_reader,
         uow=uow,
+        verify_session_on_restore=verify_session_on_restore,
     )
     connectivity = AccountConnectivityUseCases(
         account_repo=account_repo,
@@ -481,6 +492,7 @@ def create_services():
     )
     activity_log = ActivityLogWriter()
     proxy_checker = HttpxProxyCheckerAdapter()
+    verify_session_on_restore = _bool_env("ACCOUNT_VERIFY_SESSION_ON_RESTORE", False)
 
     proxy_pool_usecases = ProxyPoolUseCases(
         checker=proxy_checker, repo=proxy_repo, parser=ProxyParser()
@@ -526,6 +538,7 @@ def create_services():
         repos=(account_repo, client_repo, status_repo, uow),
         ig=(instagram, ig["totp"], ig["identity_reader"]),
         infra=(activity_log, proxy_checker),
+        verify_session_on_restore=verify_session_on_restore,
     )
 
     # ── 5. Post-job + logs use cases ──────────────────────────────────────

@@ -76,6 +76,7 @@ class InstagramClientAdapter:
         locale: Optional[str] = None,
         timezone_offset: Optional[int] = None,
         mode: ReloginMode = ReloginMode.SESSION_RESTORE,
+        verify_session: bool = False,
     ) -> dict:
         """Relogin account using *mode* strategy. Returns account dict.
 
@@ -95,6 +96,7 @@ class InstagramClientAdapter:
             locale=locale,
             timezone_offset=timezone_offset,
             mode=mode.value,
+            verify_session=verify_session,
         )
 
     def run_post_job(self, job_id: str) -> None:

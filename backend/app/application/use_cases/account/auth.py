@@ -43,6 +43,7 @@ class AuthUseCases:
         error_handler: InstagramExceptionHandler,
         identity_reader: InstagramIdentityReader,
         uow: PersistenceUnitOfWork | None = None,
+        verify_session_on_restore: bool = False,
     ):
         self.account_repo = account_repo
         self.client_repo = client_repo
@@ -54,6 +55,7 @@ class AuthUseCases:
         self.error_handler = error_handler
         self.identity_reader = identity_reader
         self.uow = uow
+        self.verify_session_on_restore = verify_session_on_restore
 
     def _uow_scope(self):
         """Return transaction context when UoW is configured."""
@@ -196,6 +198,7 @@ class AuthUseCases:
                     request.username,
                     request.password,
                     request.proxy,
+                    verify_session=self.verify_session_on_restore,
                     **self._geo_kwargs(
                         country=request.country,
                         country_code=request.country_code,

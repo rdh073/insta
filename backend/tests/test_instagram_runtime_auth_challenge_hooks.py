@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from instagram_runtime import auth
-from state import CaptchaChallengeRequired, ChallengeRequired
+from state import CaptchaChallengeRequired, ChallengeRequired, LoginRequired
 
 
 class _StubClient:
@@ -155,3 +155,60 @@ def test_create_authenticated_client_propagates_captcha_challenge_without_fallba
 
     # Session restore should fail fast on challenge without extra fallback login attempts.
     assert client.login_calls == 1
+
+
+def test_create_authenticated_client_verify_session_falls_back_to_reauth_on_invalid_restore(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(auth, "SESSIONS_DIR", tmp_path)
+
+    session_file = tmp_path / "alice.json"
+    session_file.write_text(json.dumps({"uuids": {"phone_id": "p"}}))
+
+    class _VerifyFallbackClient(_StubClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.login_calls: list[dict] = []
+            self.dumped = 0
+
+        def load_settings(self, _path: Path) -> None:
+            pass
+
+        def get_settings(self) -> dict:
+            return {"uuids": {"phone_id": "p"}}
+
+        def set_settings(self, _settings: dict) -> None:
+            pass
+
+        def set_uuids(self, _uuids: dict) -> None:
+            pass
+
+        def login(self, username: str, password: str, **kwargs) -> None:
+            self.login_calls.append({"username": username, "password": password, **kwargs})
+            if kwargs.get("verification_code"):
+                return
+            return
+
+        def account_info(self):
+            raise LoginRequired("expired after restore")
+
+        def dump_settings(self, _path: Path) -> None:
+            self.dumped += 1
+
+    client = _VerifyFallbackClient()
+
+    result = auth.create_authenticated_client(
+        "alice",
+        "secret",
+        proxy=None,
+        verify_session=True,
+        new_client_fn=lambda _proxy: client,
+    )
+
+    assert result is client
+    # First call restores session; second call is forced fresh credential login.
+    assert len(client.login_calls) == 2
+    assert client.login_calls[0].get("verification_code") is None
+    assert client.login_calls[1].get("verification_code", None) == ""
+    assert client.dumped == 1

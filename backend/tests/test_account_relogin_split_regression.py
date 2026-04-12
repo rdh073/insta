@@ -28,6 +28,7 @@ class _KwOnlyInstagramClient:
         proxy: str | None = None,
         totp_secret: str | None = None,
         mode: ReloginMode = ReloginMode.SESSION_RESTORE,
+        verify_session: bool = False,
     ) -> dict:
         self.calls.append(
             {
@@ -37,6 +38,7 @@ class _KwOnlyInstagramClient:
                 "proxy": proxy,
                 "totp_secret": totp_secret,
                 "mode": mode,
+                "verify_session": verify_session,
             }
         )
         if self._error is not None:
@@ -44,7 +46,7 @@ class _KwOnlyInstagramClient:
         return dict(self._result)
 
 
-def _build_usecase(instagram: _KwOnlyInstagramClient):
+def _build_usecase(instagram: _KwOnlyInstagramClient, *, verify_session_on_restore: bool = False):
     account_repo = Mock()
     status_repo = Mock()
     logger = Mock()
@@ -56,6 +58,7 @@ def _build_usecase(instagram: _KwOnlyInstagramClient):
         instagram=instagram,
         logger=logger,
         error_handler=error_handler,
+        verify_session_on_restore=verify_session_on_restore,
     )
     return usecase, account_repo, status_repo, logger, error_handler
 
@@ -84,6 +87,7 @@ def test_relogin_account_passes_required_kwargs_and_returns_active():
             "proxy": "http://proxy:8080",
             "totp_secret": "TOTPSECRET",
             "mode": ReloginMode.FRESH_CREDENTIALS,
+            "verify_session": False,
         }
     ]
     status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
@@ -150,4 +154,96 @@ def test_relogin_account_attaches_structured_failure_and_sets_policy_status():
         "relogin_failed",
         detail=failure.user_message,
         status="challenge",
+    )
+
+
+def test_relogin_account_enables_verify_session_for_restore_mode_when_policy_enabled():
+    instagram = _KwOnlyInstagramClient()
+    usecase, account_repo, status_repo, logger, error_handler = _build_usecase(
+        instagram,
+        verify_session_on_restore=True,
+    )
+
+    account_repo.get.return_value = {
+        "username": "alice",
+        "password": "s3cret",
+        "proxy": "http://proxy:8080",
+        "totp_secret": "TOTPSECRET",
+        "last_error_code": "network_error",
+    }
+
+    result = usecase.relogin_account("acc-1")
+
+    assert result.status == "active"
+    assert instagram.calls[0]["mode"] is ReloginMode.SESSION_RESTORE
+    assert instagram.calls[0]["verify_session"] is True
+    error_handler.handle.assert_not_called()
+    logger.log_event.assert_not_called()
+    status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
+
+
+def test_relogin_account_keeps_verify_session_disabled_when_policy_off():
+    instagram = _KwOnlyInstagramClient()
+    usecase, account_repo, status_repo, logger, error_handler = _build_usecase(instagram)
+
+    account_repo.get.return_value = {
+        "username": "alice",
+        "password": "s3cret",
+        "proxy": "http://proxy:8080",
+        "totp_secret": "TOTPSECRET",
+        "last_error_code": "network_error",
+    }
+
+    result = usecase.relogin_account("acc-1")
+
+    assert result.status == "active"
+    assert instagram.calls[0]["mode"] is ReloginMode.SESSION_RESTORE
+    assert instagram.calls[0]["verify_session"] is False
+    error_handler.handle.assert_not_called()
+    logger.log_event.assert_not_called()
+    status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
+
+
+def test_relogin_account_persists_error_when_verify_session_enabled_and_restore_fails():
+    instagram = _KwOnlyInstagramClient(error=RuntimeError("restore session invalid"))
+    usecase, account_repo, status_repo, logger, error_handler = _build_usecase(
+        instagram,
+        verify_session_on_restore=True,
+    )
+
+    account_repo.get.return_value = {
+        "username": "alice",
+        "password": "s3cret",
+        "proxy": "http://proxy:8080",
+        "totp_secret": "TOTPSECRET",
+        "last_error_code": "network_error",
+    }
+    failure = InstagramFailure(
+        code="login_required",
+        family="private_auth",
+        retryable=False,
+        requires_user_action=True,
+        user_message="Session expired, relogin required.",
+        http_hint=401,
+    )
+    error_handler.handle.return_value = failure
+
+    with pytest.raises(RuntimeError):
+        usecase.relogin_account("acc-1")
+
+    assert instagram.calls[0]["mode"] is ReloginMode.SESSION_RESTORE
+    assert instagram.calls[0]["verify_session"] is True
+    status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "error")])
+    account_repo.update.assert_called_with(
+        "acc-1",
+        last_error=failure.user_message,
+        last_error_code=failure.code,
+        last_error_family=failure.family,
+    )
+    logger.log_event.assert_called_once_with(
+        "acc-1",
+        "alice",
+        "relogin_failed",
+        detail=failure.user_message,
+        status="error",
     )

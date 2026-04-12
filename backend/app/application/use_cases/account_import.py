@@ -69,6 +69,7 @@ class AccountImportUseCases:
         error_handler: InstagramExceptionHandler,
         identity_reader: InstagramIdentityReader,
         uow: PersistenceUnitOfWork | None = None,
+        verify_session_on_restore: bool = False,
     ):
         self.account_repo = account_repo
         self.client_repo = client_repo
@@ -93,6 +94,7 @@ class AccountImportUseCases:
             error_handler=error_handler,
             identity_reader=identity_reader,
             uow=uow,
+            verify_session_on_restore=verify_session_on_restore,
         )
 
     def _uow_scope(self):

@@ -184,6 +184,7 @@ def _relogin_session_restore(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    verify_session: bool = False,
     country: str | None = None,
     country_code: int | None = None,
     locale: str | None = None,
@@ -194,6 +195,7 @@ def _relogin_session_restore(
         password,
         proxy,
         totp_secret,
+        verify_session=verify_session,
         country=country,
         country_code=country_code,
         locale=locale,
@@ -207,6 +209,7 @@ def _relogin_fresh_credentials(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    verify_session: bool = False,
     country: str | None = None,
     country_code: int | None = None,
     locale: str | None = None,
@@ -217,6 +220,7 @@ def _relogin_fresh_credentials(
         password,
         proxy,
         totp_secret,
+        verify_session=verify_session,
         country=country,
         country_code=country_code,
         locale=locale,
@@ -244,6 +248,7 @@ def relogin_account_sync(
     locale: str | None = None,
     timezone_offset: int | None = None,
     mode: str = "session_restore",
+    verify_session: bool = False,
 ) -> dict:
     _sync_runtime_session_dirs()
     return _relogin.relogin_account_sync(
@@ -257,6 +262,7 @@ def relogin_account_sync(
         locale=locale,
         timezone_offset=timezone_offset,
         mode=mode,
+        verify_session=verify_session,
         create_authenticated_client_fn=create_authenticated_client,
         new_client_fn=_new_client,
         classify_exception_fn=_classify_exception,

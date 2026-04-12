@@ -79,3 +79,14 @@ def test_container_shares_single_relogin_instance_between_http_and_ai_stacks():
     assert shared_relogin is not None
     assert getattr(account_auth_usecases, "_relogin", None) is shared_relogin
     assert getattr(startup_relogin_fn, "__self__", None) is shared_relogin
+
+
+def test_container_applies_restore_verify_policy_to_shared_relogin(monkeypatch):
+    monkeypatch.setenv("ACCOUNT_VERIFY_SESSION_ON_RESTORE", "true")
+
+    services = create_services()
+    shared_relogin = getattr(services["accounts"], "_relogin", None)
+
+    assert shared_relogin is not None
+    assert shared_relogin.verify_session_on_restore is True
+    assert getattr(services["_relogin_fn"], "__self__", None) is shared_relogin

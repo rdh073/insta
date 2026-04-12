@@ -15,7 +15,7 @@ _COOLDOWN_RETRY_MIN_SECONDS = 30.0
 _COOLDOWN_RETRY_MAX_SECONDS = 120.0
 _COOLDOWN_RETRY_JITTER_MAX_SECONDS = 15.0
 
-ReloginStrategy = Callable[[str, str, str | None, str | None], object]
+ReloginStrategy = Callable[..., object]
 CreateAuthenticatedClientFn = Callable[..., object]
 NewClientFn = Callable[..., object]
 ClassifyExceptionFn = Callable[..., object]
@@ -59,6 +59,28 @@ def _compute_retry_delay_seconds(
     return float(2 ** retry_index)
 
 
+def _strategy_accepts_verify_session(strategy: ReloginStrategy) -> bool:
+    """Return True when strategy supports the verify_session argument."""
+    try:
+        params = inspect.signature(strategy).parameters.values()
+    except (TypeError, ValueError):
+        return True
+
+    positional_count = 0
+    for param in params:
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+            return True
+        if param.name == "verify_session":
+            return True
+        if param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            positional_count += 1
+
+    return positional_count >= 5
+
+
 # ── Relogin strategies ────────────────────────────────────────────────────────
 #
 # Two concrete strategies share the same signature so relogin_account_sync
@@ -79,6 +101,7 @@ def _relogin_session_restore(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    verify_session: bool = False,
     *,
     country: str | None = None,
     country_code: int | None = None,
@@ -93,28 +116,41 @@ def _relogin_session_restore(
         locale=locale,
         timezone_offset=timezone_offset,
     )
-    if not geo_kwargs:
-        return create_authenticated_client_fn(username, password, proxy, totp_secret)
     try:
         signature = inspect.signature(create_authenticated_client_fn)
     except (TypeError, ValueError):
-        return create_authenticated_client_fn(username, password, proxy, totp_secret)
-
-    if any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in signature.parameters.values()
-    ):
         return create_authenticated_client_fn(
             username,
             password,
             proxy,
             totp_secret,
+            verify_session=verify_session,
             **geo_kwargs,
+        )
+
+    supports_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    supports_verify_session = supports_kwargs or "verify_session" in signature.parameters
+
+    if supports_kwargs:
+        payload_kwargs = dict(geo_kwargs)
+        if supports_verify_session:
+            payload_kwargs["verify_session"] = verify_session
+        return create_authenticated_client_fn(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            **payload_kwargs,
         )
 
     supported_kwargs = {
         key: value for key, value in geo_kwargs.items() if key in signature.parameters
     }
+    if supports_verify_session:
+        supported_kwargs["verify_session"] = verify_session
     if supported_kwargs:
         return create_authenticated_client_fn(
             username,
@@ -123,7 +159,20 @@ def _relogin_session_restore(
             totp_secret,
             **supported_kwargs,
         )
-    return create_authenticated_client_fn(username, password, proxy, totp_secret)
+    if supports_verify_session:
+        return create_authenticated_client_fn(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            verify_session=verify_session,
+        )
+    return create_authenticated_client_fn(
+        username,
+        password,
+        proxy,
+        totp_secret,
+    )
 
 
 def _new_client_with_optional_geo(
@@ -187,6 +236,7 @@ def _relogin_fresh_credentials(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    verify_session: bool = False,
     *,
     country: str | None = None,
     country_code: int | None = None,
@@ -195,6 +245,7 @@ def _relogin_fresh_credentials(
     new_client_fn: NewClientFn = new_client,
 ):
     """Relogin with fresh credentials, bypassing the existing session file."""
+    del verify_session
     session_file = SESSIONS_DIR / f"{username}.json"
 
     def _totp_code() -> str:
@@ -262,22 +313,24 @@ def _build_relogin_strategies(
         return _RELOGIN_STRATEGIES
 
     return {
-        "session_restore": lambda username, password, proxy, totp_secret: _relogin_session_restore(
+        "session_restore": lambda username, password, proxy, totp_secret, verify_session=False: _relogin_session_restore(
             username,
             password,
             proxy,
             totp_secret,
+            verify_session,
             country=country,
             country_code=country_code,
             locale=locale,
             timezone_offset=timezone_offset,
             create_authenticated_client_fn=create_authenticated_client_fn,
         ),
-        "fresh_credentials": lambda username, password, proxy, totp_secret: _relogin_fresh_credentials(
+        "fresh_credentials": lambda username, password, proxy, totp_secret, verify_session=False: _relogin_fresh_credentials(
             username,
             password,
             proxy,
             totp_secret,
+            verify_session,
             country=country,
             country_code=country_code,
             locale=locale,
@@ -306,25 +359,36 @@ def _call_strategy_with_geo(
     totp_secret: str | None,
     *,
     geo_kwargs: dict[str, str | int],
+    verify_session: bool = False,
 ):
+    strategy_accepts_verify = _strategy_accepts_verify_session(strategy)
     if not geo_kwargs:
+        if strategy_accepts_verify:
+            return strategy(username, password, proxy, totp_secret, verify_session)
         return strategy(username, password, proxy, totp_secret)
 
     if _strategy_supports_kwargs(strategy):
+        payload_kwargs = dict(geo_kwargs)
+        if strategy_accepts_verify:
+            payload_kwargs["verify_session"] = verify_session
         return strategy(
             username,
             password,
             proxy,
             totp_secret,
-            **geo_kwargs,
+            **payload_kwargs,
         )
 
     try:
         signature = inspect.signature(strategy)
     except (TypeError, ValueError):
+        if strategy_accepts_verify:
+            return strategy(username, password, proxy, totp_secret, verify_session)
         return strategy(username, password, proxy, totp_secret)
 
     supported = {key: value for key, value in geo_kwargs.items() if key in signature.parameters}
+    if strategy_accepts_verify:
+        supported["verify_session"] = verify_session
     if supported:
         return strategy(
             username,
@@ -333,6 +397,8 @@ def _call_strategy_with_geo(
             totp_secret,
             **supported,
         )
+    if strategy_accepts_verify:
+        return strategy(username, password, proxy, totp_secret, verify_session)
     return strategy(username, password, proxy, totp_secret)
 
 
@@ -356,13 +422,14 @@ def _wrap_relogin_strategies_with_geo(
     wrapped: dict[str, ReloginStrategy] = {}
     for key, strategy in relogin_strategies.items():
         wrapped[key] = (
-            lambda username, password, proxy, totp_secret, _strategy=strategy: _call_strategy_with_geo(
+            lambda username, password, proxy, totp_secret, verify_session=False, _strategy=strategy: _call_strategy_with_geo(
                 _strategy,
                 username,
                 password,
                 proxy,
                 totp_secret,
                 geo_kwargs=geo_kwargs,
+                verify_session=verify_session,
             )
         )
     return wrapped
@@ -380,6 +447,7 @@ def relogin_account_sync(
     locale: str | None = None,
     timezone_offset: int | None = None,
     mode: str = "session_restore",
+    verify_session: bool = False,
     create_authenticated_client_fn: CreateAuthenticatedClientFn = create_authenticated_client,
     new_client_fn: NewClientFn = new_client,
     classify_exception_fn: ClassifyExceptionFn = classify_exception,
@@ -409,6 +477,7 @@ def relogin_account_sync(
 
     default_strategy = strategies.get("session_restore", _RELOGIN_STRATEGIES["session_restore"])
     strategy = strategies.get(mode, default_strategy)
+    strategy_accepts_verify = _strategy_accepts_verify_session(strategy)
 
     # Drop stale client reference without invalidating the server-side session.
     # Calling logout() here would invalidate the session file that
@@ -418,7 +487,10 @@ def relogin_account_sync(
     cl = None
     for attempt in range(_MAX_RELOGIN_ATTEMPTS):
         try:
-            cl = strategy(username, password, proxy, totp_secret)
+            if strategy_accepts_verify:
+                cl = strategy(username, password, proxy, totp_secret, verify_session)
+            else:
+                cl = strategy(username, password, proxy, totp_secret)
             break  # success — exit retry loop
         except Exception as exc:
             if translate_exception_fn is not None:

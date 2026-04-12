@@ -67,6 +67,7 @@ class AccountUseCases:
         uow: PersistenceUnitOfWork | None = None,
         proxy_checker: ProxyCheckerPort | None = None,
         relogin_usecases: ReloginUseCases | None = None,
+        verify_session_on_restore: bool = False,
     ):
         # Initialize sub-modules with only the dependencies they need
         self._auth = AuthUseCases(
@@ -80,6 +81,7 @@ class AccountUseCases:
             error_handler=error_handler,
             identity_reader=identity_reader,
             uow=uow,
+            verify_session_on_restore=verify_session_on_restore,
         )
 
         self._relogin = relogin_usecases or ReloginUseCases(
@@ -89,6 +91,7 @@ class AccountUseCases:
             logger=logger,
             error_handler=error_handler,
             uow=uow,
+            verify_session_on_restore=verify_session_on_restore,
         )
 
         self._profile = ProfileUseCases(

@@ -48,6 +48,7 @@ class AccountAuthUseCases:
         identity_reader: InstagramIdentityReader,
         uow: PersistenceUnitOfWork | None = None,
         relogin_usecases: ReloginUseCases | None = None,
+        verify_session_on_restore: bool = False,
     ):
         self.account_repo = account_repo
         self.client_repo = client_repo
@@ -59,6 +60,7 @@ class AccountAuthUseCases:
         self.error_handler = error_handler
         self.identity_reader = identity_reader
         self.uow = uow
+        self.verify_session_on_restore = verify_session_on_restore
         # Canonical relogin semantics shared with AccountUseCases facade.
         self._relogin = relogin_usecases or ReloginUseCases(
             account_repo=account_repo,
@@ -67,6 +69,7 @@ class AccountAuthUseCases:
             logger=logger,
             error_handler=error_handler,
             uow=uow,
+            verify_session_on_restore=verify_session_on_restore,
         )
 
     def _uow_scope(self):
@@ -308,6 +311,7 @@ class AccountAuthUseCases:
                 request.password,
                 request.proxy,
                 totp_secret,
+                verify_session=self.verify_session_on_restore,
                 **self._geo_kwargs(
                     country=request.country,
                     country_code=request.country_code,

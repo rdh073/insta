@@ -81,12 +81,15 @@ class InstagramClient(Protocol):
         locale: Optional[str] = None,
         timezone_offset: Optional[int] = None,
         mode: ReloginMode = ReloginMode.SESSION_RESTORE,
+        verify_session: bool = False,
     ) -> dict:
         """Relogin account using *mode* strategy and return account dict.
 
         ``SESSION_RESTORE`` (default) tries to reuse the existing session
         file.  ``FRESH_CREDENTIALS`` skips the session file and always
         authenticates with stored username + password + TOTP.
+        When ``verify_session`` is True, restored sessions are validated with
+        a lightweight authenticated API call before being accepted.
         """
         ...
 

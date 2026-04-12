@@ -39,6 +39,7 @@ class ReloginUseCases:
         logger: ActivityLogger,
         error_handler: InstagramExceptionHandler,
         uow=None,
+        verify_session_on_restore: bool = False,
     ):
         self.account_repo = account_repo
         self.status_repo = status_repo
@@ -46,6 +47,7 @@ class ReloginUseCases:
         self.logger = logger
         self.error_handler = error_handler
         self.uow = uow
+        self.verify_session_on_restore = verify_session_on_restore
         self._account_locks: dict[str, asyncio.Lock] = {}
 
     @staticmethod
@@ -69,6 +71,10 @@ class ReloginUseCases:
             )
         mode = self._select_relogin_mode(account)
         return account, username, password, mode
+
+    def _should_verify_session(self, mode: ReloginMode) -> bool:
+        """Enable verification only for restore-mode relogin when policy is on."""
+        return self.verify_session_on_restore and mode is ReloginMode.SESSION_RESTORE
 
     def _get_account_lock(self, account_id: str) -> asyncio.Lock:
         """Get or create a per-account async lock to prevent concurrent mutations."""
@@ -176,6 +182,7 @@ class ReloginUseCases:
                     totp_secret=account.get("totp_secret"),
                     **self._geo_kwargs(account),
                     mode=mode,
+                    verify_session=self._should_verify_session(mode),
                 )
                 self.status_repo.set(account_id, "active")
                 self._mark_verified(account_id)
@@ -245,6 +252,7 @@ class ReloginUseCases:
                         totp_secret=account.get("totp_secret"),
                         **self._geo_kwargs(account),
                         mode=mode,
+                        verify_session=self._should_verify_session(mode),
                     )
                     self.status_repo.set(account_id, "active")
                     self._mark_verified(account_id)

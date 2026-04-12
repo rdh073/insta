@@ -111,6 +111,75 @@ def test_relogin_account_sync_replaces_stale_client_and_updates_state(monkeypatc
     assert result["status"] == "active"
 
 
+def test_relogin_account_sync_threads_verify_session_to_session_restore_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: list[bool] = []
+
+    def strategy(
+        _username: str,
+        _password: str,
+        _proxy: str | None,
+        _totp: str | None,
+        verify_session: bool = False,
+    ):
+        captured.append(verify_session)
+        return FakeClient()
+
+    monkeypatch.setattr(relogin_runtime, "pop_client", lambda _account_id: None)
+    monkeypatch.setattr(
+        relogin_runtime,
+        "activate_account_client",
+        lambda _account_id, _client: {"id": _account_id, "status": "active"},
+    )
+    monkeypatch.setattr(relogin_runtime, "log_event", lambda *_args, **_kwargs: None)
+
+    result = relogin_runtime.relogin_account_sync(
+        "acct-v",
+        username="alice",
+        password="secret",
+        verify_session=True,
+        relogin_strategies={"session_restore": strategy},
+    )
+
+    assert result["status"] == "active"
+    assert captured == [True]
+
+
+def test_relogin_account_sync_keeps_backward_compatible_strategy_signature(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls = {"count": 0}
+
+    def legacy_strategy(
+        _username: str,
+        _password: str,
+        _proxy: str | None,
+        _totp: str | None,
+    ):
+        calls["count"] += 1
+        return FakeClient()
+
+    monkeypatch.setattr(relogin_runtime, "pop_client", lambda _account_id: None)
+    monkeypatch.setattr(
+        relogin_runtime,
+        "activate_account_client",
+        lambda _account_id, _client: {"id": _account_id, "status": "active"},
+    )
+    monkeypatch.setattr(relogin_runtime, "log_event", lambda *_args, **_kwargs: None)
+
+    result = relogin_runtime.relogin_account_sync(
+        "acct-legacy",
+        username="alice",
+        password="secret",
+        verify_session=True,
+        relogin_strategies={"session_restore": legacy_strategy},
+    )
+
+    assert result["status"] == "active"
+    assert calls["count"] == 1
+
+
 @pytest.mark.parametrize(
     "failure_code",
     ["rate_limit", "wait_required", "feedback_required"],
@@ -122,7 +191,13 @@ def test_relogin_retry_uses_jittered_cooldown_for_429_family(
     attempts = {"count": 0}
     sleep_calls: list[float] = []
 
-    def flaky_strategy(_username: str, _password: str, _proxy: str | None, _totp: str | None):
+    def flaky_strategy(
+        _username: str,
+        _password: str,
+        _proxy: str | None,
+        _totp: str | None,
+        _verify_session: bool = False,
+    ):
         attempts["count"] += 1
         if attempts["count"] < 3:
             raise RuntimeError("429 family transient")
@@ -177,7 +252,13 @@ def test_relogin_retry_keeps_standard_backoff_for_non_429_transient(
     attempts = {"count": 0}
     sleep_calls: list[float] = []
 
-    def flaky_strategy(_username: str, _password: str, _proxy: str | None, _totp: str | None):
+    def flaky_strategy(
+        _username: str,
+        _password: str,
+        _proxy: str | None,
+        _totp: str | None,
+        _verify_session: bool = False,
+    ):
         attempts["count"] += 1
         if attempts["count"] < 3:
             raise RuntimeError("network glitch")
@@ -229,7 +310,13 @@ def test_relogin_flow_marks_rate_limit_guard_side_effects(
     account_id = "acct-guard"
     rate_limit_guard.clear(account_id)
 
-    def fail_strategy(_username: str, _password: str, _proxy: str | None, _totp: str | None):
+    def fail_strategy(
+        _username: str,
+        _password: str,
+        _proxy: str | None,
+        _totp: str | None,
+        _verify_session: bool = False,
+    ):
         raise RuntimeError("too many requests")
 
     failure = InstagramFailure(
