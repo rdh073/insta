@@ -13,6 +13,7 @@ from app.application.dto.instagram_highlight_dto import (
     HighlightDetail,
 )
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.highlight_reader import InstagramHighlightReaderAdapter
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
@@ -66,9 +67,7 @@ class InstagramHighlightWriterAdapter:
         Raises:
             ValueError: If account not found or creation fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to create highlight
@@ -108,9 +107,7 @@ class InstagramHighlightWriterAdapter:
         Raises:
             ValueError: If account not found or update fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to change title
@@ -145,9 +142,7 @@ class InstagramHighlightWriterAdapter:
         Raises:
             ValueError: If account not found or operation fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to add stories
@@ -182,9 +177,7 @@ class InstagramHighlightWriterAdapter:
         Raises:
             ValueError: If account not found or operation fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to remove stories
@@ -217,9 +210,7 @@ class InstagramHighlightWriterAdapter:
         Raises:
             ValueError: If account not found or deletion fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to delete

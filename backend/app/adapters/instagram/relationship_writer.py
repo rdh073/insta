@@ -5,10 +5,10 @@ InstagramRelationshipWriter port.
 """
 
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
     translate_instagram_error,
-    check_rate_limit,
     InstagramRateLimitError,
 )
 
@@ -21,10 +21,7 @@ class InstagramRelationshipWriterAdapter:
 
     def follow_user(self, account_id: str, user_id: int) -> bool:
         """Follow a user via instagrapi."""
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.user_follow(user_id)
@@ -42,10 +39,7 @@ class InstagramRelationshipWriterAdapter:
 
     def unfollow_user(self, account_id: str, user_id: int) -> bool:
         """Unfollow a user via instagrapi."""
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.user_unfollow(user_id)
@@ -63,10 +57,7 @@ class InstagramRelationshipWriterAdapter:
 
     def remove_follower(self, account_id: str, user_id: int) -> bool:
         """Remove a follower via instagrapi."""
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.user_remove_follower(user_id)
@@ -84,10 +75,7 @@ class InstagramRelationshipWriterAdapter:
 
     def close_friend_add(self, account_id: str, user_id: int) -> bool:
         """Add a user to Close Friends list via instagrapi."""
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.close_friend_add(user_id)
@@ -105,10 +93,7 @@ class InstagramRelationshipWriterAdapter:
 
     def close_friend_remove(self, account_id: str, user_id: int) -> bool:
         """Remove a user from Close Friends list via instagrapi."""
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.close_friend_remove(user_id)

@@ -12,6 +12,7 @@ from app.application.dto.instagram_comment_dto import (
     CommentActionReceipt,
 )
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.comment_reader import InstagramCommentReaderAdapter
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
@@ -59,9 +60,7 @@ class InstagramCommentWriterAdapter:
         Raises:
             ValueError: If account not found or creation fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to create comment
@@ -100,9 +99,7 @@ class InstagramCommentWriterAdapter:
         Raises:
             ValueError: If account not found or deletion fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to delete comment
@@ -127,9 +124,7 @@ class InstagramCommentWriterAdapter:
 
     def like_comment(self, account_id: str, comment_id: int) -> CommentActionReceipt:
         """Like a comment."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
         try:
             client.comment_like(comment_id)
             return CommentActionReceipt(action_id=str(comment_id), success=True, reason="Comment liked")
@@ -139,9 +134,7 @@ class InstagramCommentWriterAdapter:
 
     def unlike_comment(self, account_id: str, comment_id: int) -> CommentActionReceipt:
         """Unlike a comment."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
         try:
             client.comment_unlike(comment_id)
             return CommentActionReceipt(action_id=str(comment_id), success=True, reason="Comment unliked")
@@ -153,9 +146,7 @@ class InstagramCommentWriterAdapter:
         self, account_id: str, media_id: str, comment_id: int
     ) -> CommentActionReceipt:
         """Pin a comment (only for posts owned by the account)."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
         try:
             client.comment_pin(media_id, comment_id)
             return CommentActionReceipt(action_id=str(comment_id), success=True, reason="Comment pinned")
@@ -167,9 +158,7 @@ class InstagramCommentWriterAdapter:
         self, account_id: str, media_id: str, comment_id: int
     ) -> CommentActionReceipt:
         """Unpin a comment (only for posts owned by the account)."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
         try:
             client.comment_unpin(media_id, comment_id)
             return CommentActionReceipt(action_id=str(comment_id), success=True, reason="Comment unpinned")

@@ -10,6 +10,7 @@ from typing import Any
 from app.application.dto.instagram_discovery_dto import CollectionSummary
 from app.application.dto.instagram_media_dto import MediaSummary
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.media_reader import InstagramMediaReaderAdapter
 from app.adapters.instagram.error_utils import translate_instagram_error
 
@@ -45,9 +46,7 @@ class InstagramCollectionReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to list collections
@@ -76,9 +75,7 @@ class InstagramCollectionReaderAdapter:
         Raises:
             ValueError: If account not found, client not authenticated, or collection not found.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to get collection pk by name
@@ -119,9 +116,7 @@ class InstagramCollectionReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to get collection posts

@@ -15,6 +15,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectActionReceipt,
 )
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.direct_reader import InstagramDirectReaderAdapter
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
@@ -57,9 +58,7 @@ class InstagramDirectWriterAdapter:
         Raises:
             ValueError: If account not found or operation fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to find or create thread
@@ -94,9 +93,7 @@ class InstagramDirectWriterAdapter:
         Raises:
             ValueError: If account not found or send fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # instagrapi expects int thread ID
@@ -133,9 +130,7 @@ class InstagramDirectWriterAdapter:
         Raises:
             ValueError: If account not found or send fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to send to users
@@ -170,9 +165,7 @@ class InstagramDirectWriterAdapter:
         Raises:
             ValueError: If account not found or deletion fails.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # instagrapi expects int IDs for both thread and message
@@ -200,9 +193,7 @@ class InstagramDirectWriterAdapter:
         direct_thread_id: str,
     ) -> DirectActionReceipt:
         """Approve a pending DM request, moving it to the main inbox."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             client.direct_pending_approve(int(direct_thread_id))
@@ -227,9 +218,7 @@ class InstagramDirectWriterAdapter:
         direct_thread_id: str,
     ) -> DirectActionReceipt:
         """Mark the most recent message in a thread as seen."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             client.direct_send_seen(int(direct_thread_id))

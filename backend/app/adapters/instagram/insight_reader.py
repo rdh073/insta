@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from app.application.dto.instagram_analytics_dto import MediaInsightSummary
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import translate_instagram_error
 
 
@@ -56,9 +57,7 @@ class InstagramInsightReaderAdapter:
         Raises:
             ValueError: If account not found, not authenticated, or media not found.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to get media insights
@@ -96,9 +95,7 @@ class InstagramInsightReaderAdapter:
         Raises:
             ValueError: If account not found or not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to list media insights

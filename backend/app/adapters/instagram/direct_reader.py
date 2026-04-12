@@ -15,6 +15,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectSearchUserSummary,
 )
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
     translate_instagram_error,
@@ -60,9 +61,7 @@ class InstagramDirectReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to list threads
@@ -99,9 +98,7 @@ class InstagramDirectReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to list pending
@@ -136,9 +133,7 @@ class InstagramDirectReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # instagrapi expects int thread ID
@@ -180,9 +175,7 @@ class InstagramDirectReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # instagrapi expects int thread ID
@@ -215,9 +208,7 @@ class InstagramDirectReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to search

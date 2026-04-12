@@ -5,6 +5,7 @@ InstagramMediaWriter port.
 """
 
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import translate_instagram_error
 
 
@@ -16,9 +17,7 @@ class InstagramMediaWriterAdapter:
 
     def like_media(self, account_id: str, media_id: str) -> bool:
         """Like a post via instagrapi."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.media_like(media_id)
@@ -32,9 +31,7 @@ class InstagramMediaWriterAdapter:
 
     def unlike_media(self, account_id: str, media_id: str) -> bool:
         """Remove a like from a post via instagrapi."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             return client.media_unlike(media_id)

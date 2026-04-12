@@ -7,6 +7,7 @@ application-owned PublicUserProfile DTOs.
 
 from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
     translate_instagram_error,
@@ -26,9 +27,7 @@ class InstagramRelationshipReaderAdapter:
         amount: int = 50,
     ) -> list[PublicUserProfile]:
         """List followers and map vendor users to PublicUserProfile."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             users = client.user_followers(user_id, amount=amount)
@@ -48,9 +47,7 @@ class InstagramRelationshipReaderAdapter:
         amount: int = 50,
     ) -> list[PublicUserProfile]:
         """List following and map vendor users to PublicUserProfile."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             users = client.user_following(user_id, amount=amount)
@@ -70,9 +67,7 @@ class InstagramRelationshipReaderAdapter:
         query: str,
     ) -> list[PublicUserProfile]:
         """Search within a user's follower list (server-side)."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             users = client.search_followers(user_id, query)
@@ -92,9 +87,7 @@ class InstagramRelationshipReaderAdapter:
         query: str,
     ) -> list[PublicUserProfile]:
         """Search within a user's following list (server-side)."""
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             users = client.search_following(user_id, query)

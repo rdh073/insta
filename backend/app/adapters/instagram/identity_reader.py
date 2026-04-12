@@ -10,6 +10,7 @@ from app.application.dto.instagram_identity_dto import (
     PublicUserProfile,
 )
 from app.application.ports.repositories import ClientRepository
+from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
     translate_instagram_error,
@@ -54,10 +55,7 @@ class InstagramIdentityReaderAdapter:
                 translated ``InstagramFailure`` with preserved metadata so callers
                 can distinguish auth/challenge/2FA/transient failures.
         """
-        check_rate_limit(account_id)
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             account = client.account_info()
@@ -147,9 +145,7 @@ class InstagramIdentityReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to get User object
@@ -195,9 +191,7 @@ class InstagramIdentityReaderAdapter:
         Raises:
             ValueError: If account not found or client not authenticated.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             # Call vendor method to get User object
@@ -250,9 +244,7 @@ class InstagramIdentityReaderAdapter:
                 not found on Instagram.
             InstagramRateLimitError: If Instagram responds with rate-limit signals.
         """
-        client = self.client_repo.get(account_id)
-        if not client:
-            raise ValueError(f"Account {account_id} not found or not authenticated")
+        client = get_guarded_client(self.client_repo, account_id)
 
         try:
             user_id = client.user_id_from_username(username)
