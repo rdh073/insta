@@ -85,22 +85,22 @@ export function Modal({ open, onClose, title, children, className }: Props) {
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      <div className="absolute inset-0 bg-[rgba(5,8,16,0.76)] backdrop-blur-md" onClick={onClose} />
+      <div className="absolute inset-0 bg-[rgba(8,12,20,0.78)] backdrop-blur-md" onClick={onClose} />
 
       <div
         ref={dialogRef}
         className={cn(
           'glass-panel glass-panel-strong relative z-10 w-full max-w-xl rounded-[2rem]',
-          'shadow-[0_34px_90px_rgba(4,8,18,0.62),0_0_0_1px_rgba(125,207,255,0.05)]',
+          'shadow-[0_34px_90px_rgba(4,8,18,0.62),0_0_0_1px_var(--color-info-bg)]',
           className,
         )}
       >
-        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)]" />
+        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-surface-overlay-strong),transparent)]" />
 
-        <div className="flex items-center justify-between border-b border-[rgba(162,179,229,0.12)] px-5 py-4 sm:px-6">
+        <div className="flex items-center justify-between border-b border-[var(--color-border-faint)] px-5 py-4 sm:px-6">
           <div>
             <p className="text-kicker">Control Surface</p>
-            <h2 id="modal-title" className="mt-1 text-base font-semibold text-[#eef4ff]">
+            <h2 id="modal-title" className="mt-1 text-base font-semibold text-[var(--color-text-strong)]">
               {title}
             </h2>
           </div>
@@ -108,7 +108,7 @@ export function Modal({ open, onClose, title, children, className }: Props) {
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] text-[#9aa7cf] transition-colors duration-150 hover:border-[rgba(125,207,255,0.28)] hover:text-[#eef4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7dcfff]/55"
+            className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] transition-colors duration-150 hover:border-[var(--color-info-border)] hover:text-[var(--color-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
             aria-label="Close modal"
           >
             <X className="h-4 w-4" />

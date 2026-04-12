@@ -42,20 +42,20 @@ function StatCard({
 }) {
   const toneClasses =
     tone === 'green'
-      ? 'text-[#9ece6a] border-[rgba(158,206,106,0.18)] bg-[rgba(158,206,106,0.12)]'
+      ? 'text-[var(--color-success-fg)] border-[var(--color-success-border)] bg-[var(--color-success-bg)]'
       : tone === 'violet'
-        ? 'text-[#bb9af7] border-[rgba(187,154,247,0.18)] bg-[rgba(187,154,247,0.12)]'
+        ? 'text-[var(--color-accent-violet)] border-[var(--color-info-border)] bg-[var(--color-accent-violet-bg-soft)]'
         : tone === 'rose'
-          ? 'text-[#f7768e] border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.12)]'
-          : 'text-[#7dcfff] border-[rgba(125,207,255,0.18)] bg-[rgba(125,207,255,0.12)]';
+          ? 'text-[var(--color-error-fg)] border-[var(--color-error-border)] bg-[var(--color-error-bg)]'
+          : 'text-[var(--color-info-fg)] border-[var(--color-info-border)] bg-[var(--color-info-bg)]';
 
   return (
     <Card glow className="p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-kicker !text-[0.62rem]">{label}</p>
-          <p className="mt-3 text-3xl font-semibold text-[#eef4ff]">{value}</p>
-          {sub && <p className="mt-2 text-sm text-[#8e9ac0]">{sub}</p>}
+          <p className="mt-3 text-3xl font-semibold text-[var(--color-text-strong)]">{value}</p>
+          {sub && <p className="mt-2 text-sm text-[var(--color-text-muted)]">{sub}</p>}
         </div>
         <div className={`flex h-12 w-12 items-center justify-center rounded-[1.2rem] border ${toneClasses}`}>
           <Icon className="h-5 w-5" />
@@ -81,12 +81,12 @@ function MetricBar({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-        <span className="text-[#8e9ac0]">{label}</span>
-        <span className="font-mono text-[#eef4ff]">
-          {value} <span className="text-[#7f8bb3]">({percent}%)</span>
+        <span className="text-[var(--color-text-muted)]">{label}</span>
+        <span className="font-mono text-[var(--color-text-strong)]">
+          {value} <span className="text-[var(--color-text-muted)]">({percent}%)</span>
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[rgba(255,255,255,0.05)]">
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-overlay)]">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${percent}%`, background: color }} />
       </div>
     </div>
@@ -95,9 +95,9 @@ function MetricBar({
 
 function JobsBarChart({ data }: { data: DashboardData['jobs_today'] | null }) {
   const bars = [
-    { label: 'Completed', value: data?.completed ?? 0, color: '#9ece6a' },
-    { label: 'Partial', value: data?.partial ?? 0, color: '#e0af68' },
-    { label: 'Failed', value: data?.failed ?? 0, color: '#f7768e' },
+    { label: 'Completed', value: data?.completed ?? 0, color: 'var(--color-success-fg)' },
+    { label: 'Partial', value: data?.partial ?? 0, color: 'var(--color-warning-fg)' },
+    { label: 'Failed', value: data?.failed ?? 0, color: 'var(--color-error-fg)' },
   ];
   const max = Math.max(...bars.map((bar) => bar.value), 1);
 
@@ -106,8 +106,8 @@ function JobsBarChart({ data }: { data: DashboardData['jobs_today'] | null }) {
       <div className="flex min-h-[13rem] items-end gap-4">
         {bars.map((bar) => (
           <div key={bar.label} className="flex flex-1 flex-col items-center gap-3">
-            <span className="font-mono text-sm text-[#eef4ff]">{bar.value}</span>
-            <div className="flex w-full items-end rounded-t-[1rem] bg-[rgba(255,255,255,0.03)]">
+            <span className="font-mono text-sm text-[var(--color-text-strong)]">{bar.value}</span>
+            <div className="flex w-full items-end rounded-t-[1rem] bg-[var(--color-surface-overlay-soft)]">
               <div
                 className="w-full rounded-t-[1rem] transition-all duration-700"
                 style={{
@@ -118,7 +118,7 @@ function JobsBarChart({ data }: { data: DashboardData['jobs_today'] | null }) {
                 }}
               />
             </div>
-            <span className="text-xs text-[#8e9ac0]">{bar.label}</span>
+            <span className="text-xs text-[var(--color-text-muted)]">{bar.label}</span>
           </div>
         ))}
       </div>
@@ -134,16 +134,16 @@ function AccountRow({
   rank: number;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-[1.2rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-4 py-3">
-      <span className="w-6 text-center font-mono text-xs text-[#7f8bb3]">#{rank}</span>
-      <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[rgba(125,207,255,0.16)] bg-[linear-gradient(135deg,rgba(122,162,247,0.22),rgba(125,207,255,0.12)_60%,rgba(187,154,247,0.18))] text-sm font-semibold uppercase text-[#eef4ff]">
+    <div className="flex items-center gap-3 rounded-[1.2rem] border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] px-4 py-3">
+      <span className="w-6 text-center font-mono text-xs text-[var(--color-text-muted)]">#{rank}</span>
+      <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[var(--color-info-border)] bg-[linear-gradient(135deg,rgba(0,120,212,0.24),var(--color-info-bg)_60%,rgba(187,154,247,0.18))] text-sm font-semibold uppercase text-[var(--color-text-strong)]">
         {account.username[0]}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-[#eef4ff]">@{account.username}</p>
-        <p className="mt-1 text-xs text-[#8e9ac0]">{account.status}</p>
+        <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">@{account.username}</p>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{account.status}</p>
       </div>
-      <span className="font-mono text-sm text-[#eef4ff]">
+      <span className="font-mono text-sm text-[var(--color-text-strong)]">
         {account.followers > 0 ? account.followers.toLocaleString() : '—'}
       </span>
     </div>
@@ -153,21 +153,21 @@ function AccountRow({
 function RecentJobRow({ job }: { job: PostJob }) {
   const statusColor =
     job.status === 'completed'
-      ? '#9ece6a'
+      ? 'var(--color-success-fg)'
       : job.status === 'failed'
-        ? '#f7768e'
+        ? 'var(--color-error-fg)'
         : job.status === 'partial'
-          ? '#e0af68'
-          : '#7dcfff';
+          ? 'var(--color-warning-fg)'
+          : 'var(--color-info-fg)';
 
   return (
-    <div className="flex items-center gap-3 rounded-[1.2rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-4 py-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)]">
-        <Calendar className="h-4 w-4 text-[#7dcfff]" />
+    <div className="flex items-center gap-3 rounded-[1.2rem] border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] px-4 py-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)]">
+        <Calendar className="h-4 w-4 text-[var(--color-info-fg)]" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-[#eef4ff]">{job.caption?.slice(0, 56) || 'Untitled post'}</p>
-        <p className="mt-1 text-xs text-[#8e9ac0]">
+        <p className="truncate text-sm text-[var(--color-text-strong)]">{job.caption?.slice(0, 56) || 'Untitled post'}</p>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           {job.targets?.length ?? 0} account{(job.targets?.length ?? 0) !== 1 ? 's' : ''}
         </p>
       </div>
@@ -191,15 +191,15 @@ function ErrorAccountRow({
   onRelogin: () => void;
 }) {
   return (
-    <div className="rounded-[1.25rem] border border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.08)] p-4">
+    <div className="rounded-[1.25rem] border border-[var(--color-error-border)] bg-[var(--color-error-bg)] p-4">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.12)] text-sm font-semibold uppercase text-[#ffd0d8]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-[var(--color-error-border)] bg-[var(--color-error-bg)] text-sm font-semibold uppercase text-[var(--color-text-strong)]">
           {account.username[0]}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#eef4ff]">@{account.username}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">@{account.username}</p>
           {account.proxy && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-[#ffccd6]">
+            <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-text-primary)]">
               <Globe className="h-3 w-3" />
               {account.proxy}
             </p>
@@ -268,7 +268,7 @@ export function DashboardPage() {
         eyebrow="Realtime Monitoring"
         title="Fleet Dashboard"
         description="A live view across connected identities, job outcomes, and error buckets so operators can spot drift before it compounds."
-        icon={<TrendingUp className="h-6 w-6 text-[#7dcfff]" />}
+        icon={<TrendingUp className="h-6 w-6 text-[var(--color-info-fg)]" />}
         actions={
           <Button variant="secondary" size="sm" onClick={() => void load()} loading={loading}>
             <RefreshCw className="h-4 w-4" />
@@ -308,7 +308,7 @@ export function DashboardPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-kicker">Job Flow</p>
-              <h2 className="mt-2 text-xl font-semibold text-[#eef4ff]">Posts today</h2>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-strong)]">Posts today</h2>
             </div>
             <span className="glass-chip">Total {data?.jobs_today?.total ?? 0}</span>
           </div>
@@ -319,13 +319,13 @@ export function DashboardPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-kicker">Leaderboard</p>
-              <h2 className="mt-2 text-xl font-semibold text-[#eef4ff]">Top accounts</h2>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-strong)]">Top accounts</h2>
             </div>
-            <TrendingUp className="h-4 w-4 text-[#9ece6a]" />
+            <TrendingUp className="h-4 w-4 text-[var(--color-success-fg)]" />
           </div>
 
           {(data?.top_accounts?.length ?? 0) === 0 ? (
-            <div className="rounded-[1.35rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] p-6 text-sm text-[#8e9ac0]">
+            <div className="rounded-[1.35rem] border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] p-6 text-sm text-[var(--color-text-muted)]">
               No accounts yet.
             </div>
           ) : (
@@ -343,13 +343,13 @@ export function DashboardPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-kicker">Queue Snapshot</p>
-              <h2 className="mt-2 text-xl font-semibold text-[#eef4ff]">Recent jobs</h2>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-strong)]">Recent jobs</h2>
             </div>
-            <Activity className="h-4 w-4 text-[#7dcfff]" />
+            <Activity className="h-4 w-4 text-[var(--color-info-fg)]" />
           </div>
 
           {(data?.recent_jobs?.length ?? 0) === 0 ? (
-            <div className="rounded-[1.35rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] p-6 text-sm text-[#8e9ac0]">
+            <div className="rounded-[1.35rem] border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] p-6 text-sm text-[var(--color-text-muted)]">
               No recent jobs.
             </div>
           ) : (
@@ -365,14 +365,14 @@ export function DashboardPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-kicker">Fleet Balance</p>
-              <h2 className="mt-2 text-xl font-semibold text-[#eef4ff]">Breakdown</h2>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-strong)]">Breakdown</h2>
             </div>
-            <Zap className="h-4 w-4 text-[#e0af68]" />
+            <Zap className="h-4 w-4 text-[var(--color-warning-fg)]" />
           </div>
 
-          <MetricBar label="Active" value={stats?.active ?? 0} total={total} color="linear-gradient(90deg,#9ece6a,#7dcfff)" />
-          <MetricBar label="Idle" value={stats?.idle ?? 0} total={total} color="linear-gradient(90deg,#bb9af7,#7aa2f7)" />
-          <MetricBar label="Errors" value={stats?.error ?? 0} total={total} color="linear-gradient(90deg,#f7768e,#e0af68)" />
+          <MetricBar label="Active" value={stats?.active ?? 0} total={total} color="linear-gradient(90deg,var(--color-success-fg),var(--color-info-fg))" />
+          <MetricBar label="Idle" value={stats?.idle ?? 0} total={total} color="linear-gradient(90deg,var(--color-accent-violet),var(--color-accent-blue-soft))" />
+          <MetricBar label="Errors" value={stats?.error ?? 0} total={total} color="linear-gradient(90deg,var(--color-error-fg),var(--color-warning-fg))" />
         </Card>
       </div>
 
@@ -381,13 +381,13 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <p className="text-kicker">Exception Queue</p>
-              <h2 className="mt-2 text-xl font-semibold text-[#eef4ff]">
-                Needs attention <span className="text-[#f7768e]">({data!.error_accounts.length})</span>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-strong)]">
+                Needs attention <span className="text-[var(--color-error-fg)]">({data!.error_accounts.length})</span>
               </h2>
             </div>
             <a
               href="/"
-              className="ml-auto inline-flex items-center gap-2 text-sm font-medium text-[#8e9ac0] transition-colors duration-200 hover:text-[#eef4ff]"
+              className="ml-auto inline-flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors duration-200 hover:text-[var(--color-text-strong)]"
             >
               Manage accounts
               <ArrowUpRight className="h-4 w-4" />

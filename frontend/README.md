@@ -2,6 +2,11 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## Theme Tokens
+
+- VS Code dark-inspired color schema and token conventions are documented in [`docs/theme-tokens.md`](./docs/theme-tokens.md).
+- Primary token source lives in [`src/index.css`](./src/index.css) (`--color-vscode-*`, `--color-*`, and compatibility aliases).
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)

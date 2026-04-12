@@ -18,12 +18,12 @@ interface HeaderStatProps {
 }
 
 const statTones: Record<NonNullable<HeaderStatProps['tone']>, string> = {
-  blue: 'text-[#7aa2f7]',
-  cyan: 'text-[#7dcfff]',
-  green: 'text-[#9ece6a]',
-  violet: 'text-[#bb9af7]',
-  amber: 'text-[#e0af68]',
-  rose: 'text-[#f7768e]',
+  blue: 'text-[var(--color-accent-blue-soft)]',
+  cyan: 'text-[var(--color-info-fg)]',
+  green: 'text-[var(--color-success-fg)]',
+  violet: 'text-[var(--color-accent-violet)]',
+  amber: 'text-[var(--color-warning-fg)]',
+  rose: 'text-[var(--color-error-fg)]',
 };
 
 export function PageHeader({
@@ -41,14 +41,14 @@ export function PageHeader({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             {icon && (
-              <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.9rem] border-[rgba(125,207,255,0.2)]">
+              <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.9rem] border-[var(--color-info-border)]">
                 {icon && <span className="scale-75">{icon}</span>}
               </div>
             )}
             <div className="min-w-0">
               {eyebrow && <p className="text-kicker !text-[0.6rem]">{eyebrow}</p>}
-              <h1 className={cn('font-semibold text-[#eef4ff] text-base sm:text-lg leading-tight', eyebrow && 'mt-0.5')}>{title}</h1>
-              <p className="mt-1 text-sm text-[#8b98bd]">{description}</p>
+              <h1 className={cn('font-semibold text-[var(--color-text-strong)] text-base sm:text-lg leading-tight', eyebrow && 'mt-0.5')}>{title}</h1>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">{description}</p>
             </div>
           </div>
 

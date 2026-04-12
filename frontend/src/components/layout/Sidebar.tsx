@@ -90,8 +90,8 @@ function NavItem({
         cn(
           'group flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-all duration-200',
           isActive
-            ? 'border-[rgba(125,207,255,0.24)] bg-[linear-gradient(135deg,rgba(122,162,247,0.16),rgba(125,207,255,0.10)_55%,rgba(187,154,247,0.10))] text-[#f5f7ff]'
-            : 'border-transparent text-[#7a8aae] hover:border-[rgba(162,179,229,0.12)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d8e4ff]',
+            ? 'border-[var(--color-info-border)] bg-[linear-gradient(135deg,rgba(0,120,212,0.24),rgba(79,193,255,0.14)_55%,rgba(187,154,247,0.12))] text-[var(--color-text-strong)]'
+            : 'border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-faint)] hover:bg-[var(--color-surface-overlay)] hover:text-[var(--color-text-primary)]',
         )
       }
     >
@@ -101,8 +101,8 @@ function NavItem({
             className={cn(
               'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors duration-200',
               isActive
-                ? 'border-[rgba(125,207,255,0.24)] bg-[rgba(125,207,255,0.12)] text-[#cfeeff]'
-                : 'border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] text-[#6a7aa0] group-hover:text-[#c8d8ff]',
+                ? 'border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-[var(--color-info-fg)]'
+                : 'border-[var(--color-border-fainter)] bg-[var(--color-surface-overlay-soft)] text-[var(--color-text-subtle)] group-hover:text-[var(--color-text-primary)]',
             )}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -127,35 +127,35 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
 
   return (
     <>
-      <div className="sticky top-0 z-40 border-b border-[rgba(162,179,229,0.12)] bg-[rgba(9,12,22,0.90)] backdrop-blur-2xl lg:hidden">
+      <div className="sticky top-0 z-40 border-b border-[var(--color-border-faint)] bg-[rgba(11,15,24,0.90)] backdrop-blur-2xl lg:hidden">
         {/* Top bar: brand + status + hamburger */}
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.04)] text-[#7a8aae] transition-colors hover:text-[#d8e4ff]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
               aria-label="Open navigation menu"
             >
               <Menu className="h-4 w-4" />
             </button>
-            <p className="truncate text-sm font-semibold text-[#f4f7ff]">Insta Console</p>
+            <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">Insta Console</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {activeJobs > 0 && (
-              <span className="rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
+              <span className="rounded-full bg-[rgba(86,156,214,0.16)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent-blue-soft)]">
                 {activeJobs}
               </span>
             )}
             <span className="glass-chip !px-2 !py-1 !text-[11px]">
-              <span className={cn('h-1.5 w-1.5 rounded-full bg-[#9ece6a]', syncing && 'animate-pulse')} />
+              <span className={cn('h-1.5 w-1.5 rounded-full bg-[var(--color-success-fg)]', syncing && 'animate-pulse')} />
               {syncing ? 'Sync' : 'Live'}
             </span>
           </div>
         </div>
 
         {/* Bottom tab bar: 5 primary Control items */}
-        <nav className="flex border-t border-[rgba(162,179,229,0.08)]" aria-label="Mobile navigation">
+        <nav className="flex border-t border-[var(--color-border-fainter)]" aria-label="Mobile navigation">
           {navGroups[0].items.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -164,13 +164,13 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
               className={({ isActive }) =>
                 cn(
                   'flex flex-1 cursor-pointer flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors duration-200',
-                  isActive ? 'text-[#7dcfff]' : 'text-[#5a6a90] hover:text-[#c0caf5]',
+                  isActive ? 'text-[var(--color-info-fg)]' : 'text-[var(--color-text-disabled)] hover:text-[var(--color-text-primary)]',
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <Icon className={cn('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(125,207,255,0.6)]')} />
+                  <Icon className={cn('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(79,193,255,0.55)]')} />
                   <span className="truncate">{label}</span>
                 </>
               )}
@@ -184,26 +184,26 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
         <div className="fixed inset-0 z-50 lg:hidden">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-[rgba(4,8,18,0.72)] backdrop-blur-sm"
+            className="absolute inset-0 bg-[rgba(6,10,18,0.74)] backdrop-blur-sm"
             onClick={() => setDrawerOpen(false)}
           />
           {/* Drawer panel */}
-          <aside className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-[rgba(162,179,229,0.12)] bg-[rgba(8,10,18,0.96)] px-3 py-4 backdrop-blur-2xl">
+          <aside className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-[var(--color-border-faint)] bg-[rgba(10,14,22,0.96)] px-3 py-4 backdrop-blur-2xl">
             {/* Drawer header */}
             <div className="mb-4 flex items-center justify-between gap-2 px-1">
               <div className="flex min-w-0 items-center gap-2.5">
-                <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-[rgba(125,207,255,0.22)]">
-                  <Waves className="h-4 w-4 text-[#7dcfff]" />
+                <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-[var(--color-info-border)]">
+                  <Waves className="h-4 w-4 text-[var(--color-info-fg)]" />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#f5f8ff]">Insta Console</p>
-                  <p className="truncate text-[11px] text-[#6a7aa0]">{backendLabel}</p>
+                  <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">Insta Console</p>
+                  <p className="truncate text-[11px] text-[var(--color-text-subtle)]">{backendLabel}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.04)] text-[#7a8aae] transition-colors hover:text-[#d8e4ff]"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
                 aria-label="Close navigation menu"
               >
                 <X className="h-4 w-4" />
@@ -214,7 +214,7 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
             <nav className="flex-1 overflow-y-auto" aria-label="Full navigation">
               {navGroups.map((group, index) => (
                 <section key={group.label} className={cn(index > 0 && 'mt-4')}>
-                  <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-[#4a5578]">{group.label}</p>
+                  <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-disabled)]">{group.label}</p>
                   <div className="space-y-0.5">
                     {group.items.map((item) => (
                       <NavLink
@@ -226,8 +226,8 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
                           cn(
                             'group flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-all duration-200',
                             isActive
-                              ? 'border-[rgba(125,207,255,0.24)] bg-[linear-gradient(135deg,rgba(122,162,247,0.16),rgba(125,207,255,0.10)_55%,rgba(187,154,247,0.10))] text-[#f5f7ff]'
-                              : 'border-transparent text-[#7a8aae] hover:border-[rgba(162,179,229,0.12)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d8e4ff]',
+                              ? 'border-[var(--color-info-border)] bg-[linear-gradient(135deg,rgba(0,120,212,0.24),rgba(79,193,255,0.14)_55%,rgba(187,154,247,0.12))] text-[var(--color-text-strong)]'
+                              : 'border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-faint)] hover:bg-[var(--color-surface-overlay)] hover:text-[var(--color-text-primary)]',
                           )
                         }
                       >
@@ -237,8 +237,8 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
                               className={cn(
                                 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors duration-200',
                                 isActive
-                                  ? 'border-[rgba(125,207,255,0.24)] bg-[rgba(125,207,255,0.12)] text-[#cfeeff]'
-                                  : 'border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] text-[#6a7aa0] group-hover:text-[#c8d8ff]',
+                                  ? 'border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-[var(--color-info-fg)]'
+                                  : 'border-[var(--color-border-fainter)] bg-[var(--color-surface-overlay-soft)] text-[var(--color-text-subtle)] group-hover:text-[var(--color-text-primary)]',
                               )}
                             >
                               <item.icon className="h-3.5 w-3.5" />
@@ -254,10 +254,10 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
             </nav>
 
             {/* Footer */}
-            <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
-              <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
+            <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-fainter)] px-1 pt-3">
+              <p className="min-w-0 flex-1 truncate text-[11px] text-[var(--color-text-disabled)]">{providerLabel}</p>
               {activeJobs > 0 && (
-                <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
+                <span className="shrink-0 rounded-full bg-[rgba(86,156,214,0.16)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent-blue-soft)]">
                   {activeJobs} jobs
                 </span>
               )}
@@ -266,7 +266,7 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
                   type="button"
                   onClick={handleLock}
                   title="Lock — return to password portal"
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.20)] bg-[rgba(247,118,142,0.06)] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.14)] cursor-pointer"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--color-error-border)] bg-[rgba(248,81,73,0.08)] text-[var(--color-error-fg)] transition-colors hover:bg-[rgba(248,81,73,0.16)] cursor-pointer"
                   aria-label="Lock session"
                 >
                   <Lock className="h-3 w-3" />
@@ -278,20 +278,20 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
       )}
 
 
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[rgba(162,179,229,0.12)] bg-[rgba(8,10,18,0.72)] px-3 py-4 backdrop-blur-2xl lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[var(--color-border-faint)] bg-[rgba(10,14,22,0.76)] px-3 py-4 backdrop-blur-2xl lg:flex">
         {/* Compact brand row */}
         <div className="mb-4 flex items-center justify-between gap-2 px-1">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-[rgba(125,207,255,0.22)]">
-              <Waves className="h-4 w-4 text-[#7dcfff]" />
+            <div className="glass-panel glass-panel-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-[var(--color-info-border)]">
+              <Waves className="h-4 w-4 text-[var(--color-info-fg)]" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#f5f8ff]">Insta Console</p>
-              <p className="truncate text-[11px] text-[#6a7aa0]">{backendLabel}</p>
+              <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">Insta Console</p>
+              <p className="truncate text-[11px] text-[var(--color-text-subtle)]">{backendLabel}</p>
             </div>
           </div>
           <span className="glass-chip shrink-0 !px-2 !py-1 !text-[11px]">
-            <span className={cn('h-1.5 w-1.5 rounded-full bg-[#9ece6a]', syncing && 'animate-pulse')} />
+            <span className={cn('h-1.5 w-1.5 rounded-full bg-[var(--color-success-fg)]', syncing && 'animate-pulse')} />
             {syncing ? 'Sync' : 'Live'}
           </span>
         </div>
@@ -299,7 +299,7 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
         <nav className="flex-1 overflow-y-auto" aria-label="Main navigation">
           {navGroups.map((group, index) => (
             <section key={group.label} className={cn(index > 0 && 'mt-4')}>
-              <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-[#4a5578]">{group.label}</p>
+              <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-disabled)]">{group.label}</p>
               <div className="space-y-0.5">
                 {group.items.map((item) => (
                   <NavItem key={item.to} {...item} />
@@ -310,10 +310,10 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
         </nav>
 
         {/* Footer: provider · active jobs · lock */}
-        <div className="mt-3 flex items-center gap-2 border-t border-[rgba(162,179,229,0.08)] px-1 pt-3">
-          <p className="min-w-0 flex-1 truncate text-[11px] text-[#4a5578]">{providerLabel}</p>
+        <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-fainter)] px-1 pt-3">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-[var(--color-text-disabled)]">{providerLabel}</p>
           {activeJobs > 0 && (
-            <span className="shrink-0 rounded-full bg-[rgba(122,162,247,0.14)] px-2 py-0.5 text-[11px] font-medium text-[#7aa2f7]">
+            <span className="shrink-0 rounded-full bg-[rgba(86,156,214,0.16)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent-blue-soft)]">
               {activeJobs} jobs
             </span>
           )}
@@ -322,7 +322,7 @@ export function Sidebar({ backendLabel, providerLabel, syncing, activeJobs }: Si
               type="button"
               onClick={handleLock}
               title="Lock — return to password portal"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[rgba(247,118,142,0.20)] bg-[rgba(247,118,142,0.06)] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.14)] cursor-pointer"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--color-error-border)] bg-[rgba(248,81,73,0.08)] text-[var(--color-error-fg)] transition-colors hover:bg-[rgba(248,81,73,0.16)] cursor-pointer"
               aria-label="Lock session"
             >
               <Lock className="h-3 w-3" />

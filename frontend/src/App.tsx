@@ -59,8 +59,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function RouteLoader() {
   return (
     <div className="page-shell flex min-h-screen max-w-5xl items-center justify-center">
-      <div className="glass-panel glass-panel-strong flex min-w-[18rem] items-center gap-3 rounded-[1.75rem] px-5 py-4 text-sm text-[#dce6ff]">
-        <Loader2 className="h-4 w-4 animate-spin text-[#7dcfff]" />
+      <div className="glass-panel glass-panel-strong flex min-w-[18rem] items-center gap-3 rounded-[1.75rem] px-5 py-4 text-sm text-[var(--color-text-primary)]">
+        <Loader2 className="h-4 w-4 animate-spin text-[var(--color-info-fg)]" />
         Loading control deck…
       </div>
     </div>

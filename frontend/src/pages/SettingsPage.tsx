@@ -22,7 +22,7 @@ export function SettingsPage() {
         eyebrow="Control Plane"
         title="System Settings"
         description="Backend routing, AI provider credentials, and model defaults."
-        icon={<ShieldCheck className="h-6 w-6 text-[#7dcfff]" />}
+        icon={<ShieldCheck className="h-6 w-6 text-[var(--color-info-fg)]" />}
       >
         <div className="metric-grid">
           <HeaderStat label="Backend" value={backendLabel || 'Same origin'} tone="cyan" />

@@ -15,14 +15,14 @@ export function ModelSettingsCard({ provider, model, setModel }: Props) {
   return (
     <Card className="space-y-5" id="settings-model">
       <div className="flex items-start gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.85rem] bg-[rgba(122,162,247,0.12)]">
-          <Cpu className="h-4 w-4 text-[#7aa2f7]" aria-hidden="true" />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.85rem] bg-[var(--color-accent-blue-bg)]">
+          <Cpu className="h-4 w-4 text-[var(--color-accent-blue-soft)]" aria-hidden="true" />
         </div>
         <div>
           <p className="text-kicker">Model Defaults</p>
-          <h2 className="mt-1 text-base font-semibold text-[#eef4ff]">Runtime model</h2>
-          <p className="mt-1 text-sm text-[#8e9ac0]">
-            Default model for <span className="text-[#bb9af7]">{cfg.label}</span>. Can be
+          <h2 className="mt-1 text-base font-semibold text-[var(--color-text-strong)]">Runtime model</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Default model for <span className="text-[var(--color-accent-violet)]">{cfg.label}</span>. Can be
             overridden per-conversation in the copilot.
           </p>
         </div>
@@ -60,7 +60,7 @@ export function ModelSettingsCard({ provider, model, setModel }: Props) {
               {!cfg.models.includes(model) && <option value={model}>{model}</option>}
             </select>
             <ChevronDown
-              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7f8bb3]"
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]"
               aria-hidden="true"
             />
           </div>
@@ -81,10 +81,10 @@ export function ModelSettingsCard({ provider, model, setModel }: Props) {
                 className={cn(
                   'cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150',
                   'min-h-[2.25rem]',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7dcfff]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-canvas)]',
                   m === model
-                    ? 'border border-[rgba(125,207,255,0.32)] bg-[rgba(125,207,255,0.12)] text-[#7dcfff]'
-                    : 'border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] text-[#7f8bb3] hover:border-[rgba(162,179,229,0.20)] hover:text-[#b0bae0]',
+                    ? 'border border-[var(--color-info-border)] bg-[var(--color-info-bg)] text-[var(--color-info-fg)]'
+                    : 'border border-[var(--color-border-fainter)] bg-[var(--color-surface-overlay-soft)] text-[var(--color-text-muted)] hover:border-[var(--color-border-muted)] hover:text-[var(--color-text-primary)]',
                 )}
               >
                 {m}

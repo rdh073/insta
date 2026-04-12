@@ -13,11 +13,11 @@ export function Card({ className, children, glow = false, ...props }: Props) {
       className={cn(
         'glass-panel rounded-[1.65rem] p-5 sm:p-6',
         'transition-[transform,border-color,box-shadow] duration-200',
-        glow && 'hover:border-[rgba(125,207,255,0.30)] hover:bg-[rgba(24,31,52,0.66)]',
+        glow && 'hover:border-[var(--color-info-border)] hover:bg-[rgba(33,40,58,0.72)]',
         className,
       )}
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.10),transparent)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-surface-overlay-strong),transparent)]" />
       {children}
     </div>
   );

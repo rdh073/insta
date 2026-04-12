@@ -113,10 +113,10 @@ export function AppLayout() {
   const activeJobs = jobs.filter((job) => ['pending', 'running', 'scheduled'].includes(job.status)).length;
 
   return (
-    <div className="relative min-h-screen overflow-hidden text-[#c0caf5]">
+    <div className="relative min-h-screen overflow-hidden text-[var(--color-text-primary)]">
       <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute -left-32 top-0 h-[38rem] w-[38rem] rounded-full bg-[radial-gradient(circle,rgba(125,207,255,0.14),transparent_68%)] blur-3xl" />
-        <div className="absolute right-[-9rem] top-[8rem] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(122,162,247,0.16),transparent_68%)] blur-3xl" />
+        <div className="absolute -left-32 top-0 h-[38rem] w-[38rem] rounded-full bg-[radial-gradient(circle,rgba(79,193,255,0.14),transparent_68%)] blur-3xl" />
+        <div className="absolute right-[-9rem] top-[8rem] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(0,120,212,0.16),transparent_68%)] blur-3xl" />
         <div className="absolute bottom-[-12rem] left-[26%] h-[34rem] w-[34rem] rounded-full bg-[radial-gradient(circle,rgba(187,154,247,0.18),transparent_70%)] blur-3xl" />
       </div>
 
@@ -129,27 +129,27 @@ export function AppLayout() {
         />
 
         <main className="min-w-0 flex-1 flex flex-col overflow-hidden">
-          <header className="shrink-0 border-b border-[rgba(162,179,229,0.12)] bg-[rgba(9,12,22,0.82)] backdrop-blur-2xl z-30">
+          <header className="z-30 shrink-0 border-b border-[var(--color-border-faint)] bg-[rgba(11,15,24,0.84)] backdrop-blur-2xl">
             <div className="page-shell !max-w-[120rem] py-2.5">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="hidden lg:block shrink-0">
                     <div className="glass-chip">
-                      <Waves className="h-3 w-3 text-[#7dcfff]" />
+                      <Waves className="h-3 w-3 text-[var(--color-info-fg)]" />
                       {currentMeta.label}
                     </div>
                   </div>
-                  <p className="truncate text-sm font-semibold text-[#eef4ff]">{currentMeta.title}</p>
+                  <p className="truncate text-sm font-semibold text-[var(--color-text-strong)]">{currentMeta.title}</p>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="glass-chip">
-                    <span className={`h-1.5 w-1.5 rounded-full bg-[#9ece6a] ${syncing ? 'animate-pulse' : ''}`} />
+                    <span className={`h-1.5 w-1.5 rounded-full bg-[var(--color-success-fg)] ${syncing ? 'animate-pulse' : ''}`} />
                     {syncing ? 'Syncing' : 'Live'}
                   </span>
                   {activeJobs > 0 && (
                     <span className="glass-chip">
-                      <Zap className="h-3 w-3 text-[#7aa2f7]" />
+                      <Zap className="h-3 w-3 text-[var(--color-accent-blue-soft)]" />
                       {activeJobs}
                     </span>
                   )}
@@ -164,7 +164,7 @@ export function AppLayout() {
           {connectionLost && (
             <div
               role="alert"
-              className="shrink-0 flex items-center gap-2 border-b border-[rgba(247,118,142,0.18)] bg-[rgba(247,118,142,0.08)] px-4 py-2 text-sm text-[#f7768e]"
+              className="flex shrink-0 items-center gap-2 border-b border-[var(--color-error-border)] bg-[var(--color-error-bg)] px-4 py-2 text-sm text-[var(--color-error-fg)]"
             >
               <AlertTriangle className="h-4 w-4 shrink-0" />
               <span>
@@ -172,7 +172,7 @@ export function AppLayout() {
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="cursor-pointer underline underline-offset-2 hover:text-[#ff9db0]"
+                  className="cursor-pointer underline underline-offset-2 hover:text-[var(--color-text-strong)]"
                 >
                   Reload
                 </button>
@@ -190,17 +190,17 @@ export function AppLayout() {
         position="top-right"
         toastOptions={{
           style: {
-            background: 'linear-gradient(180deg, rgba(18,24,39,0.94), rgba(10,14,24,0.92))',
-            color: '#eef4ff',
-            border: '1px solid rgba(162,179,229,0.16)',
+            background: 'linear-gradient(180deg, rgba(22, 28, 42, 0.95), rgba(12, 17, 28, 0.93))',
+            color: 'var(--color-text-strong)',
+            border: '1px solid var(--color-border-subtle)',
             backdropFilter: 'blur(24px)',
             boxShadow: '0 24px 60px rgba(4,8,18,0.42)',
             fontFamily: 'Fira Sans, sans-serif',
             fontSize: '14px',
             borderRadius: '18px',
           },
-          success: { iconTheme: { primary: '#9ece6a', secondary: '#0b1020' } },
-          error: { iconTheme: { primary: '#f7768e', secondary: '#0b1020' } },
+          success: { iconTheme: { primary: 'var(--color-success-fg)', secondary: 'var(--color-bg-canvas)' } },
+          error: { iconTheme: { primary: 'var(--color-error-fg)', secondary: 'var(--color-bg-canvas)' } },
         }}
       />
     </div>

@@ -45,17 +45,17 @@ export function ProviderAccessCard({
   const nearExpiry = isNearExpiry(expiresAtMs);
 
   return (
-    <div className="space-y-4 rounded-[1.25rem] border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.02)] p-4">
+    <div className="space-y-4 rounded-[1.25rem] border border-[var(--color-border-fainter)] bg-[var(--color-surface-overlay-soft)] p-4">
       {/* Section header */}
       <div className="flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[rgba(187,154,247,0.14)]">
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--color-accent-violet-bg)]">
           {isOAuthProvider ? (
-            <ShieldCheck className="h-3.5 w-3.5 text-[#bb9af7]" aria-hidden="true" />
+            <ShieldCheck className="h-3.5 w-3.5 text-[var(--color-accent-violet)]" aria-hidden="true" />
           ) : (
-            <Key className="h-3.5 w-3.5 text-[#bb9af7]" aria-hidden="true" />
+            <Key className="h-3.5 w-3.5 text-[var(--color-accent-violet)]" aria-hidden="true" />
           )}
         </div>
-        <p className="text-sm font-semibold text-[#dbe6ff]">
+        <p className="text-sm font-semibold text-[var(--color-text-primary)]">
           {cfg.label} &mdash; {isOAuthProvider ? 'OAuth' : 'API Key'}
         </p>
       </div>
@@ -84,7 +84,7 @@ export function ProviderAccessCard({
             placeholder={cfg.placeholder}
             hint={cfg.hint}
           />
-          <p className="text-xs text-[#59658c]">
+          <p className="text-xs text-[var(--color-text-subtle)]">
             API keys stay in browser localStorage and are forwarded only when you call the backend from this client.
           </p>
         </>
@@ -94,26 +94,26 @@ export function ProviderAccessCard({
           <div
             className={`flex items-start justify-between gap-3 rounded-[1rem] border p-3 ${
               nearExpiry
-                ? 'border-[rgba(224,175,104,0.20)] bg-[rgba(224,175,104,0.06)]'
-                : 'border-[rgba(158,206,106,0.16)] bg-[rgba(158,206,106,0.05)]'
+                ? 'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)]'
+                : 'border-[var(--color-success-border)] bg-[var(--color-success-bg)]'
             }`}
           >
             <div className="flex items-start gap-2">
               {nearExpiry ? (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#e0af68]" aria-hidden="true" />
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning-fg)]" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#9ece6a]" aria-hidden="true" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-success-fg)]" aria-hidden="true" />
               )}
               <div>
-                <p className={`text-sm font-medium ${nearExpiry ? 'text-[#e0af68]' : 'text-[#9ece6a]'}`}>
+                <p className={`text-sm font-medium ${nearExpiry ? 'text-[var(--color-warning-fg)]' : 'text-[var(--color-success-fg)]'}`}>
                   {nearExpiry ? 'Token expiring soon' : 'Connected'}
                 </p>
                 {accountId && (
-                  <p className="mt-0.5 text-xs text-[#8e9ac0]">Account: {accountId}</p>
+                  <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Account: {accountId}</p>
                 )}
-                <p className="mt-0.5 text-xs text-[#59658c]">{formatExpiry(expiresAtMs)}</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{formatExpiry(expiresAtMs)}</p>
                 {nearExpiry && (
-                  <p className="mt-1 text-xs text-[#e0af68]">
+                  <p className="mt-1 text-xs text-[var(--color-warning-fg)]">
                     Re-authenticate before the token expires. Auto-refresh is not yet supported.
                   </p>
                 )}
@@ -123,7 +123,7 @@ export function ProviderAccessCard({
               type="button"
               onClick={oauth.handleRevoke}
               disabled={oauth.busy}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#59658c] transition-colors hover:bg-[rgba(247,118,142,0.12)] hover:text-[#f7768e] disabled:opacity-40"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-error-bg)] hover:text-[var(--color-error-fg)] disabled:opacity-40"
               aria-label={`Disconnect ${cfg.label}`}
               title={`Disconnect ${cfg.label}`}
             >
@@ -169,7 +169,7 @@ export function ProviderAccessCard({
       ) : (
         /* ── Not connected state ─────────────────────────────────────── */
         <>
-          <p className="text-sm text-[#8e9ac0]">
+          <p className="text-sm text-[var(--color-text-muted)]">
             {provider === 'claude_code'
               ? 'Authorize in a browser window, then copy the code shown on the Anthropic page and paste it below.'
               : 'Authorize in a browser window. After login, the browser will redirect to localhost:1455 (connection refused is normal). Copy the full URL from the address bar and paste it below.'}
@@ -209,7 +209,7 @@ export function ProviderAccessCard({
             </Button>
           )}
 
-          <p className="text-xs text-[#59658c]">
+          <p className="text-xs text-[var(--color-text-subtle)]">
             OAuth credentials are exchanged through the dashboard API. Use durable SQL persistence
             and an ENCRYPTION_KEY in production.
           </p>

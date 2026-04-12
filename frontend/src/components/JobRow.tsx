@@ -25,8 +25,8 @@ export function JobRow({ job }: { job: PostJob }) {
   return (
     <Card glow className="space-y-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="flex-1 line-clamp-2 text-sm leading-relaxed text-[#dbe5ff]">
-          {job.caption || <span className="italic text-[#647196]">no caption</span>}
+        <p className="flex-1 line-clamp-2 text-sm leading-relaxed text-[var(--color-text-primary)]">
+          {job.caption || <span className="italic text-[var(--color-text-disabled)]">no caption</span>}
         </p>
         <div className="flex gap-1.5 items-center shrink-0">
           {job.status === 'running'     && <Badge variant="blue"><Loader className="w-3 h-3 animate-spin" />Running</Badge>}
@@ -45,7 +45,7 @@ export function JobRow({ job }: { job: PostJob }) {
                 type="button"
                 disabled={busy}
                 onClick={() => act(() => postsApi.pause(job.id), 'pause')}
-                className="cursor-pointer rounded-lg border border-[rgba(224,175,104,0.24)] bg-[rgba(224,175,104,0.1)] px-2 py-1 text-[11px] text-[#e0af68] transition-colors hover:bg-[rgba(224,175,104,0.18)] disabled:opacity-50"
+                className="cursor-pointer rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2 py-1 text-[11px] text-[var(--color-warning-fg)] transition-colors hover:bg-[rgba(224,175,104,0.2)] disabled:opacity-50"
                 title="Pause job"
               >
                 <Pause className="h-3 w-3" />
@@ -54,7 +54,7 @@ export function JobRow({ job }: { job: PostJob }) {
                 type="button"
                 disabled={busy}
                 onClick={() => act(() => postsApi.stop(job.id), 'stop')}
-                className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+                className="cursor-pointer rounded-lg border border-[var(--color-error-border)] bg-[var(--color-error-bg)] px-2 py-1 text-[11px] text-[var(--color-error-fg)] transition-colors hover:bg-[rgba(248,81,73,0.2)] disabled:opacity-50"
                 title="Stop job"
               >
                 <Square className="h-3 w-3" />
@@ -68,7 +68,7 @@ export function JobRow({ job }: { job: PostJob }) {
                 type="button"
                 disabled={busy}
                 onClick={() => act(() => postsApi.resume(job.id), 'resume')}
-                className="cursor-pointer rounded-lg border border-[rgba(158,206,106,0.24)] bg-[rgba(158,206,106,0.1)] px-2 py-1 text-[11px] text-[#9ece6a] transition-colors hover:bg-[rgba(158,206,106,0.18)] disabled:opacity-50"
+                className="cursor-pointer rounded-lg border border-[var(--color-success-border)] bg-[var(--color-success-bg)] px-2 py-1 text-[11px] text-[var(--color-success-fg)] transition-colors hover:bg-[rgba(158,206,106,0.2)] disabled:opacity-50"
                 title="Resume job"
               >
                 <Play className="h-3 w-3" />
@@ -77,7 +77,7 @@ export function JobRow({ job }: { job: PostJob }) {
                 type="button"
                 disabled={busy}
                 onClick={() => act(() => postsApi.stop(job.id), 'stop')}
-                className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+                className="cursor-pointer rounded-lg border border-[var(--color-error-border)] bg-[var(--color-error-bg)] px-2 py-1 text-[11px] text-[var(--color-error-fg)] transition-colors hover:bg-[rgba(248,81,73,0.2)] disabled:opacity-50"
                 title="Stop job"
               >
                 <Square className="h-3 w-3" />
@@ -90,7 +90,7 @@ export function JobRow({ job }: { job: PostJob }) {
               type="button"
               disabled={busy}
               onClick={() => act(() => postsApi.stop(job.id), 'stop')}
-              className="cursor-pointer rounded-lg border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.1)] px-2 py-1 text-[11px] text-[#f7768e] transition-colors hover:bg-[rgba(247,118,142,0.18)] disabled:opacity-50"
+              className="cursor-pointer rounded-lg border border-[var(--color-error-border)] bg-[var(--color-error-bg)] px-2 py-1 text-[11px] text-[var(--color-error-fg)] transition-colors hover:bg-[rgba(248,81,73,0.2)] disabled:opacity-50"
               title="Cancel job"
             >
               <Square className="h-3 w-3" />
@@ -99,11 +99,11 @@ export function JobRow({ job }: { job: PostJob }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 text-xs text-[#7f8bb3]">
+      <div className="flex flex-wrap gap-3 text-xs text-[var(--color-text-muted)]">
         <span>{job.targets.length} target{job.targets.length !== 1 ? 's' : ''}</span>
-        {successCount > 0 && <span className="text-[#9ece6a]">{successCount} posted</span>}
-        {failCount > 0    && <span className="text-[#f7768e]">{failCount} failed</span>}
-        <span className="ml-auto rounded-full border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 font-mono text-[11px] text-[#7f8bb3]">
+        {successCount > 0 && <span className="text-[var(--color-success-fg)]">{successCount} posted</span>}
+        {failCount > 0    && <span className="text-[var(--color-error-fg)]">{failCount} failed</span>}
+        <span className="ml-auto rounded-full border border-[var(--color-border-faint)] bg-[var(--color-surface-overlay)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text-muted)]">
           {new Date(job.createdAt).toLocaleString()}
         </span>
       </div>

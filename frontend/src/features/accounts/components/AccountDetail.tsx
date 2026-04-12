@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle, Clock, Globe, KeyRound, Lock, Loader, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Globe, KeyRound, Lock, RotateCcw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { accountsApi } from '../../../api/accounts';
 import type { RateLimitEntry } from '../../../api/accounts';

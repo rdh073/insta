@@ -91,8 +91,8 @@ export function SettingsWorkspace() {
             <Card className="space-y-5">
               <div>
                 <p className="text-kicker">AI Routing</p>
-                <h3 className="mt-2 text-base font-semibold text-[#eef4ff]">Provider selection</h3>
-                <p className="mt-1.5 text-sm text-[#8e9ac0]">
+                <h3 className="mt-2 text-base font-semibold text-[var(--color-text-strong)]">Provider selection</h3>
+                <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">
                   Pick the runtime provider and wire credentials or OAuth-managed access.
                 </p>
               </div>
@@ -133,13 +133,13 @@ export function SettingsWorkspace() {
           {/* Mobile save bar — shown only below xl breakpoint */}
           <div className="xl:hidden">
             <div className="glass-panel rounded-[1.65rem] p-4 space-y-3">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.10),transparent)]" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-surface-overlay-strong),transparent)]" />
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-[#8e9ac0]">
+                <p className="text-sm text-[var(--color-text-muted)]">
                   {draft.isDirty ? (
-                    <span className="text-[#e0af68]">Unsaved changes</span>
+                    <span className="text-[var(--color-warning-fg)]">Unsaved changes</span>
                   ) : (
-                    <span className="text-[#9ece6a]">Saved locally</span>
+                    <span className="text-[var(--color-success-fg)]">Saved locally</span>
                   )}
                 </p>
                 <Button onClick={draft.handleSave} disabled={!draft.isDirty}>

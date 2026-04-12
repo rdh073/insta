@@ -10,17 +10,17 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary:
-    'border border-[#7dcfff]/40 bg-[linear-gradient(135deg,rgba(122,162,247,0.92),rgba(125,207,255,0.92)_48%,rgba(187,154,247,0.88))] text-[#08111f] ' +
-    'shadow-[0_18px_36px_rgba(122,162,247,0.28),inset_0_1px_0_rgba(255,255,255,0.32)] ' +
-    'hover:brightness-105 hover:shadow-[0_20px_44px_rgba(122,162,247,0.34),inset_0_1px_0_rgba(255,255,255,0.36)] active:brightness-95',
+    'border border-[var(--color-info-border)] bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-blue)_52%,var(--color-accent-violet))] text-[var(--color-text-strong)] ' +
+    'shadow-[0_18px_36px_rgba(0,120,212,0.32),inset_0_1px_0_rgba(255,255,255,0.22)] ' +
+    'hover:brightness-105 hover:shadow-[0_20px_44px_rgba(0,120,212,0.38),inset_0_1px_0_rgba(255,255,255,0.28)] active:brightness-95',
   secondary:
-    'border border-[rgba(162,179,229,0.2)] bg-[rgba(255,255,255,0.06)] text-[#e8efff] ' +
-    'backdrop-blur-xl hover:border-[rgba(125,207,255,0.34)] hover:bg-[rgba(125,207,255,0.12)]',
+    'border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] text-[var(--color-text-primary)] ' +
+    'backdrop-blur-xl hover:border-[var(--color-info-border)] hover:bg-[var(--color-info-bg)]',
   ghost:
-    'border border-transparent bg-transparent text-[#95a3cb] hover:border-[rgba(162,179,229,0.16)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#f3f6ff]',
+    'border border-transparent bg-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-surface-overlay)] hover:text-[var(--color-text-strong)]',
   danger:
-    'border border-[#f7768e]/35 bg-[rgba(247,118,142,0.12)] text-[#ffccd7] ' +
-    'hover:border-[#f7768e]/55 hover:bg-[rgba(247,118,142,0.18)]',
+    'border border-[var(--color-error-border)] bg-[var(--color-error-bg)] text-[var(--color-error-fg)] ' +
+    'hover:border-[var(--color-error-fg)] hover:bg-[rgba(248,81,73,0.2)]',
 };
 
 const sizes = {
@@ -45,7 +45,7 @@ export function Button({
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-[1.1rem] font-semibold tracking-[0.01em] cursor-pointer select-none',
         'transition-[transform,border-color,box-shadow,background-color,color,filter] duration-200',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7dcfff]/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-canvas)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         'active:translate-y-px',
         variants[variant],

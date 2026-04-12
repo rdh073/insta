@@ -23,11 +23,11 @@ export function Input({ label, error, hint, className, id, ...props }: Props) {
         className={cn(
           'glass-field text-sm',
           error &&
-            'border-[#f7768e]/45 focus:border-[#f7768e]/55 focus:shadow-[0_0_0_1px_rgba(247,118,142,0.24),0_0_0_6px_rgba(247,118,142,0.08)]',
+            'border-[var(--color-error-border)] focus:border-[var(--color-error-fg)] focus:shadow-[0_0_0_1px_var(--color-error-border),0_0_0_6px_var(--color-error-bg)]',
           className,
         )}
       />
-      {error && <p className="text-xs text-[#ff9db0]">{error}</p>}
+      {error && <p className="text-xs text-[var(--color-error-fg)]">{error}</p>}
       {hint && !error && <p className="field-hint">{hint}</p>}
     </div>
   );
