@@ -35,6 +35,22 @@ export interface CopilotEvent {
   [key: string]: unknown;
 }
 
+export type CopilotPolicyFlag = 'read_only' | 'write_sensitive' | 'blocked' | (string & {});
+
+export interface CopilotPolicyResultPayload {
+  flags?: Record<string, CopilotPolicyFlag>;
+  risk_level?: string;
+  risk_reasons?: string[];
+  needs_approval?: boolean;
+  proposed_calls?: unknown[];
+  approved_calls?: unknown[];
+}
+
+export type CopilotPolicyResultEvent =
+  CopilotEvent &
+  CopilotPolicyResultPayload &
+  { type: 'policy_result' };
+
 // ── Error types ────────────────────────────────────────────────────────────────
 
 export class NetworkError extends Error {

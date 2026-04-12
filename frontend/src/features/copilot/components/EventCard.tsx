@@ -11,6 +11,81 @@ import type { CopilotEvent } from '../../../api/operator-copilot';
 import { Badge } from '../../../components/ui/Badge';
 import { CollapsibleSection } from './CollapsibleSection';
 
+type BadgeVariant = 'green' | 'red' | 'yellow' | 'blue' | 'gray';
+
+export interface NormalizedPolicyResultEvent {
+  flags: Record<string, string>;
+  riskLevel: string | null;
+  riskReasons: string[];
+  needsApproval: boolean | null;
+  proposedCalls: unknown[] | null;
+  approvedCalls: unknown[] | null;
+  hasModernPayload: boolean;
+  hasLegacyPayload: boolean;
+}
+
+function asStringRecord(value: unknown): Record<string, string> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value).reduce<Record<string, string>>((acc, [key, entryValue]) => {
+    if (typeof entryValue === 'string') acc[key] = entryValue;
+    return acc;
+  }, {});
+}
+
+function asUnknownArray(value: unknown): unknown[] | null {
+  return Array.isArray(value) ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+export function normalizePolicyResultEvent(event: CopilotEvent): NormalizedPolicyResultEvent {
+  const flags = asStringRecord(event.flags);
+  const riskLevelRaw = typeof event.risk_level === 'string' ? event.risk_level.trim() : '';
+  const riskLevel = riskLevelRaw.length > 0 ? riskLevelRaw : null;
+  const riskReasons = asStringArray(event.risk_reasons);
+  const explicitNeedsApproval = typeof event.needs_approval === 'boolean' ? event.needs_approval : null;
+  const inferredNeedsApproval = Object.values(flags).some((classification) => classification.toLowerCase() === 'write_sensitive');
+  const needsApproval = explicitNeedsApproval ?? (Object.keys(flags).length > 0 ? inferredNeedsApproval : null);
+
+  const proposedCalls = asUnknownArray(event.proposed_calls);
+  const approvedCalls = asUnknownArray(event.approved_calls);
+
+  return {
+    flags,
+    riskLevel,
+    riskReasons,
+    needsApproval,
+    proposedCalls,
+    approvedCalls,
+    hasModernPayload:
+      Object.keys(flags).length > 0 ||
+      riskLevel !== null ||
+      riskReasons.length > 0 ||
+      explicitNeedsApproval !== null,
+    hasLegacyPayload: proposedCalls !== null || approvedCalls !== null,
+  };
+}
+
+function riskLevelBadgeVariant(level: string | null): BadgeVariant {
+  if (level == null) return 'gray';
+  const normalized = level.toLowerCase();
+  if (normalized === 'low') return 'green';
+  if (normalized === 'medium') return 'yellow';
+  if (normalized === 'high' || normalized === 'critical') return 'red';
+  return 'gray';
+}
+
+function flagBadgeVariant(classification: string): BadgeVariant {
+  const normalized = classification.toLowerCase();
+  if (normalized === 'read_only') return 'green';
+  if (normalized === 'write_sensitive') return 'yellow';
+  if (normalized === 'blocked') return 'red';
+  return 'gray';
+}
+
 export function EventCard({ event }: { event: CopilotEvent }) {
   switch (event.type) {
     case 'run_start':
@@ -42,21 +117,67 @@ export function EventCard({ event }: { event: CopilotEvent }) {
       );
 
     case 'policy_result': {
-      const proposed = event.proposed_calls as unknown[] | undefined;
-      const approved = event.approved_calls as unknown[] | undefined;
+      const policy = normalizePolicyResultEvent(event);
+      const flagEntries = Object.entries(policy.flags);
+      const policyDetails = {
+        ...(flagEntries.length > 0 ? { flags: policy.flags } : {}),
+        ...(policy.riskLevel != null ? { risk_level: policy.riskLevel } : {}),
+        ...(policy.riskReasons.length > 0 ? { risk_reasons: policy.riskReasons } : {}),
+        ...(policy.needsApproval != null ? { needs_approval: policy.needsApproval } : {}),
+        ...(policy.proposedCalls != null ? { proposed_calls: policy.proposedCalls } : {}),
+        ...(policy.approvedCalls != null ? { approved_calls: policy.approvedCalls } : {}),
+      };
+
       return (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <List className="h-3.5 w-3.5 shrink-0 text-[#7aa2f7]" />
             <span className="text-xs font-medium text-[#8e9ac0]">policy_check</span>
-            {proposed && <Badge variant="blue">{proposed.length} proposed</Badge>}
-            {approved && <Badge variant="green">{approved.length} approved</Badge>}
+            {policy.riskLevel != null && (
+              <Badge variant={riskLevelBadgeVariant(policy.riskLevel)}>
+                risk {policy.riskLevel}
+              </Badge>
+            )}
+            {policy.needsApproval != null && (
+              <Badge variant={policy.needsApproval ? 'red' : 'green'}>
+                {policy.needsApproval ? 'approval required' : 'no approval'}
+              </Badge>
+            )}
+            {flagEntries.length > 0 && <Badge variant="blue">{flagEntries.length} flags</Badge>}
+            {policy.proposedCalls != null && <Badge variant="blue">{policy.proposedCalls.length} proposed</Badge>}
+            {policy.approvedCalls != null && <Badge variant="green">{policy.approvedCalls.length} approved</Badge>}
           </div>
-          {(proposed || approved) && (
+          {flagEntries.length > 0 && (
+            <div className="rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] px-3 py-2.5">
+              <p className="text-[11px] font-medium text-[#8e9ac0]">tool flags</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {flagEntries.map(([toolName, classification]) => (
+                  <Badge
+                    key={`${toolName}:${classification}`}
+                    variant={flagBadgeVariant(classification)}
+                    className="font-mono"
+                  >
+                    {toolName}: {classification}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {policy.riskReasons.length > 0 && (
+            <div className="rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] px-3 py-2.5">
+              <p className="text-[11px] font-medium text-[#8e9ac0]">risk reasons</p>
+              <ul className="mt-1.5 space-y-1 text-xs text-[#9fb0d8]">
+                {policy.riskReasons.map((reason, index) => (
+                  <li key={`${reason}-${index}`} className="font-mono leading-5">
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(policy.hasModernPayload || policy.hasLegacyPayload) && (
             <CollapsibleSection title="policy_details">
-              <pre className="code-block text-xs">
-                {JSON.stringify({ proposed_calls: proposed, approved_calls: approved }, null, 2)}
-              </pre>
+              <pre className="code-block text-xs">{JSON.stringify(policyDetails, null, 2)}</pre>
             </CollapsibleSection>
           )}
         </div>
