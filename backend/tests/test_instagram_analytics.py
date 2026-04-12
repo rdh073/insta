@@ -243,13 +243,17 @@ class TestTrackCatalogAdapter:
         assert results[0].artist_name == "Artist A"
         assert results[1].title == "Song 2"
         assert results[1].artist_name == "Artist B"
-        mock_client.search_music.assert_called_once_with("test query", limit=20)
+        mock_client.search_music.assert_called_once_with("test query")
 
     def test_search_tracks_with_limit(self):
-        """Verify limit parameter is passed to vendor."""
+        """Verify limit parameter is enforced in adapter."""
         # Create mock client
         mock_client = Mock()
-        mock_client.search_music.return_value = []
+        mock_client.search_music.return_value = [
+            _create_mock_track(id=100, title="Song 1"),
+            _create_mock_track(id=101, title="Song 2"),
+            _create_mock_track(id=102, title="Song 3"),
+        ]
 
         # Create mock repo
         mock_repo = Mock()
@@ -257,10 +261,35 @@ class TestTrackCatalogAdapter:
 
         # Test adapter with custom limit
         adapter = InstagramTrackCatalogAdapter(mock_repo)
-        results = adapter.search_tracks("acc-123", "query", limit=50)
+        results = adapter.search_tracks("acc-123", "query", limit=2)
 
-        mock_client.search_music.assert_called_once_with("query", limit=50)
-        assert results == []
+        mock_client.search_music.assert_called_once_with("query")
+        assert len(results) == 2
+        assert results[0].canonical_id == "100"
+        assert results[1].canonical_id == "101"
+
+    def test_search_tracks_vendor_query_only_signature_regression(self):
+        """Regression: do not pass limit kwarg to query-only vendor method."""
+
+        def search_music_query_only(query):
+            # Would raise TypeError if adapter forwarded limit=...
+            return [
+                _create_mock_track(id=200, title="Strict Song 1"),
+                _create_mock_track(id=201, title="Strict Song 2"),
+            ]
+
+        mock_client = Mock()
+        mock_client.search_music.side_effect = search_music_query_only
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramTrackCatalogAdapter(mock_repo)
+        results = adapter.search_tracks("acc-123", "strict query", limit=1)
+
+        mock_client.search_music.assert_called_once_with("strict query")
+        assert len(results) == 1
+        assert results[0].canonical_id == "200"
 
     def test_get_track_success(self):
         """Verify track_info_by_canonical_id() maps to TrackDetail."""

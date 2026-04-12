@@ -54,11 +54,13 @@ class InstagramTrackCatalogAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to search tracks
-            tracks = client.search_music(query, limit=limit)
+            # instagrapi 2.3.0 search_music signature is query-only.
+            tracks = client.search_music(query) or []
+            safe_limit = max(limit, 0)
+            limited_tracks = list(tracks)[:safe_limit]
 
             # Map each track to DTO
-            return [self._map_track_to_summary(t) for t in tracks]
+            return [self._map_track_to_summary(t) for t in limited_tracks]
 
         except Exception as e:
             failure = translate_instagram_error(
