@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-from pathlib import Path
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.application.dto.instagram_media_dto import MediaSummary
 
 _TOOL_REGISTRY_PATH = (
-    Path(__file__).resolve().parents[1] / "app" / "adapters" / "ai" / "tool_registry.py"
+    Path(__file__).resolve().parents[1] / "app" / "adapters" / "ai" / "tool_registry" / "__init__.py"
 )
-_SPEC = importlib.util.spec_from_file_location("tool_registry_under_test", _TOOL_REGISTRY_PATH)
+_SPEC = importlib.util.spec_from_file_location(
+    "tool_registry_under_test",
+    _TOOL_REGISTRY_PATH,
+    submodule_search_locations=[str(_TOOL_REGISTRY_PATH.parent)],
+)
 assert _SPEC and _SPEC.loader
 _MODULE = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = _MODULE
 _SPEC.loader.exec_module(_MODULE)
 create_tool_registry = _MODULE.create_tool_registry
 
