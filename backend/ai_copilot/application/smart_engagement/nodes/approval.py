@@ -12,6 +12,24 @@ from ai_copilot.application.smart_engagement.state import (
     SmartEngagementState,
 )
 
+_DECISION_ALIASES: dict[str, str] = {
+    "approve": "approved",
+    "approved": "approved",
+    "reject": "rejected",
+    "rejected": "rejected",
+    "edit": "edited",
+    "edited": "edited",
+    "timeout": "timeout",
+}
+
+
+def _normalize_resume_decision(value: object) -> str:
+    """Normalize decision aliases to canonical values used in state."""
+    if not isinstance(value, str):
+        return "timeout"
+    normalized = value.strip().lower()
+    return _DECISION_ALIASES.get(normalized, "invalid")
+
 
 class ApprovalNodesMixin:
     # =========================================================================
@@ -64,8 +82,9 @@ class ApprovalNodesMixin:
         - options: approve / reject / edit
 
         On resume: decision = interrupt return value (dict with 'decision' key).
-        - 'approved' → route to execute_action
-        - 'rejected' / 'timeout' → route to log_outcome
+        Supported inputs: approve/reject/edit and approved/rejected/edited.
+        - approved → route to execute_action
+        - rejected / timeout → route to log_outcome
         """
         # Failure rule: max 1 approval per run
         if state.get("approval_attempted"):
@@ -165,8 +184,19 @@ class ApprovalNodesMixin:
             decision_value = "timeout"
             notes = "No decision received (timeout)"
         else:
-            decision_value = decision.get("decision", "timeout")
-            notes = decision.get("notes", "")
+            decision_dict = decision if isinstance(decision, dict) else {}
+            raw_decision = decision_dict.get("decision", decision)
+            decision_value = _normalize_resume_decision(raw_decision)
+            notes_raw = decision_dict.get("notes", "")
+            notes = notes_raw if isinstance(notes_raw, str) else str(notes_raw)
+
+            if decision_value == "invalid":
+                decision_value = "rejected"
+                notes = (
+                    f"{notes}. Invalid approval decision: {raw_decision!r}".strip(". ")
+                    if notes
+                    else f"Invalid approval decision: {raw_decision!r}"
+                )
 
         # Treat timeout as rejected
         if decision_value == "timeout":
@@ -176,7 +206,8 @@ class ApprovalNodesMixin:
         # Handle edit: update draft content if provided
         edited_content = None
         if decision_value == "edited":
-            edited_content = decision.get("content")
+            decision_dict = decision if isinstance(decision, dict) else {}
+            edited_content = decision_dict.get("content")
             decision_value = "approved"  # Edit implies approval with modifications
 
         approval_result = {

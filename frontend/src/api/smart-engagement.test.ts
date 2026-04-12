@@ -57,4 +57,28 @@ describe('smartEngagementApi', () => {
       decision: 'approved',
     });
   });
+
+  it('normalizes alias decisions before resume requests', async () => {
+    const response: SmartEngagementResponse = {
+      mode: 'execute',
+      status: 'done',
+      interrupted: false,
+      brief_audit: [],
+      audit_trail: [],
+    };
+
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: response,
+    } as AxiosResponse<SmartEngagementResponse>);
+
+    await smartEngagementApi.resume({
+      thread_id: 'thread-2',
+      decision: 'approve',
+    });
+
+    expect(postSpy).toHaveBeenCalledWith('/ai/smart-engagement/resume', {
+      thread_id: 'thread-2',
+      decision: 'approved',
+    });
+  });
 });

@@ -166,6 +166,11 @@ class _FakeSmartEngagementExec:
             "thread_id": thread_id,
             "interrupted": False,
             "outcome_reason": "Action executed successfully",
+            "approval": {
+                "id": "apr_test",
+                "decision": decision.get("decision"),
+                "notes": decision.get("notes", ""),
+            },
             "audit_trail": [],
         }
 
@@ -434,13 +439,24 @@ def test_resume_invalid_decision_422(exec_client):
 
 
 def test_resume_valid_decision_values(exec_client):
-    """All valid decision values must be accepted."""
-    for decision in ("approved", "rejected", "edited"):
+    """Canonical and alias decision values must be accepted and normalized."""
+    expected_map = {
+        "approved": "approved",
+        "approve": "approved",
+        "rejected": "rejected",
+        "reject": "rejected",
+        "edited": "edited",
+        "edit": "edited",
+    }
+
+    for decision, expected in expected_map.items():
         resp = exec_client.post("/api/ai/smart-engagement/resume", json={
             "thread_id": "t1",
             "decision": decision,
         })
         assert resp.status_code == 200, f"Expected 200 for decision={decision!r}"
+        body = resp.json()
+        assert body["decision"]["decision"] == expected
 
 
 # ===========================================================================

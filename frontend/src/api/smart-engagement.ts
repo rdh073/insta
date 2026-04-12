@@ -46,9 +46,28 @@ export interface SmartEngagementResponse {
   audit_trail: Record<string, unknown>[];
 }
 
+export type SmartEngagementDecision =
+  | 'approve'
+  | 'reject'
+  | 'edit'
+  | 'approved'
+  | 'rejected'
+  | 'edited';
+
+type CanonicalSmartEngagementDecision = 'approved' | 'rejected' | 'edited';
+
+const DECISION_TO_CANONICAL: Record<SmartEngagementDecision, CanonicalSmartEngagementDecision> = {
+  approve: 'approved',
+  approved: 'approved',
+  reject: 'rejected',
+  rejected: 'rejected',
+  edit: 'edited',
+  edited: 'edited',
+};
+
 export interface ResumeRequest {
   thread_id: string;
-  decision: 'approved' | 'rejected' | 'edited';
+  decision: SmartEngagementDecision;
   notes?: string;
   content?: string;
 }
@@ -60,7 +79,10 @@ export const smartEngagementApi = {
   },
 
   async resume(req: ResumeRequest): Promise<SmartEngagementResponse> {
-    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/resume', req);
+    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/resume', {
+      ...req,
+      decision: DECISION_TO_CANONICAL[req.decision],
+    });
     return res.data;
   },
 };

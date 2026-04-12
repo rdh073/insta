@@ -42,9 +42,18 @@ export function buildEditableDraft(payload: Record<string, unknown>): Record<str
     return [{ override_policy: payload.policy_decision.trim() }];
   }
 
+  if (typeof payload.draft_content === 'string' && payload.draft_content.trim()) {
+    return [{ content: payload.draft_content.trim() }];
+  }
+
   const draftAction = asRecord(payload.draft_action);
   if (draftAction && typeof draftAction.content === 'string' && draftAction.content.trim()) {
     return [{ content: draftAction.content.trim() }];
+  }
+
+  const draftPayload = asRecord(payload.draft_payload);
+  if (draftPayload && typeof draftPayload.content === 'string' && draftPayload.content.trim()) {
+    return [{ content: draftPayload.content.trim() }];
   }
 
   if (typeof payload.proxy_candidate === 'string' && payload.proxy_candidate.trim()) {

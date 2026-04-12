@@ -263,6 +263,41 @@ async def test_interrupt_payload_values_from_state():
     assert payload["operator_intent"] == "comment on educational posts"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("incoming", "expected"),
+    [
+        ("approve", "approved"),
+        ("reject", "rejected"),
+        ("edit", "approved"),
+    ],
+)
+async def test_request_approval_normalizes_resume_decision_aliases(
+    incoming: str,
+    expected: str,
+):
+    """Alias decisions from interrupt resume must normalize to canonical state values."""
+    audit_log = _InMemoryAuditLog()
+    nodes = _make_nodes(audit_log=audit_log)
+    state = _base_state(mode="execute")
+
+    from unittest.mock import patch
+
+    with patch(
+        "ai_copilot.application.smart_engagement.nodes.interrupt",
+        return_value={"decision": incoming, "notes": "normalized", "content": "Edited draft"},
+    ):
+        result = await nodes.request_approval_node(state)
+
+    assert result["approval_result"]["decision"] == expected
+
+    if incoming == "edit":
+        assert result["approval_result"]["edited_content"] == "Edited draft"
+        assert result["proposed_action"]["content"] == "Edited draft"
+    if incoming == "reject":
+        assert result["stop_reason"] == "approval_rejected"
+
+
 # ===========================================================================
 # Audit event payload contract
 # ===========================================================================

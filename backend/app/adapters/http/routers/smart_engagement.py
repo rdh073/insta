@@ -50,6 +50,15 @@ router = APIRouter(prefix="/api/ai/smart-engagement", tags=["smart-engagement"])
 
 _EXECUTION_ENABLED = os.getenv("SMART_ENGAGEMENT_EXECUTION_ENABLED", "true").lower() == "true"
 
+_RESUME_DECISION_ALIASES: dict[str, str] = {
+    "approve": "approved",
+    "approved": "approved",
+    "reject": "rejected",
+    "rejected": "rejected",
+    "edit": "edited",
+    "edited": "edited",
+}
+
 
 # =============================================================================
 # Request / Response models
@@ -94,7 +103,7 @@ class ResumeRequest(BaseModel):
     """Thread ID from the interrupted run (returned in interrupt response)"""
 
     decision: str
-    """'approved', 'rejected', or 'edited'"""
+    """Approval decision: approve/reject/edit or approved/rejected/edited"""
 
     notes: str = ""
     """Decision notes (reason for approval/rejection)"""
@@ -105,9 +114,13 @@ class ResumeRequest(BaseModel):
     @field_validator("decision")
     @classmethod
     def validate_decision(cls, v: str) -> str:
-        if v not in ("approved", "rejected", "edited"):
-            raise ValueError("decision must be 'approved', 'rejected', or 'edited'")
-        return v
+        normalized = v.strip().lower()
+        canonical = _RESUME_DECISION_ALIASES.get(normalized)
+        if canonical is None:
+            raise ValueError(
+                "decision must be one of: approve, reject, edit, approved, rejected, edited"
+            )
+        return canonical
 
 
 class RecommendationDetail(BaseModel):
@@ -403,7 +416,7 @@ async def resume(
 
     Request Body:
         thread_id: From the interrupted run's response
-        decision: 'approved', 'rejected', or 'edited'
+        decision: approve/reject/edit (aliases) or approved/rejected/edited
         notes: Optional decision reason
         content: Edited content (if decision='edited')
 

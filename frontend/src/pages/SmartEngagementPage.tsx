@@ -252,6 +252,63 @@ function RiskBadge({ level }: { level?: string }) {
   );
 }
 
+type BadgeVariant = 'green' | 'red' | 'yellow' | 'blue' | 'gray';
+
+const STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  done: 'green',
+  completed: 'green',
+  action_executed: 'green',
+  recommendation_only: 'blue',
+  interrupted: 'yellow',
+  risk_threshold_exceeded: 'yellow',
+  no_candidates: 'yellow',
+  error: 'red',
+  approval_rejected: 'red',
+  account_not_ready: 'red',
+  approval_limit_reached: 'red',
+  discovery_limit_reached: 'red',
+  invariant_violated: 'red',
+  not_approved: 'red',
+  missing_data: 'red',
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function statusVariant(status: string): BadgeVariant {
+  const normalized = status.trim().toLowerCase();
+  return STATUS_VARIANTS[normalized] ?? 'gray';
+}
+
+function statusLabel(status: string): string {
+  const normalized = status.trim();
+  if (!normalized) return 'unknown';
+  return normalized.replace(/_/g, ' ');
+}
+
+function getEditPrefill(response: SmartEngagementResponse): string {
+  const payload = asRecord(response.interrupt_payload);
+  const draftAction = asRecord(payload?.draft_action);
+  const draftPayload = asRecord(payload?.draft_payload);
+
+  const candidates = [
+    payload?.content,
+    payload?.draft_content,
+    draftAction?.content,
+    draftPayload?.content,
+    response.recommendation?.draft_content,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
 function StatusBadge({ status, interrupted }: { status: string; interrupted: boolean }) {
   if (interrupted) {
     return (
@@ -261,8 +318,7 @@ function StatusBadge({ status, interrupted }: { status: string; interrupted: boo
       </Badge>
     );
   }
-  const variant = status === 'done' ? 'green' : status === 'error' ? 'red' : 'blue';
-  return <Badge variant={variant} className="capitalize">{status}</Badge>;
+  return <Badge variant={statusVariant(status)}>{statusLabel(status)}</Badge>;
 }
 
 // ─── Result panel per account ────────────────────────────────────────────────
@@ -353,7 +409,7 @@ function EngagementResult({
                 <XCircle className="h-3.5 w-3.5" /> Reject
               </Button>
               <Button size="sm" variant="secondary" onClick={() => {
-                setEditContent(typeof response.interrupt_payload?.draft_content === 'string' ? response.interrupt_payload.draft_content : '');
+                setEditContent(getEditPrefill(response));
                 setEditState('editing');
               }} disabled={resumeLoading}>
                 <Edit3 className="h-3.5 w-3.5" /> Edit
