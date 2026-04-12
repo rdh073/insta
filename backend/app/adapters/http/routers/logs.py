@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import os
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.adapters.http.dependencies import get_logs_usecases
+from app.adapters.http.streaming import sse_response
 from app.adapters.http.utils import format_error
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+logger = logging.getLogger(__name__)
 
 
 class VerboseModeRequest(BaseModel):
@@ -73,7 +72,7 @@ async def stream_logs():
           "msg":     "POST /api/v1/..."
         }
 
-    A ``: heartbeat`` comment is sent every 15 s to keep the connection alive.
+    Keepalive heartbeat comments are emitted by the shared SSE transport.
     The stream requires ``INSTAGRAPI_LOG_LEVEL=DEBUG`` (or ``INSTAGRAPI_VERBOSE=1``)
     for instagrapi/httpx records to appear.
     """
@@ -84,18 +83,13 @@ async def stream_logs():
     async def generate():
         try:
             while True:
-                try:
-                    record = await asyncio.wait_for(q.get(), timeout=15.0)
-                    yield f"data: {json.dumps(record)}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-        except asyncio.CancelledError:
-            pass
+                record = await q.get()
+                yield record
         finally:
             log_stream_bus.unsubscribe(q)
 
-    return StreamingResponse(
+    return sse_response(
         generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        logger=logger,
+        error_event_name="run_error",
     )

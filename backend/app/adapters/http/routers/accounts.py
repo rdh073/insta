@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, UploadFile, File
-from fastapi.responses import StreamingResponse
 
 # Server-side cooldown for bulk profile hydration — prevents the frontend from
 # accidentally triggering a burst of user_info() calls on every reconnect.
@@ -14,6 +14,7 @@ _BULK_HYDRATE_COOLDOWN_SEC = 300  # 5 minutes
 _last_bulk_hydrate_ts: float = 0.0
 
 from app.adapters.http.event_bus import account_event_bus
+from app.adapters.http.streaming import sse_response
 from pydantic import BaseModel
 
 from app.adapters.http.schemas.accounts import (
@@ -39,6 +40,7 @@ from app.adapters.http.utils import format_error, format_instagram_failure
 from app.application.dto.account_dto import LoginRequest as DTOLoginRequest
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
+logger = logging.getLogger(__name__)
 
 
 def _hydrate_and_publish(usecases: "AccountAuthUseCases", account_id: str) -> None:
@@ -126,16 +128,14 @@ async def account_events():
         try:
             while True:
                 event = await q.get()
-                yield f"data: {json.dumps(event)}\n\n"
-        except asyncio.CancelledError:
-            pass
+                yield event
         finally:
             account_event_bus.unsubscribe(q)
 
-    return StreamingResponse(
+    return sse_response(
         generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        logger=logger,
+        error_event_name="run_error",
     )
 
 

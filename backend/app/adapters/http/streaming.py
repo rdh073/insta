@@ -18,12 +18,13 @@ ErrorEventBuilder = Callable[[Exception, Mapping[str, Any] | None], Mapping[str,
 
 
 def _default_error_event(
-    exc: Exception,
+    _exc: Exception,
     last_event: Mapping[str, Any] | None,
 ) -> Mapping[str, Any]:
     event: dict[str, Any] = {
         "type": "run_error",
-        "message": str(exc)[:500] or "SSE stream failed.",
+        "code": "stream_error",
+        "message": "Stream interrupted by an internal transport error.",
     }
     if last_event:
         run_id = last_event.get("run_id")
@@ -35,16 +36,18 @@ def _default_error_event(
     return event
 
 
-def _encode_data(payload: Any) -> str:
-    return f"data: {json.dumps(payload, default=str)}\n\n"
+def _encode_data(payload: Any, *, event: str | None = None) -> str:
+    prefix = f"event: {event}\n" if event else ""
+    return f"{prefix}data: {json.dumps(payload, default=str)}\n\n"
 
 
 async def sse_chunks(
-    events: AsyncIterator[Mapping[str, Any]],
+    events: AsyncIterator[Any],
     *,
     heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
     logger: logging.Logger | None = None,
     error_event_builder: ErrorEventBuilder | None = None,
+    error_event_name: str | None = None,
 ) -> AsyncIterator[str]:
     """Encode event dicts to SSE chunks, with heartbeat + exception framing."""
     queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -86,8 +89,14 @@ async def sse_chunks(
 
             exc = payload
             if logger is not None:
-                logger.error("SSE stream producer failed: %s", exc)
-            yield _encode_data(builder(exc, last_event))
+                logger.error(
+                    "SSE stream producer failed",
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+            yield _encode_data(
+                builder(exc, last_event),
+                event=error_event_name,
+            )
             break
     finally:
         if not pump_task.done():
@@ -97,11 +106,12 @@ async def sse_chunks(
 
 
 def sse_response(
-    events: AsyncIterator[Mapping[str, Any]],
+    events: AsyncIterator[Any],
     *,
     heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
     logger: logging.Logger | None = None,
     error_event_builder: ErrorEventBuilder | None = None,
+    error_event_name: str | None = None,
     include_done_sentinel: bool = False,
 ) -> StreamingResponse:
     """Create a StreamingResponse with standardized SSE behavior."""
@@ -112,6 +122,7 @@ def sse_response(
             heartbeat_seconds=heartbeat_seconds,
             logger=logger,
             error_event_builder=error_event_builder,
+            error_event_name=error_event_name,
         ):
             yield chunk
         if include_done_sentinel:
@@ -122,4 +133,3 @@ def sse_response(
         media_type="text/event-stream",
         headers=dict(_SSE_HEADERS),
     )
-

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
+import logging
 import tempfile
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 
 from app.adapters.http.dependencies import get_post_job_control, get_postjob_usecases, get_scheduler
+from app.adapters.http.streaming import sse_response
 from app.adapters.scheduler.event_bus import post_job_event_bus
 from app.application.dto.post_dto import CreatePostJobRequest
 
 router = APIRouter(prefix="/api/posts", tags=["posts"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("")
@@ -185,33 +186,25 @@ def resume_post_job(job_id: str, control=Depends(get_post_job_control)):
 async def stream_post_jobs(usecases=Depends(get_postjob_usecases)):
     """SSE stream of post job updates.
 
-    Emits the full job list whenever a job status changes, plus heartbeat every 15s.
-    Clients connect once and receive push updates — no polling needed.
+    Emits the full job list whenever a job status changes.
+    Keepalive heartbeat comments are emitted by the shared SSE transport.
     """
     async def event_stream():
         listener_id, queue = post_job_event_bus.subscribe()
         try:
             # Send initial state immediately
-            jobs = _serialize_jobs(usecases)
-            yield f"data: {json.dumps(jobs)}\n\n"
+            yield _serialize_jobs(usecases)
 
             while True:
-                try:
-                    await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
-                    # Heartbeat — keep connection alive
-                    yield ": heartbeat\n\n"
-                    continue
-
-                jobs = _serialize_jobs(usecases)
-                yield f"data: {json.dumps(jobs)}\n\n"
+                await queue.get()
+                yield _serialize_jobs(usecases)
         finally:
             post_job_event_bus.unsubscribe(listener_id)
 
-    return StreamingResponse(
+    return sse_response(
         event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        logger=logger,
+        error_event_name="run_error",
     )
 
 
