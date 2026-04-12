@@ -346,7 +346,12 @@ export function OperatorCopilotPage() {
     setSession((prev) => ({ ...prev, runState: 'running', approvalPayload: undefined }));
     try {
       if (activeCommand) {
-        const resumePayload = activeCommand.buildResumePayload(session.threadId, result, editedCalls);
+        const resumePayload = activeCommand.buildResumePayload(
+          session.threadId,
+          result,
+          editedCalls,
+          session.approvalPayload,
+        );
         const stream = activeCommand.transport === 'json'
           ? commandJsonRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal)
           : graphRunner.resume(activeCommand.resumeEndpoint, resumePayload, backendUrl, controller.signal);

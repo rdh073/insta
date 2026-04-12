@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from app.adapters.instagram.error_utils import InstagramRateLimitError
 from app.adapters.http.dependencies import get_relationship_usecases
+from app.adapters.http.streaming import sse_response
 from app.adapters.http.utils import format_error
 
 from .mappers import _to_public_profile
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
 
 
 @router.get("/relationships/{account_id}/followers")
@@ -304,13 +306,20 @@ async def batch_follow(
             concurrency=request.concurrency,
             delay_between=request.delay_between,
         ):
-            yield f"data: {json.dumps(result)}\n\n"
-        yield "data: [DONE]\n\n"
+            yield result
 
-    return StreamingResponse(
+    def _batch_error(exc: Exception, _last_event) -> dict:
+        return {
+            "type": "run_error",
+            "action": "follow",
+            "message": format_error(exc, "Batch follow failed"),
+        }
+
+    return sse_response(
         event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        logger=logger,
+        include_done_sentinel=True,
+        error_event_builder=_batch_error,
     )
 
 
@@ -328,11 +337,24 @@ async def batch_unfollow(
             concurrency=request.concurrency,
             delay_between=request.delay_between,
         ):
-            yield f"data: {json.dumps(result)}\n\n"
-        yield "data: [DONE]\n\n"
+            yield result
 
-    return StreamingResponse(
+    def _batch_error(exc: Exception, _last_event) -> dict:
+        return {
+            "type": "run_error",
+            "action": "unfollow",
+            "message": format_error(exc, "Batch unfollow failed"),
+        }
+
+    return sse_response(
         event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        logger=logger,
+        include_done_sentinel=True,
+        error_event_builder=_batch_error,
     )
+
+
+# Ensure static batch routes are matched before dynamic /relationships/{account_id}/...
+router.routes.sort(
+    key=lambda route: 0 if "/relationships/batch/" in getattr(route, "path", "") else 1,
+)

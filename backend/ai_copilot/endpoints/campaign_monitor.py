@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import json
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from app.adapters.http.streaming import sse_response
 from ai_copilot.dependencies import get_campaign_monitor_usecase
 from ai_copilot.schemas import CampaignMonitorResumeRequest, CampaignMonitorRunRequest
 
 router = APIRouter(tags=["ai-langgraph"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/campaign-monitor/run")
@@ -20,19 +22,14 @@ async def campaign_monitor_run(
 ) -> StreamingResponse:
     """Start a campaign monitor run and stream SSE events."""
 
-    async def generate():
-        async for event in use_case.run(
+    return sse_response(
+        use_case.run(
             thread_id=request.thread_id,
             job_ids=request.job_ids,
             lookback_days=request.lookback_days,
             request_decision=request.request_decision,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
 
 
@@ -43,17 +40,11 @@ async def campaign_monitor_resume(
 ) -> StreamingResponse:
     """Resume a campaign monitor run after operator decision interrupt."""
 
-    async def generate():
-        async for event in use_case.resume(
+    return sse_response(
+        use_case.resume(
             thread_id=request.thread_id,
             decision=request.decision,
             parameters=request.parameters,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
-

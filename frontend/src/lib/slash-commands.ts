@@ -12,6 +12,7 @@ export interface SlashCommand {
     threadId: string,
     result: 'approved' | 'rejected' | 'edited',
     editedCalls?: Record<string, unknown>[],
+    approvalPayload?: Record<string, unknown>,
   ) => Record<string, unknown>;
 }
 
@@ -32,14 +33,44 @@ function extractMentions(args: string): { usernames: string[]; remaining: string
   return { usernames, remaining: rest.join(' ') };
 }
 
+function firstEditedRecord(
+  editedCalls?: Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  if (!editedCalls || editedCalls.length === 0) return undefined;
+  return editedCalls[0];
+}
+
+function readFirstString(
+  obj: Record<string, unknown> | undefined,
+  keys: string[],
+): string | undefined {
+  if (!obj) return undefined;
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  for (const value of Object.values(obj)) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function readPositiveDecisionOption(
+  approvalPayload?: Record<string, unknown>,
+): string | undefined {
+  const options = approvalPayload?.options;
+  if (!Array.isArray(options)) return undefined;
+  return options.find((item): item is string => typeof item === 'string' && item !== 'abort');
+}
+
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: 'engage',
     description: 'Run smart engagement for an account with a goal',
     argSchema: '@username <engagement goal>',
-    transport: 'json',
-    runEndpoint: '/ai/smart-engagement/recommend',
-    resumeEndpoint: '/ai/smart-engagement/resume',
+    transport: 'sse',
+    runEndpoint: '/ai/smart-engagement/recommend/stream',
+    resumeEndpoint: '/ai/smart-engagement/resume/stream',
     buildPayload(args, threadId) {
       const { usernames, remaining } = extractMentions(args);
       return {
@@ -51,10 +82,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         max_actions_per_target: 3,
       };
     },
-    buildResumePayload(threadId, result) {
+    buildResumePayload(threadId, result, editedCalls) {
+      const edited = firstEditedRecord(editedCalls);
+      const content =
+        result === 'edited'
+          ? readFirstString(edited, ['content', 'draft_content', 'edited_content', 'text', 'message'])
+          : undefined;
       return {
         thread_id: threadId,
         decision: result,
+        ...(content ? { content } : {}),
       };
     },
   },
@@ -74,10 +111,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         requestDecision: true,
       };
     },
-    buildResumePayload(threadId, result) {
+    buildResumePayload(threadId, result, editedCalls) {
       const decision =
         result === 'approved' ? 'approve' : result === 'edited' ? 'modify' : 'skip';
-      return { threadId, decision };
+      const edited = firstEditedRecord(editedCalls);
+      return {
+        threadId,
+        decision,
+        ...(result === 'edited' && edited ? { parameters: edited } : {}),
+      };
     },
   },
   {
@@ -92,14 +134,23 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       const accountId = usernames[0] ?? remaining.trim();
       return { threadId, accountId };
     },
-    buildResumePayload(threadId, result) {
+    buildResumePayload(threadId, result, editedCalls) {
       const decision =
         result === 'approved'
           ? 'approve_policy'
           : result === 'edited'
           ? 'override_policy'
           : 'abort';
-      return { threadId, decision };
+      const edited = firstEditedRecord(editedCalls);
+      const overridePolicy =
+        result === 'edited'
+          ? readFirstString(edited, ['override_policy', 'overridePolicy', 'policy', 'policy_decision'])
+          : undefined;
+      return {
+        threadId,
+        decision,
+        ...(overridePolicy ? { overridePolicy } : {}),
+      };
     },
   },
   {
@@ -114,18 +165,33 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       const username = usernames[0] ?? remaining.trim();
       return { threadId, accountId: username, username };
     },
-    buildResumePayload(threadId, result, editedCalls) {
+    buildResumePayload(threadId, result, editedCalls, approvalPayload) {
+      const suggestedDecision = readPositiveDecisionOption(approvalPayload);
       const decision =
-        result === 'approved'
-          ? 'approve_proxy_swap'
+        result === 'rejected'
+          ? 'abort'
+          : suggestedDecision === 'provide_2fa' || suggestedDecision === 'approve_proxy_swap'
+          ? suggestedDecision
           : result === 'edited'
           ? 'provide_2fa'
-          : 'abort';
+          : 'approve_proxy_swap';
+
+      const edited = firstEditedRecord(editedCalls);
       const twoFaCode =
-        result === 'edited' && editedCalls?.[0]
-          ? String(Object.values(editedCalls[0])[0] ?? '')
+        result === 'edited'
+          ? readFirstString(edited, ['two_fa_code', 'twoFaCode', 'code', 'otp'])
           : undefined;
-      return { threadId, decision, twoFaCode };
+      const proxy =
+        result === 'edited'
+          ? readFirstString(edited, ['proxy', 'proxy_candidate'])
+          : undefined;
+
+      return {
+        threadId,
+        decision,
+        ...(twoFaCode ? { twoFaCode } : {}),
+        ...(proxy ? { proxy } : {}),
+      };
     },
   },
   {
@@ -145,8 +211,17 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         scheduledAt: null,
       };
     },
-    buildResumePayload(threadId, result) {
-      return { threadId, decision: result };
+    buildResumePayload(threadId, result, editedCalls) {
+      const edited = firstEditedRecord(editedCalls);
+      const editedCaption =
+        result === 'edited'
+          ? readFirstString(edited, ['edited_caption', 'editedCaption', 'caption', 'content', 'text'])
+          : undefined;
+      return {
+        threadId,
+        decision: result,
+        ...(editedCaption ? { editedCaption } : {}),
+      };
     },
   },
 ];

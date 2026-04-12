@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from app.adapters.ai.llm_failure_catalog import LLMFailure
 from app.adapters.ai.provider_catalog import get_provider_spec
+from app.adapters.http.streaming import sse_response
 from ai_copilot.dependencies import (
     get_operator_copilot_usecase,
     is_operator_copilot_enabled,
@@ -19,6 +20,7 @@ from ai_copilot.dependencies import (
 from ai_copilot.schemas import GraphChatRequest, GraphResumeRequest, ProviderModelsRequest
 
 router = APIRouter(tags=["ai-langgraph"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/providers/models")
@@ -109,21 +111,16 @@ async def operator_copilot_run(
             except LLMFailure as exc:
                 raise HTTPException(status_code=422, detail=llm_failure_detail(exc)) from exc
 
-    async def generate():
-        async for event in use_case.run(
+    return sse_response(
+        use_case.run(
             operator_request=request.effective_message(),
             thread_id=request.thread_id,
             provider=resolved_provider or "openai",
             model=resolved_model,
             api_key=resolved_api_key,
             provider_base_url=resolved_base_url,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
 
 
@@ -146,17 +143,11 @@ async def operator_copilot_resume(
             detail="editedCalls is required when approvalResult == 'edited'.",
         )
 
-    async def generate():
-        async for event in use_case.resume(
+    return sse_response(
+        use_case.resume(
             thread_id=request.thread_id,
             approval_result=request.approval_result,
             edited_calls=request.edited_calls,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
-

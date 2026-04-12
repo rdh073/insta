@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import json
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from app.adapters.http.streaming import sse_response
 from ai_copilot.dependencies import get_risk_control_usecase
 from ai_copilot.schemas import RiskControlResumeRequest, RiskControlRunRequest
 
 router = APIRouter(tags=["ai-langgraph"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/risk-control/run")
@@ -20,17 +22,12 @@ async def risk_control_run(
 ) -> StreamingResponse:
     """Start a risk control assessment and stream SSE events."""
 
-    async def generate():
-        async for event in use_case.run(
+    return sse_response(
+        use_case.run(
             account_id=request.account_id,
             thread_id=request.thread_id,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
 
 
@@ -41,18 +38,12 @@ async def risk_control_resume(
 ) -> StreamingResponse:
     """Resume a risk control run after operator escalation."""
 
-    async def generate():
-        async for event in use_case.resume(
+    return sse_response(
+        use_case.resume(
             thread_id=request.thread_id,
             decision=request.decision,
             override_policy=request.override_policy,
             notes=request.notes,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
-

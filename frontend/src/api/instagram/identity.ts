@@ -91,11 +91,19 @@ export const identityApi = {
           const text = await response.text().catch(() => 'Unknown error');
           throw new Error(`Batch ${action} failed: ${text}`);
         }
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+        if (!contentType.includes('text/event-stream')) {
+          const text = await response.text().catch(() => 'Unknown error');
+          throw new Error(
+            `Batch ${action} expected text/event-stream but received '${contentType || 'unknown'}': ${text}`,
+          );
+        }
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response body');
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let sawEvent = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -108,17 +116,39 @@ export const identityApi = {
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed.startsWith('data: ')) continue;
+            sawEvent = true;
             const data = trimmed.slice(6);
             if (data === '[DONE]') {
               onDone();
               return;
             }
+            let event: Record<string, unknown>;
             try {
-              onResult(JSON.parse(data));
+              event = JSON.parse(data) as Record<string, unknown>;
             } catch {
               // skip malformed SSE lines
+              continue;
             }
+            if (event.type === 'run_error') {
+              const message = typeof event.message === 'string'
+                ? event.message
+                : `Batch ${action} failed`;
+              throw new Error(message);
+            }
+            onResult(event as {
+              account_id: string;
+              account: string;
+              target: string;
+              action: string;
+              success: boolean;
+              error?: string;
+              completed: number;
+              total: number;
+            });
           }
+        }
+        if (!sawEvent) {
+          throw new Error(`Batch ${action} stream ended without events`);
         }
         onDone();
       })

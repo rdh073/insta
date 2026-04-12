@@ -3,6 +3,41 @@ import { AlertTriangle, CheckCircle, Edit3, XCircle } from 'lucide-react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function buildEditableDraft(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const explicitCalls =
+    payload.proposed_calls ??
+    payload.proposed_tool_calls ??
+    payload.tool_calls ??
+    payload.edited_calls;
+  if (Array.isArray(explicitCalls) && explicitCalls.length > 0) {
+    return explicitCalls.filter((item): item is Record<string, unknown> => !!asRecord(item));
+  }
+
+  if (typeof payload.caption === 'string' && payload.caption.trim()) {
+    return [{ edited_caption: payload.caption.trim() }];
+  }
+
+  if (typeof payload.policy_decision === 'string' && payload.policy_decision.trim()) {
+    return [{ override_policy: payload.policy_decision.trim() }];
+  }
+
+  const draftAction = asRecord(payload.draft_action);
+  if (draftAction && typeof draftAction.content === 'string' && draftAction.content.trim()) {
+    return [{ content: draftAction.content.trim() }];
+  }
+
+  if (typeof payload.proxy_candidate === 'string' && payload.proxy_candidate.trim()) {
+    return [{ proxy: payload.proxy_candidate.trim() }];
+  }
+
+  return [];
+}
+
 export function ApprovalCard({
   payload,
   onDecision,
@@ -13,16 +48,25 @@ export function ApprovalCard({
   loading: boolean;
 }) {
   const [editMode, setEditMode] = useState(false);
+  const [editableDraft] = useState<Record<string, unknown>[]>(() => buildEditableDraft(payload));
   const [jsonText, setJsonText] = useState(() => {
-    const calls = payload.proposed_calls ?? payload.tool_calls ?? [];
-    return JSON.stringify(calls, null, 2);
+    return JSON.stringify(editableDraft, null, 2);
   });
   const [parseError, setParseError] = useState('');
 
   function handleSubmitEdit() {
     try {
-      const parsed = JSON.parse(jsonText) as Record<string, unknown>[];
-      onDecision('edited', parsed);
+      const parsed = JSON.parse(jsonText) as unknown;
+      const normalized = Array.isArray(parsed)
+        ? parsed.filter((item): item is Record<string, unknown> => !!asRecord(item))
+        : asRecord(parsed)
+        ? [parsed]
+        : [];
+      if (normalized.length === 0) {
+        setParseError('Edited payload must be an object or an array of objects.');
+        return;
+      }
+      onDecision('edited', normalized);
     } catch {
       setParseError('Invalid JSON — fix the payload before submitting.');
     }
@@ -50,7 +94,7 @@ export function ApprovalCard({
         </div>
       ) : (
         <pre className="code-block max-h-64 text-xs overflow-auto">
-          {JSON.stringify(payload.proposed_calls ?? payload.tool_calls ?? payload, null, 2)}
+          {JSON.stringify(editableDraft.length > 0 ? editableDraft : payload, null, 2)}
         </pre>
       )}
 

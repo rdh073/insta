@@ -27,21 +27,22 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
+import uuid
 
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from app.adapters.http.dependencies import (
     get_approval_adapter,
-    get_audit_log_adapter,
     get_smart_engagement_exec,
     get_smart_engagement_execution_enabled,
     get_smart_engagement_rec,
-    get_smart_engagement_usecases,
 )
+from app.adapters.http.streaming import sse_response
 from app.adapters.http.utils import format_error
 from ai_copilot.application.use_cases.run_smart_engagement import SmartEngagementUseCase
 from ai_copilot.adapters.approval_adapter import InMemoryApprovalAdapter
@@ -272,6 +273,86 @@ def _format_response(result: dict) -> SmartEngagementResponse:
     )
 
 
+def _to_stream_events(response: SmartEngagementResponse) -> list[dict[str, Any]]:
+    """Map a smart engagement response into slash-command SSE events."""
+    thread_id = response.thread_id or str(uuid.uuid4())
+    run_start = {
+        "type": "run_start",
+        "run_id": thread_id,
+        "thread_id": thread_id,
+    }
+
+    if response.interrupted:
+        return [
+            run_start,
+            {
+                "type": "approval_required",
+                "thread_id": thread_id,
+                "payload": response.interrupt_payload or {},
+            },
+        ]
+
+    if response.status == "error":
+        return [
+            run_start,
+            {
+                "type": "run_error",
+                "run_id": thread_id,
+                "thread_id": thread_id,
+                "message": response.outcome_reason or "Smart engagement failed.",
+            },
+        ]
+
+    return [
+        run_start,
+        {
+            "type": "final_response",
+            "thread_id": thread_id,
+            "stop_reason": response.status,
+            "text": response.outcome_reason or "Smart engagement completed.",
+            "result": response.model_dump(mode="json"),
+        },
+        {
+            "type": "run_finish",
+            "run_id": thread_id,
+            "stop_reason": response.status,
+        },
+    ]
+
+
+async def _stream_recommend_events(
+    request: SmartEngagementRequest,
+    use_case: SmartEngagementUseCase,
+) -> AsyncIterator[dict[str, Any]]:
+    result = await use_case.run(
+        execution_mode=request.execution_mode,
+        goal=request.goal,
+        account_id=request.account_id,
+        max_targets=request.max_targets,
+        max_actions_per_target=request.max_actions_per_target,
+        approval_timeout=request.approval_timeout,
+        metadata=request.metadata,
+    )
+    for event in _to_stream_events(_format_response(result)):
+        yield event
+
+
+async def _stream_resume_events(
+    request: ResumeRequest,
+    use_case: SmartEngagementUseCase,
+) -> AsyncIterator[dict[str, Any]]:
+    result = await use_case.resume(
+        thread_id=request.thread_id,
+        decision={
+            "decision": request.decision,
+            "notes": request.notes,
+            "content": request.content,
+        },
+    )
+    for event in _to_stream_events(_format_response(result)):
+        yield event
+
+
 def _get_use_case_for_mode(
     mode: str,
     rec_use_case: SmartEngagementUseCase,
@@ -405,6 +486,48 @@ async def resume(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=format_error(e, "Resume error"),
         )
+
+
+@router.post(
+    "/recommend/stream",
+    status_code=status.HTTP_200_OK,
+)
+async def recommend_stream(
+    request: SmartEngagementRequest,
+    rec_use_case: SmartEngagementUseCase = Depends(get_smart_engagement_rec),
+    exec_use_case=Depends(get_smart_engagement_exec),
+    execution_enabled: bool = Depends(get_smart_engagement_execution_enabled),
+) -> StreamingResponse:
+    """Run smart engagement and stream run/approval/final SSE events."""
+    use_case = _get_use_case_for_mode(
+        request.execution_mode, rec_use_case, exec_use_case, execution_enabled
+    )
+    return sse_response(
+        _stream_recommend_events(request, use_case),
+        logger=logger,
+    )
+
+
+@router.post(
+    "/resume/stream",
+    status_code=status.HTTP_200_OK,
+)
+async def resume_stream(
+    request: ResumeRequest,
+    exec_use_case=Depends(get_smart_engagement_exec),
+    execution_enabled: bool = Depends(get_smart_engagement_execution_enabled),
+) -> StreamingResponse:
+    """Resume smart engagement and stream run/final SSE events."""
+    if not execution_enabled or exec_use_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Resume requires execution mode. Set SMART_ENGAGEMENT_EXECUTION_ENABLED=true.",
+        )
+
+    return sse_response(
+        _stream_resume_events(request, exec_use_case),
+        logger=logger,
+    )
 
 
 @router.get(

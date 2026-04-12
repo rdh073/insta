@@ -151,6 +151,7 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let sawEvent = false;
 
       // Abort listener — cancel the reader when signal fires
       const onAbort = () => { void reader.cancel(); };
@@ -171,6 +172,7 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
             const raw = trimmed.slice(5).trim();
             if (!raw || raw === '[DONE]') continue;
             try {
+              sawEvent = true;
               controller.enqueue(JSON.parse(raw) as CopilotEvent);
             } catch {
               // skip malformed SSE lines
@@ -188,6 +190,10 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
         signal?.removeEventListener('abort', onAbort);
       }
 
+      if (!sawEvent) {
+        controller.error(new NetworkError('Stream ended without any SSE data events.'));
+        return;
+      }
       controller.close();
     },
   });

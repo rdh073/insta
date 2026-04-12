@@ -15,6 +15,7 @@ Uses FastAPI TestClient with dependency overrides to avoid hitting real services
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 import time
@@ -28,6 +29,18 @@ pytest.importorskip("fastapi.testclient")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+
+def _parse_sse_events(response_text: str) -> list[dict]:
+    events = []
+    for line in response_text.splitlines():
+        if not line.startswith("data: "):
+            continue
+        payload = line.removeprefix("data: ").strip()
+        if not payload or payload == "[DONE]":
+            continue
+        events.append(json.loads(payload))
+    return events
 
 
 def _make_test_app():
@@ -360,6 +373,54 @@ def test_resume_valid_decision_values(exec_client):
 
 
 # ===========================================================================
+# SSE /stream endpoints for slash-command transport
+# ===========================================================================
+
+def test_recommend_stream_returns_sse_contract(client):
+    response = client.post("/api/ai/smart-engagement/recommend/stream", json={
+        "execution_mode": "recommendation",
+    })
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse_events(response.text)
+    types = [e["type"] for e in events]
+
+    assert types[0] == "run_start"
+    assert "final_response" in types
+    assert types[-1] == "run_finish"
+
+
+def test_recommend_stream_execute_mode_emits_approval_interrupt(exec_client):
+    response = exec_client.post("/api/ai/smart-engagement/recommend/stream", json={
+        "execution_mode": "execute",
+    })
+
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    types = [e["type"] for e in events]
+
+    assert types[0] == "run_start"
+    assert "approval_required" in types
+    assert "run_finish" not in types
+
+
+def test_resume_stream_returns_final_sse_events(exec_client):
+    response = exec_client.post("/api/ai/smart-engagement/resume/stream", json={
+        "thread_id": "fake-thread-exec",
+        "decision": "approved",
+    })
+
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    types = [e["type"] for e in events]
+
+    assert types[0] == "run_start"
+    assert "final_response" in types
+    assert types[-1] == "run_finish"
+
+
+# ===========================================================================
 # GET /approval/{id}
 # ===========================================================================
 
@@ -443,6 +504,8 @@ def test_smart_engagement_routes_registered():
     # Paths include the router prefix: /api/ai/smart-engagement/recommend etc.
     assert any(p.endswith("/recommend") for p in paths)
     assert any(p.endswith("/resume") for p in paths)
+    assert any(p.endswith("/recommend/stream") for p in paths)
+    assert any(p.endswith("/resume/stream") for p in paths)
     assert any("approval_id" in p for p in paths)
 
 

@@ -43,6 +43,15 @@ class _FakeUseCase:
         return _GW()
 
 
+class _FailingUseCase(_FakeUseCase):
+    """Fake use case that raises mid-stream to verify run_error framing."""
+
+    async def run(self, operator_request, thread_id=None, provider="openai",
+                  model=None, api_key=None, provider_base_url=None):
+        yield {"type": "run_start", "run_id": "test-run-fail", "thread_id": "thread-fail"}
+        raise RuntimeError("simulated stream failure")
+
+
 def test_ai_graph_chat_route_sse_contract_end_to_end():
     """POST /api/ai/chat/graph streams SSE with correct event types."""
     from app.main import app
@@ -100,3 +109,25 @@ def test_ai_graph_legacy_alias_sse_contract_end_to_end():
     events = [json.loads(line) for line in payload_lines]
     assert len(events) > 0
     assert all("type" in e for e in events)
+
+
+def test_ai_graph_chat_frames_stream_exception_as_run_error():
+    from app.main import app
+    from ai_copilot.api import get_operator_copilot_usecase
+
+    app.dependency_overrides[get_operator_copilot_usecase] = lambda: _FailingUseCase()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/api/ai/chat/graph", json={"message": "list accounts"})
+    finally:
+        app.dependency_overrides.pop(get_operator_copilot_usecase, None)
+
+    assert response.status_code == 200
+    payload_lines = [
+        line.removeprefix("data: ").strip()
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    events = [json.loads(line) for line in payload_lines if line != "[DONE]"]
+    assert any(event.get("type") == "run_error" for event in events)

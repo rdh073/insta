@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from app.adapters.http.streaming import sse_response
 from ai_copilot.dependencies import (
     get_content_pipeline_usecase,
     resolve_content_pipeline_llm_config,
@@ -14,6 +15,7 @@ from ai_copilot.dependencies import (
 from ai_copilot.schemas import ContentPipelineResumeRequest, ContentPipelineRunRequest
 
 router = APIRouter(tags=["ai-langgraph"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/content-pipeline/run")
@@ -53,21 +55,16 @@ async def content_pipeline_run(
         checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
 
-    async def generate():
-        async for event in use_case.run(
+    return sse_response(
+        use_case.run(
             campaign_brief=request.campaign_brief,
             thread_id=request.thread_id,
             media_refs=request.media_refs,
             target_usernames=request.target_usernames,
             scheduled_at=request.scheduled_at,
             max_revisions=request.max_revisions,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
 
 
@@ -78,18 +75,12 @@ async def content_pipeline_resume(
 ) -> StreamingResponse:
     """Resume a content pipeline after operator approval/edit/rejection."""
 
-    async def generate():
-        async for event in use_case.resume(
+    return sse_response(
+        use_case.resume(
             thread_id=request.thread_id,
             decision=request.decision,
             edited_caption=request.edited_caption,
             reason=request.reason,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        ),
+        logger=logger,
     )
-
