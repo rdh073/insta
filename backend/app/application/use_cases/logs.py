@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from ..dto.account_dto import AccountResponse
 from ..ports import AccountRepository, ClientRepository, StatusRepository, JobRepository
 from ..ports.log_reader import LogReaderPort
 
@@ -90,16 +89,17 @@ class LogsUseCases:
         )[:10]
 
         return {
+            "contract_version": 1,
             "accounts": {
                 "total": total,
                 "active": active,
                 "idle": idle,
                 "error": error_count,
-                "errorAccounts": error_accounts,
             },
-            "jobsToday": jobs_today,
-            "recentJobs": recent_jobs,
-            "topAccounts": top_accounts,
+            "error_accounts": error_accounts,
+            "jobs_today": jobs_today,
+            "recent_jobs": recent_jobs,
+            "top_accounts": top_accounts,
         }
 
     def read_log_entries(

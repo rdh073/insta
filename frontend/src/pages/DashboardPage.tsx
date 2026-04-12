@@ -17,7 +17,6 @@ import toast from 'react-hot-toast';
 import { dashboardApi, type DashboardData } from '../api/dashboard';
 import { getErrorMessage } from '../lib/error';
 import { useAccountStore } from '../store/accounts';
-import type { PostJob } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
@@ -150,7 +149,7 @@ function AccountRow({
   );
 }
 
-function RecentJobRow({ job }: { job: PostJob }) {
+function RecentJobRow({ job }: { job: DashboardData['recent_jobs'][number] }) {
   const statusColor =
     job.status === 'completed'
       ? 'var(--color-success-fg)'
@@ -354,7 +353,7 @@ export function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {(data!.recent_jobs as PostJob[]).slice(0, 6).map((job) => (
+              {data!.recent_jobs.slice(0, 6).map((job) => (
                 <RecentJobRow key={job.id} job={job} />
               ))}
             </div>
