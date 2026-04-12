@@ -9,6 +9,11 @@ interface AccountUpdatedEvent {
   type: 'account_updated';
   id: string;
   status?: Account['status'];
+  lastError?: string | null;
+  last_error?: string | null;
+  lastErrorCode?: string | null;
+  last_error_code?: string | null;
+  /** Legacy key emitted by older backend/frontend versions. */
   error?: string;
   full_name?: string;
   profile_pic_url?: string;
@@ -64,7 +69,14 @@ export function useAccountEvents(): { connectionLost: boolean } {
             if (data.type === 'account_updated' && data.id) {
               const patch: Record<string, unknown> = {};
               if (data.status !== undefined) patch.status = data.status;
-              if (data.error !== undefined) patch.error = data.error;
+              const normalizedLastError = data.lastError ?? data.last_error ?? data.error;
+              if (normalizedLastError !== undefined) {
+                patch.lastError = normalizedLastError ?? undefined;
+              }
+              const normalizedLastErrorCode = data.lastErrorCode ?? data.last_error_code;
+              if (normalizedLastErrorCode !== undefined) {
+                patch.lastErrorCode = normalizedLastErrorCode ?? undefined;
+              }
               if (data.followers !== undefined) patch.followers = data.followers;
               if (data.following !== undefined) patch.following = data.following;
               if (data.full_name !== undefined) patch.fullName = data.full_name;

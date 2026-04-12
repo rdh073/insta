@@ -9,11 +9,13 @@ interface MediaState {
   userId: string;
 
   // In-memory data (lost on page refresh)
+  scopeAccountId: string;
   media: MediaSummary[];
   selected: MediaSummary | null;
   drawerTab: DrawerTab;
 
   // Actions
+  setScopeAccountId: (accountId: string) => void;
   setUserId: (v: string) => void;
   setMedia: (items: MediaSummary[]) => void;
   prependMedia: (item: MediaSummary) => void;
@@ -24,11 +26,25 @@ interface MediaState {
 
 export const useMediaStore = create<MediaState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       userId: '',
+      scopeAccountId: '',
       media: [],
       selected: null,
       drawerTab: 'detail',
+
+      setScopeAccountId: (scopeAccountId) =>
+        set((state) => {
+          if (state.scopeAccountId === scopeAccountId) {
+            return { scopeAccountId };
+          }
+          return {
+            scopeAccountId,
+            media: [],
+            selected: null,
+            drawerTab: 'detail',
+          };
+        }),
 
       setUserId: (userId) => set({ userId }),
 
@@ -40,14 +56,18 @@ export const useMediaStore = create<MediaState>()(
           selected: item,
         })),
 
-      setSelected: (selected) => set({ selected }),
+      setSelected: (selected) =>
+        set((state) => {
+          if (!selected) {
+            return { selected: null };
+          }
+          const exists = state.media.some((item) => item.pk === selected.pk);
+          return { selected: exists ? selected : null };
+        }),
 
       setDrawerTab: (drawerTab) => set({ drawerTab }),
 
-      clearMedia: () => {
-        const { selected } = get();
-        set({ media: [], selected: selected ? null : null });
-      },
+      clearMedia: () => set({ media: [], selected: null, drawerTab: 'detail' }),
     }),
     {
       name: 'insta-media',

@@ -10,9 +10,11 @@ interface InsightsState {
   ordering: InsightOrdering;
 
   // In-memory result
+  scopeAccountId: string;
   result: MediaInsightListResult | null;
 
   // Actions
+  setScopeAccountId: (accountId: string) => void;
   setPostType: (v: InsightPostType) => void;
   setTimeFrame: (v: InsightTimeFrame) => void;
   setOrdering: (v: InsightOrdering) => void;
@@ -25,7 +27,16 @@ export const useInsightsStore = create<InsightsState>()(
       postType: 'ALL',
       timeFrame: 'TWO_YEARS',
       ordering: 'REACH_COUNT',
+      scopeAccountId: '',
       result: null,
+
+      setScopeAccountId: (scopeAccountId) =>
+        set((state) => {
+          if (state.scopeAccountId === scopeAccountId) {
+            return { scopeAccountId };
+          }
+          return { scopeAccountId, result: null };
+        }),
 
       setPostType: (postType) => set({ postType }),
       setTimeFrame: (timeFrame) => set({ timeFrame }),

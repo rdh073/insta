@@ -3,7 +3,6 @@ export interface Account {
   username: string;
   proxy?: string;
   status: 'idle' | 'logging_in' | 'active' | 'error' | 'challenge' | '2fa_required';
-  error?: string;
   avatar?: string;
   followers?: number;
   following?: number;

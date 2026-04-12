@@ -166,8 +166,8 @@ export function AccountDetail({
             <span>Last verified: {new Date(account.lastVerifiedAt).toLocaleString()}</span>
           </div>
         )}
-        {account.error && (
-          <p className="rounded-[0.75rem] bg-[rgba(247,118,142,0.08)] px-3 py-2 text-xs text-[#ffbfd0]">{account.error}</p>
+        {account.lastError && (
+          <p className="rounded-[0.75rem] bg-[rgba(247,118,142,0.08)] px-3 py-2 text-xs text-[#ffbfd0]">{account.lastError}</p>
         )}
       </div>
 

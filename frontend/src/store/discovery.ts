@@ -12,11 +12,13 @@ interface DiscoveryState {
   amount: number;
 
   // In-memory results
+  scopeAccountId: string;
   hashtag: HashtagSummary | null;
   posts: MediaSummary[];
   loading: boolean;
 
   // Actions
+  setScopeAccountId: (accountId: string) => void;
   setHashtagInput: (v: string) => void;
   setFeed: (v: Feed) => void;
   setAmount: (v: number) => void;
@@ -32,9 +34,18 @@ export const useDiscoveryStore = create<DiscoveryState>()(
       hashtagInput: '',
       feed: 'top',
       amount: 24,
+      scopeAccountId: '',
       hashtag: null,
       posts: [],
       loading: false,
+
+      setScopeAccountId: (scopeAccountId) =>
+        set((state) => {
+          if (state.scopeAccountId === scopeAccountId) {
+            return { scopeAccountId };
+          }
+          return { scopeAccountId, hashtag: null, posts: [], loading: false };
+        }),
 
       setHashtagInput: (hashtagInput) => set({ hashtagInput }),
       setFeed: (feed) => set({ feed }),

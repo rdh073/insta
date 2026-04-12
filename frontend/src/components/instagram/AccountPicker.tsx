@@ -12,21 +12,63 @@ interface AccountPickerProps {
   className?: string;
 }
 
+function getSessionStorage(): Storage | null {
+  return typeof globalThis.sessionStorage !== 'undefined' ? globalThis.sessionStorage : null;
+}
+
+function readPersistedAccountId(): string | null {
+  return getSessionStorage()?.getItem(SESSION_KEY) ?? null;
+}
+
+function writePersistedAccountId(id: string): void {
+  getSessionStorage()?.setItem(SESSION_KEY, id);
+}
+
+function clearPersistedAccountId(): void {
+  getSessionStorage()?.removeItem(SESSION_KEY);
+}
+
+export function reconcileAccountSelection(
+  currentId: string,
+  activeIds: string[],
+  persistedId: string | null,
+): string {
+  if (currentId && activeIds.includes(currentId)) {
+    return currentId;
+  }
+  if (persistedId && activeIds.includes(persistedId)) {
+    return persistedId;
+  }
+  return activeIds[0] ?? '';
+}
+
 export function AccountPicker({ value, onChange, className }: AccountPickerProps) {
   const accounts = useAccountStore((s) => s.accounts);
   const active = accounts.filter((a) => a.status === 'active');
+  const activeIds = active.map((a) => a.id);
+  const activeKey = activeIds.join('|');
 
-  // Restore persisted selection or auto-select first active account
+  // Reconcile controlled selection whenever the active account set changes.
   useEffect(() => {
-    if (value) return;
-    const persisted = sessionStorage.getItem(SESSION_KEY);
-    const target = persisted && active.find((a) => a.id === persisted) ? persisted : active[0]?.id;
-    if (target) onChange(target);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const persisted = readPersistedAccountId();
+    const next = reconcileAccountSelection(value, activeIds, persisted);
+    if (next !== value) {
+      onChange(next);
+    }
+    if (next) {
+      writePersistedAccountId(next);
+    } else {
+      clearPersistedAccountId();
+    }
+  }, [value, activeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const id = e.target.value;
-    sessionStorage.setItem(SESSION_KEY, id);
+    if (id) {
+      writePersistedAccountId(id);
+    } else {
+      clearPersistedAccountId();
+    }
     onChange(id);
   }
 
@@ -54,13 +96,29 @@ export function AccountPicker({ value, onChange, className }: AccountPickerProps
 export function useAccountPicker() {
   const accounts = useAccountStore((s) => s.accounts);
   const active = accounts.filter((a) => a.status === 'active');
-  const [accountId, setAccountId] = useState<string>(() => {
-    const persisted = sessionStorage.getItem(SESSION_KEY);
-    return (persisted && active.find((a) => a.id === persisted)) ? persisted : (active[0]?.id ?? '');
-  });
+  const activeIds = active.map((a) => a.id);
+  const activeKey = activeIds.join('|');
+  const [accountId, setAccountId] = useState<string>('');
+
+  useEffect(() => {
+    const persisted = readPersistedAccountId();
+    const next = reconcileAccountSelection(accountId, activeIds, persisted);
+    if (next !== accountId) {
+      setAccountId(next);
+    }
+    if (next) {
+      writePersistedAccountId(next);
+    } else {
+      clearPersistedAccountId();
+    }
+  }, [accountId, activeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleChange(id: string) {
-    sessionStorage.setItem(SESSION_KEY, id);
+    if (id) {
+      writePersistedAccountId(id);
+    } else {
+      clearPersistedAccountId();
+    }
     setAccountId(id);
   }
 

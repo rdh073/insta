@@ -1,5 +1,4 @@
-import axios from 'axios';
-import { buildApiUrl } from '../lib/api-base';
+import { api } from './client';
 
 export interface SmartEngagementRequest {
   execution_mode: 'recommendation' | 'execute';
@@ -55,21 +54,13 @@ export interface ResumeRequest {
 }
 
 export const smartEngagementApi = {
-  async recommend(
-    req: SmartEngagementRequest,
-    backendUrl?: string,
-  ): Promise<SmartEngagementResponse> {
-    const url = buildApiUrl('/ai/smart-engagement/recommend', backendUrl);
-    const res = await axios.post<SmartEngagementResponse>(url, req);
+  async recommend(req: SmartEngagementRequest): Promise<SmartEngagementResponse> {
+    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/recommend', req);
     return res.data;
   },
 
-  async resume(
-    req: ResumeRequest,
-    backendUrl?: string,
-  ): Promise<SmartEngagementResponse> {
-    const url = buildApiUrl('/ai/smart-engagement/resume', backendUrl);
-    const res = await axios.post<SmartEngagementResponse>(url, req);
+  async resume(req: ResumeRequest): Promise<SmartEngagementResponse> {
+    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/resume', req);
     return res.data;
   },
 };

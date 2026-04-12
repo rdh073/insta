@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Film,
@@ -320,6 +320,7 @@ export function MediaPage() {
   const selected   = useMediaStore((s) => s.selected);
   const drawerTab  = useMediaStore((s) => s.drawerTab);
 
+  const setScopeAccountId = useMediaStore((s) => s.setScopeAccountId);
   const setUserId    = useMediaStore((s) => s.setUserId);
   const setMedia     = useMediaStore((s) => s.setMedia);
   const prependMedia = useMediaStore((s) => s.prependMedia);
@@ -329,6 +330,11 @@ export function MediaPage() {
   const [postUrl, setPostUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [urlLoading, setUrlLoading] = useState(false);
+  const selectedMedia = selected && media.some((item) => item.pk === selected.pk) ? selected : null;
+
+  useEffect(() => {
+    setScopeAccountId(accountId);
+  }, [accountId, setScopeAccountId]);
 
   async function handleLoad() {
     const raw = userId.trim();
@@ -373,7 +379,14 @@ export function MediaPage() {
       {/* Toolbar */}
       <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-5 py-3 space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <AccountPicker value={accountId} onChange={setAccountId} className="w-48" />
+          <AccountPicker
+            value={accountId}
+            onChange={(id) => {
+              setScopeAccountId(id);
+              setAccountId(id);
+            }}
+            className="w-48"
+          />
           <input
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
@@ -422,18 +435,18 @@ export function MediaPage() {
           )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {media.map((m) => (
-              <MediaCard
-                key={m.pk}
-                media={m}
-                selected={selected?.pk === m.pk}
-                onClick={() => { setSelected(m); setDrawerTab('detail'); }}
-              />
-            ))}
+                <MediaCard
+                  key={m.pk}
+                  media={m}
+                  selected={selectedMedia?.pk === m.pk}
+                  onClick={() => { setSelected(m); setDrawerTab('detail'); }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Drawer */}
-        {selected && (
+          {/* Drawer */}
+        {selectedMedia && (
           <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-[rgba(162,179,229,0.10)] bg-[rgba(6,8,16,0.60)] p-5 lg:flex lg:flex-col">
             <div className="flex items-center justify-between">
               <div className="flex gap-2">
@@ -465,30 +478,30 @@ export function MediaPage() {
             <div className="mt-4 flex-1 space-y-3">
               {drawerTab === 'detail' && (
                 <>
-                  {selected.resources[0]?.thumbnailUrl && (
+                  {selectedMedia.resources[0]?.thumbnailUrl && (
                     <img
-                      src={selected.resources[0].thumbnailUrl}
+                      src={selectedMedia.resources[0].thumbnailUrl}
                       alt=""
                       className="w-full rounded-xl object-cover"
                     />
                   )}
                   <div className="space-y-2 text-sm">
-                    <p className="leading-6 text-[#c0caf5]">{selected.captionText || <span className="italic text-[#4a5578]">No caption</span>}</p>
+                    <p className="leading-6 text-[#c0caf5]">{selectedMedia.captionText || <span className="italic text-[#4a5578]">No caption</span>}</p>
                     <div className="flex gap-4 text-[#6a7aa0]">
-                      <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-[#f7768e]" /> {selected.likeCount}</span>
-                      <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5 text-[#7dcfff]" /> {selected.commentCount}</span>
+                      <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-[#f7768e]" /> {selectedMedia.likeCount}</span>
+                      <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5 text-[#7dcfff]" /> {selectedMedia.commentCount}</span>
                     </div>
                     <div className="space-y-1 rounded-xl border border-[rgba(162,179,229,0.08)] bg-[rgba(255,255,255,0.02)] p-3 font-mono text-[11px] text-[#6a7aa0]">
-                      <p><span className="text-[#4a5578]">id</span> {selected.mediaId}</p>
-                      <p><span className="text-[#4a5578]">code</span> {selected.code}</p>
-                      <p><span className="text-[#4a5578]">type</span> {MEDIA_TYPE_LABEL[selected.mediaType] ?? selected.mediaType}</p>
-                      {selected.takenAt && <p><span className="text-[#4a5578]">at</span> {new Date(selected.takenAt).toLocaleString()}</p>}
+                      <p><span className="text-[#4a5578]">id</span> {selectedMedia.mediaId}</p>
+                      <p><span className="text-[#4a5578]">code</span> {selectedMedia.code}</p>
+                      <p><span className="text-[#4a5578]">type</span> {MEDIA_TYPE_LABEL[selectedMedia.mediaType] ?? selectedMedia.mediaType}</p>
+                      {selectedMedia.takenAt && <p><span className="text-[#4a5578]">at</span> {new Date(selectedMedia.takenAt).toLocaleString()}</p>}
                     </div>
                   </div>
                 </>
               )}
               {drawerTab === 'comments' && (
-                <CommentsPanel accountId={accountId} mediaId={selected.mediaId} />
+                <CommentsPanel accountId={accountId} mediaId={selectedMedia.mediaId} />
               )}
             </div>
           </div>

@@ -24,7 +24,7 @@ import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
-import { useSmartEngagementStore } from '../store/smartEngagement';
+import { getValidSelectedIds, useSmartEngagementStore } from '../store/smartEngagement';
 import { buildProxyImageUrl } from '../lib/api-base';
 import { cn } from '../lib/cn';
 import type { Account } from '../types';
@@ -384,14 +384,17 @@ interface AccountResult {
 }
 
 export function SmartEngagementPage() {
-  const backendUrl = useSettingsStore((s) => s.backendUrl);
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccounts = accounts.filter((a) => a.status === 'active');
+  const activeAccountIds = activeAccounts.map((a) => a.id);
+  const activeAccountIdsKey = activeAccountIds.join('|');
+  const firstActiveAccountId = activeAccounts[0]?.id ?? '';
 
   const goal = useSmartEngagementStore((s) => s.goal);
   const setGoal = useSmartEngagementStore((s) => s.setGoal);
   const selectedIds = useSmartEngagementStore((s) => s.selectedIds);
   const setSelectedIds = useSmartEngagementStore((s) => s.setSelectedIds);
+  const pruneSelectedIds = useSmartEngagementStore((s) => s.pruneSelectedIds);
   const mode = useSmartEngagementStore((s) => s.mode);
   const setMode = useSmartEngagementStore((s) => s.setMode);
   const maxTargets = useSmartEngagementStore((s) => s.maxTargets);
@@ -404,22 +407,27 @@ export function SmartEngagementPage() {
   const setResults = useSmartEngagementStore((s) => s.setResults);
   const resumeLoading = useSmartEngagementStore((s) => s.resumeLoading);
   const setResumeLoading = useSmartEngagementStore((s) => s.setResumeLoading);
+  const validSelectedIds = getValidSelectedIds(selectedIds, activeAccountIds);
+
+  useEffect(() => {
+    pruneSelectedIds(activeAccountIds);
+  }, [activeAccountIdsKey, pruneSelectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select first active account on mount if nothing is persisted
   useEffect(() => {
-    if (selectedIds.length === 0 && activeAccounts.length > 0) {
-      setSelectedIds([activeAccounts[0].id]);
+    if (selectedIds.length === 0 && firstActiveAccountId) {
+      setSelectedIds([firstActiveAccountId]);
     }
-  }, [activeAccounts.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedIds.length, firstActiveAccountId, setSelectedIds]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!goal.trim()) { toast.error('Select a goal or type a custom one'); return; }
-    if (selectedIds.length === 0) { toast.error('Select at least one account'); return; }
+    if (validSelectedIds.length === 0) { toast.error('Select at least one active account'); return; }
 
     setLoading(true);
     setResults([]);
-    const accountsToRun = activeAccounts.filter((a) => selectedIds.includes(a.id));
+    const accountsToRun = activeAccounts.filter((a) => validSelectedIds.includes(a.id));
 
     try {
       const newResults: AccountResult[] = [];
@@ -437,7 +445,7 @@ export function SmartEngagementPage() {
         };
 
         try {
-          const resp = await smartEngagementApi.recommend(payload, backendUrl);
+          const resp = await smartEngagementApi.recommend(payload);
           newResults.push({ accountId: acc.id, username: acc.username, response: resp });
         } catch (error) {
           newResults.push({
@@ -465,7 +473,7 @@ export function SmartEngagementPage() {
     setResumeLoading(true);
     try {
       const payload: ResumeRequest = { thread_id: threadId, decision, content };
-      const resp = await smartEngagementApi.resume(payload, backendUrl);
+      const resp = await smartEngagementApi.resume(payload);
       const updated = results.map((r) =>
         r.response.thread_id === threadId ? { ...r, response: resp } : r,
       );
@@ -488,7 +496,7 @@ export function SmartEngagementPage() {
       >
         <div className="metric-grid">
           <HeaderStat label="Active Accounts" value={activeAccounts.length} tone="green" />
-          <HeaderStat label="Selected" value={selectedIds.length} tone="cyan" />
+          <HeaderStat label="Selected" value={validSelectedIds.length} tone="cyan" />
           <HeaderStat label="Mode" value={mode} tone="violet" />
         </div>
       </PageHeader>
@@ -506,7 +514,7 @@ export function SmartEngagementPage() {
             {/* Account picker */}
             <div className="space-y-2">
               <label className="field-label">Accounts</label>
-              <AccountMultiPicker selected={selectedIds} onChange={setSelectedIds} />
+              <AccountMultiPicker selected={validSelectedIds} onChange={setSelectedIds} />
             </div>
 
             {/* Goal templates */}
@@ -583,9 +591,9 @@ export function SmartEngagementPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full" loading={loading} disabled={selectedIds.length === 0}>
+            <Button type="submit" className="w-full" loading={loading} disabled={validSelectedIds.length === 0}>
               {!loading && <Sparkles className="h-4 w-4" />}
-              {loading ? progress || 'Running…' : `Run for ${selectedIds.length} account${selectedIds.length === 1 ? '' : 's'}`}
+              {loading ? progress || 'Running…' : `Run for ${validSelectedIds.length} account${validSelectedIds.length === 1 ? '' : 's'}`}
             </Button>
           </form>
 

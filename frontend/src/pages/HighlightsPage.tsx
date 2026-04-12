@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Bookmark, ChevronDown, ChevronRight, Camera, Loader, Pencil, Trash2 } from 'lucide-react';
 import { highlightsApi } from '../api/instagram/highlights';
@@ -168,7 +168,20 @@ function HighlightCard({
 
 export function HighlightsPage() {
   const { accountId, setAccountId } = useAccountPicker();
-  const { userId, setUserId, highlights, setHighlights, removeHighlight, loading, setLoading } = useHighlightsStore();
+  const {
+    userId,
+    setUserId,
+    highlights,
+    setHighlights,
+    removeHighlight,
+    loading,
+    setLoading,
+    setScopeAccountId,
+  } = useHighlightsStore();
+
+  useEffect(() => {
+    setScopeAccountId(accountId);
+  }, [accountId, setScopeAccountId]);
 
   async function handleLoad() {
     if (!accountId || !userId.trim()) return;
@@ -188,7 +201,14 @@ export function HighlightsPage() {
       {/* Toolbar */}
       <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <AccountPicker value={accountId} onChange={setAccountId} className="w-48" />
+          <AccountPicker
+            value={accountId}
+            onChange={(id) => {
+              setScopeAccountId(id);
+              setAccountId(id);
+            }}
+            className="w-48"
+          />
           <input
             value={userId}
             onChange={(e) => setUserId(e.target.value)}

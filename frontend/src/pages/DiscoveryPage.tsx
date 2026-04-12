@@ -1,4 +1,5 @@
 import toast from 'react-hot-toast';
+import { useEffect } from 'react';
 import {
   Film,
   Hash,
@@ -104,6 +105,11 @@ export function DiscoveryPage() {
   const setLoading      = useDiscoveryStore((s) => s.setLoading);
   const loading         = useDiscoveryStore((s) => s.loading);
   const clearResults    = useDiscoveryStore((s) => s.clearResults);
+  const setScopeAccountId = useDiscoveryStore((s) => s.setScopeAccountId);
+
+  useEffect(() => {
+    setScopeAccountId(accountId);
+  }, [accountId, setScopeAccountId]);
 
   async function handleLoad() {
     const name = hashtagInput.trim().replace(/^#/, '');
@@ -151,7 +157,14 @@ export function DiscoveryPage() {
       {/* Toolbar */}
       <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <AccountPicker value={accountId} onChange={setAccountId} className="w-48" />
+          <AccountPicker
+            value={accountId}
+            onChange={(id) => {
+              setScopeAccountId(id);
+              setAccountId(id);
+            }}
+            className="w-48"
+          />
 
           <div className="relative">
             <Hash className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#4a5578]" />

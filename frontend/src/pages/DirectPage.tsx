@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { CheckCheck, Clock, Loader, MessageCircle, Search, Send, Trash2, User } from 'lucide-react';
-import { directApi } from '../api/instagram/direct';
+import { directApi, getSyntheticSearchUserId } from '../api/instagram/direct';
 import { AccountPicker, useAccountPicker } from '../components/instagram/AccountPicker';
 import type { DirectThreadSummary, DirectMessageSummary } from '../types/instagram/direct';
 import { Button } from '../components/ui/Button';
@@ -189,13 +189,19 @@ export function DirectPage() {
   }
 
   async function selectThread(thread: DirectThreadSummary) {
-    setSelectedThread(thread);
     setLoadingMessages(true);
     try {
-      const result = await directApi.getThread(accountId, thread.directThreadId, 30);
+      let resolved = thread;
+      const syntheticUserId = getSyntheticSearchUserId(thread.directThreadId);
+      if (syntheticUserId != null) {
+        resolved = await directApi.findOrCreate(accountId, [syntheticUserId]);
+      }
+
+      setSelectedThread(resolved);
+      const result = await directApi.getThread(accountId, resolved.directThreadId, 30);
       setMessages(result.messages);
       // Mark as seen silently — failure is non-critical
-      directApi.markSeen(accountId, thread.directThreadId).catch(() => undefined);
+      directApi.markSeen(accountId, resolved.directThreadId).catch(() => undefined);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

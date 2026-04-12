@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { BarChart2, ChevronDown, ChevronRight, Loader } from 'lucide-react';
 import { insightsApi } from '../api/instagram/insights';
@@ -103,8 +103,13 @@ export function InsightsPage() {
   const setTimeFrame = useInsightsStore((s) => s.setTimeFrame);
   const setOrdering  = useInsightsStore((s) => s.setOrdering);
   const setResult    = useInsightsStore((s) => s.setResult);
+  const setScopeAccountId = useInsightsStore((s) => s.setScopeAccountId);
 
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setScopeAccountId(accountId);
+  }, [accountId, setScopeAccountId]);
 
   async function handleLoad() {
     if (!accountId) return;
@@ -130,7 +135,14 @@ export function InsightsPage() {
       {/* Toolbar */}
       <div className="shrink-0 border-b border-[rgba(162,179,229,0.08)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <AccountPicker value={accountId} onChange={setAccountId} className="w-48" />
+          <AccountPicker
+            value={accountId}
+            onChange={(id) => {
+              setScopeAccountId(id);
+              setAccountId(id);
+            }}
+            className="w-48"
+          />
           <select value={postType} onChange={(e) => setPostType(e.target.value as InsightPostType)} className="glass-select text-sm">
             {POST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
