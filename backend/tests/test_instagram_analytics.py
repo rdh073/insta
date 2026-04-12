@@ -105,15 +105,49 @@ class TestInsightReaderAdapter:
         assert result.extra_metrics["custom_vendor_metric_2"] == "some_value"
         assert result.extra_metrics["engagement_rate"] == 5.5
 
-    def test_list_media_insights(self):
-        """Verify insights_media_feed_all() maps multiple insights."""
+    def test_list_media_insights_from_top_posts_edges_payload(self):
+        """Verify edge/node GraphQL payload maps to MediaInsightSummary."""
         # Create mock client
         mock_client = Mock()
-        mock_insights = [
-            {"media_pk": 111, "reach": 1000, "impressions": 1500, "likes": 100},
-            {"media_pk": 222, "reach": 2000, "impressions": 3000, "likes": 200},
-            {"pk": 333, "reach": 3000, "impressions": 4500, "likes": 300},  # using 'pk' instead
-        ]
+        mock_insights = {
+            "top_posts": {
+                "edges": [
+                    {
+                        "node": {
+                            "id": "111_42",
+                            "reach_count": 1000,
+                            "impression_count": 1500,
+                            "like_count": 100,
+                            "comment_count": 10,
+                            "save_count": 5,
+                            "engagement_rate": 0.125,
+                        }
+                    },
+                    {
+                        "node": {
+                            "media_pk": 222,
+                            "reach": 2000,
+                            "impressions": 3000,
+                            "likes": 200,
+                            "shares": 15,
+                            "profile_views": 80,
+                        }
+                    },
+                    {
+                        "node": {
+                            "media": {"pk": "333"},
+                            "metrics": {
+                                "reach": 3000,
+                                "impressions": 4500,
+                                "likes": 300,
+                                "video_view_count": 999,
+                                "vendor_metric": "alpha",
+                            },
+                        }
+                    },
+                ]
+            }
+        }
         mock_client.insights_media_feed_all.return_value = mock_insights
 
         # Create mock repo
@@ -128,10 +162,54 @@ class TestInsightReaderAdapter:
         assert all(isinstance(r, MediaInsightSummary) for r in results)
         assert results[0].media_pk == 111
         assert results[0].reach_count == 1000
+        assert results[0].comment_count == 10
+        assert results[0].save_count == 5
+        assert results[0].extra_metrics["engagement_rate"] == 0.125
         assert results[1].media_pk == 222
         assert results[1].reach_count == 2000
+        assert results[1].share_count == 15
+        assert results[1].profile_view_count == 80
         assert results[2].media_pk == 333
         assert results[2].reach_count == 3000
+        assert results[2].video_view_count == 999
+        assert results[2].extra_metrics["vendor_metric"] == "alpha"
+
+    def test_list_media_insights_edge_list_skips_invalid_nodes(self):
+        """Verify malformed edge entries are ignored without failing the call."""
+        mock_client = Mock()
+        mock_client.insights_media_feed_all.return_value = [
+            {"node": {"id": "444_99", "reach": 4000, "likes": 400}},
+            {"node": {"pk": 555, "impressions": 6000, "likes": 500}},
+            {"node": {"id": "not-a-media-id", "reach": 999}},
+            {"node": {}},
+            {"unexpected": "shape"},
+            None,
+        ]
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramInsightReaderAdapter(mock_repo)
+        results = adapter.list_media_insights("acc-123")
+
+        assert [r.media_pk for r in results] == [444, 555]
+        assert results[0].reach_count == 4000
+        assert results[1].impression_count == 6000
+
+    def test_list_media_insights_empty_top_posts_edges(self):
+        """Verify empty edge lists return an empty result set."""
+        mock_client = Mock()
+        mock_client.insights_media_feed_all.return_value = {
+            "top_posts": {"edges": []}
+        }
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramInsightReaderAdapter(mock_repo)
+        results = adapter.list_media_insights("acc-123")
+
+        assert results == []
 
     def test_list_media_insights_with_filters(self):
         """Verify filter parameters are passed to vendor method."""
@@ -200,6 +278,22 @@ class TestInsightReaderAdapter:
 
         with pytest.raises(ValueError) as err:
             adapter.get_media_insight("acc-123", 999)
+        assert str(err.value) == SPEC_CLIENT_UNKNOWN_ERROR.user_message
+        assert raw_msg not in str(err.value)
+
+    def test_list_media_insights_business_account_error_surface(self):
+        """Verify list surfaces business-account failures via translated ValueError."""
+        raw_msg = "Account is not business account"
+        mock_client = Mock()
+        mock_client.insights_media_feed_all.side_effect = Exception(raw_msg)
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramInsightReaderAdapter(mock_repo)
+
+        with pytest.raises(ValueError) as err:
+            adapter.list_media_insights("acc-123")
         assert str(err.value) == SPEC_CLIENT_UNKNOWN_ERROR.user_message
         assert raw_msg not in str(err.value)
 
