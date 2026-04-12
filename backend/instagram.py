@@ -63,11 +63,28 @@ from instagram_runtime.upload_payloads import (
 logger = logging.getLogger(__name__)
 
 
-def _new_client(proxy: Optional[str] = None):
+def _sync_runtime_session_dirs() -> None:
+    """Keep runtime modules aligned with the active session directory binding."""
+    _auth.SESSIONS_DIR = SESSIONS_DIR
+    _relogin.SESSIONS_DIR = SESSIONS_DIR
+
+
+def _new_client(
+    proxy: Optional[str] = None,
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+):
     return _auth.new_client(
         proxy,
         ig_client_cls=IGClient,
         device_profile_factory=random_device_profile,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
     )
 
 
@@ -109,13 +126,22 @@ def create_authenticated_client(
     proxy: Optional[str] = None,
     totp_secret: Optional[str] = None,
     verify_session: bool = False,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ):
+    _sync_runtime_session_dirs()
     return _auth.create_authenticated_client(
         username,
         password,
         proxy,
         totp_secret,
         verify_session=verify_session,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
         ig_client_cls=IGClient,
         new_client_fn=_new_client,
     )
@@ -130,12 +156,21 @@ def complete_2fa_client(
     password: str,
     verification_code: str,
     proxy: Optional[str] = None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ):
+    _sync_runtime_session_dirs()
     return _auth.complete_2fa_client(
         username,
         password,
         verification_code,
         proxy,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
         ig_client_cls=IGClient,
         new_client_fn=_new_client,
     )
@@ -149,12 +184,20 @@ def _relogin_session_restore(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ):
     return _relogin._relogin_session_restore(
         username,
         password,
         proxy,
         totp_secret,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
         create_authenticated_client_fn=create_authenticated_client,
     )
 
@@ -164,12 +207,20 @@ def _relogin_fresh_credentials(
     password: str,
     proxy: str | None,
     totp_secret: str | None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ):
     return _relogin._relogin_fresh_credentials(
         username,
         password,
         proxy,
         totp_secret,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
         new_client_fn=_new_client,
     )
 
@@ -188,14 +239,23 @@ def relogin_account_sync(
     password: str,
     proxy: str | None = None,
     totp_secret: str | None = None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     mode: str = "session_restore",
 ) -> dict:
+    _sync_runtime_session_dirs()
     return _relogin.relogin_account_sync(
         account_id,
         username=username,
         password=password,
         proxy=proxy,
         totp_secret=totp_secret,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
         mode=mode,
         create_authenticated_client_fn=create_authenticated_client,
         new_client_fn=_new_client,

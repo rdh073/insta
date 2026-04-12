@@ -31,6 +31,10 @@ def _invoke_relogin_sync(relogin_sync: ReloginSync, account_id: str) -> dict:
             password=meta.get("password", ""),
             proxy=meta.get("proxy"),
             totp_secret=meta.get("totp_secret"),
+            country=meta.get("country"),
+            country_code=meta.get("country_code"),
+            locale=meta.get("locale"),
+            timezone_offset=meta.get("timezone_offset"),
         )
     return relogin_sync(account_id)
 
@@ -120,4 +124,3 @@ def relogin_account_by_username(
             username=normalized,
         )
         return {"success": False, "username": normalized, "error": failure.user_message, "errorCode": failure.code}
-

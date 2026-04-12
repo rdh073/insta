@@ -222,6 +222,10 @@ async def login(
             password=body.password,
             proxy=body.proxy,
             totp_secret=body.totp_secret,
+            country=body.country,
+            country_code=body.country_code,
+            locale=body.locale,
+            timezone_offset=body.timezone_offset,
         )
         result = await asyncio.to_thread(usecases.login_account, request)
         if result.status == "active":

@@ -53,6 +53,10 @@ class SqlAccountRepository:
             username=row.username,
             password=row.password,
             proxy=row.proxy,
+            country=row.country,
+            country_code=row.country_code,
+            locale=row.locale,
+            timezone_offset=row.timezone_offset,
             totp_secret=row.totp_secret,
             totp_enabled=row.totp_enabled,
             full_name=row.full_name,
@@ -69,6 +73,10 @@ class SqlAccountRepository:
         row.username = record.username
         row.password = record.password
         row.proxy = record.proxy
+        row.country = record.country
+        row.country_code = record.country_code
+        row.locale = record.locale
+        row.timezone_offset = record.timezone_offset
         row.totp_secret = record.totp_secret
         row.totp_enabled = record.totp_enabled
         row.full_name = record.full_name

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import os
 from typing import Callable, Optional
 
 from state import (
@@ -18,6 +20,138 @@ from state import (
 )
 from app.adapters.instagram.device_pool import random_device_profile
 from app.adapters.instagram.exception_handler import instagram_exception_handler
+
+_ENV_COUNTRY = "INSTAGRAM_COUNTRY"
+_ENV_COUNTRY_CODE = "INSTAGRAM_COUNTRY_CODE"
+_ENV_LOCALE = "INSTAGRAM_LOCALE"
+_ENV_TIMEZONE_OFFSET = "INSTAGRAM_TIMEZONE_OFFSET"
+
+_DEFAULT_COUNTRY = "ID"
+_DEFAULT_COUNTRY_CODE = 62
+_DEFAULT_LOCALE = "id_ID"
+_DEFAULT_TIMEZONE_OFFSET = 7 * 3600
+
+
+def _normalized_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _normalized_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            return int(cleaned)
+        except ValueError:
+            return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_geo_locale_settings(
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+) -> dict[str, str | int]:
+    resolved_country = (
+        _normalized_optional_text(country)
+        or _normalized_optional_text(os.getenv(_ENV_COUNTRY))
+        or _DEFAULT_COUNTRY
+    )
+    resolved_locale = (
+        _normalized_optional_text(locale)
+        or _normalized_optional_text(os.getenv(_ENV_LOCALE))
+        or _DEFAULT_LOCALE
+    )
+    resolved_country_code = _normalized_optional_int(country_code)
+    if resolved_country_code is None:
+        resolved_country_code = _normalized_optional_int(os.getenv(_ENV_COUNTRY_CODE))
+    if resolved_country_code is None:
+        resolved_country_code = _DEFAULT_COUNTRY_CODE
+    resolved_timezone_offset = _normalized_optional_int(timezone_offset)
+    if resolved_timezone_offset is None:
+        resolved_timezone_offset = _normalized_optional_int(os.getenv(_ENV_TIMEZONE_OFFSET))
+    if resolved_timezone_offset is None:
+        resolved_timezone_offset = _DEFAULT_TIMEZONE_OFFSET
+
+    resolved: dict[str, str | int] = {}
+    if resolved_country is not None:
+        resolved["country"] = resolved_country
+    if resolved_country_code is not None:
+        resolved["country_code"] = resolved_country_code
+    if resolved_locale is not None:
+        resolved["locale"] = resolved_locale
+    if resolved_timezone_offset is not None:
+        resolved["timezone_offset"] = resolved_timezone_offset
+    return resolved
+
+
+def _apply_geo_locale_settings(client, geo_settings: dict[str, str | int]) -> None:
+    country = geo_settings.get("country")
+    if isinstance(country, str) and hasattr(client, "set_country"):
+        client.set_country(country)
+    country_code = geo_settings.get("country_code")
+    if isinstance(country_code, int) and hasattr(client, "set_country_code"):
+        client.set_country_code(country_code)
+    locale = geo_settings.get("locale")
+    if isinstance(locale, str) and hasattr(client, "set_locale"):
+        client.set_locale(locale)
+    timezone_offset = geo_settings.get("timezone_offset")
+    if isinstance(timezone_offset, int) and hasattr(client, "set_timezone_offset"):
+        client.set_timezone_offset(timezone_offset)
+
+
+def _new_client_with_optional_geo(
+    new_client_fn: Callable[..., object],
+    proxy: str | None,
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+):
+    geo_kwargs = _resolve_geo_locale_settings(
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
+    if not geo_kwargs:
+        return new_client_fn(proxy)
+
+    try:
+        signature = inspect.signature(new_client_fn)
+    except (TypeError, ValueError):
+        return new_client_fn(proxy)
+
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return new_client_fn(proxy, **geo_kwargs)
+
+    supported_kwargs = {
+        key: value
+        for key, value in geo_kwargs.items()
+        if key in signature.parameters
+    }
+    if supported_kwargs:
+        return new_client_fn(proxy, **supported_kwargs)
+    return new_client_fn(proxy)
 
 
 def _non_interactive_handle_exception(_client, error: Exception) -> None:
@@ -53,6 +187,10 @@ def new_client(
     *,
     ig_client_cls=IGClient,
     device_profile_factory: Callable[[], tuple[dict, str]] = random_device_profile,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ):
     client = ig_client_cls()
     client.request_timeout = 60  # 60s per HTTP request — prevents challenge hang
@@ -65,6 +203,15 @@ def new_client(
     device, user_agent = device_profile_factory()
     client.set_device(device)
     client.set_user_agent(user_agent)
+    _apply_geo_locale_settings(
+        client,
+        _resolve_geo_locale_settings(
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        ),
+    )
     # Skip post-login feed calls (get_reels_tray_feed + get_timeline_feed).
     # instagrapi's default login_flow() emulates app behaviour but is not
     # required for session validity — skipping it makes fresh-account login
@@ -115,9 +262,13 @@ def create_authenticated_client(
     proxy: Optional[str] = None,
     totp_secret: Optional[str] = None,
     verify_session: bool = False,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     *,
     ig_client_cls=IGClient,
-    new_client_fn: Callable[[Optional[str]], object] | None = None,
+    new_client_fn: Callable[..., object] | None = None,
 ):
     """Authenticate and return a ready client.
 
@@ -145,9 +296,10 @@ def create_authenticated_client(
       3. dump_settings, return
     """
     if new_client_fn is None:
-        new_client_fn = lambda account_proxy: new_client(
+        new_client_fn = lambda account_proxy, **geo_kwargs: new_client(
             account_proxy,
             ig_client_cls=ig_client_cls,
+            **geo_kwargs,
         )
 
     session_file = SESSIONS_DIR / f"{username}.json"
@@ -165,7 +317,14 @@ def create_authenticated_client(
         return pyotp.TOTP(totp_secret).now()
 
     if session_file.exists():
-        client = new_client_fn(proxy)
+        client = _new_client_with_optional_geo(
+            new_client_fn,
+            proxy,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
         client.load_settings(session_file)
         try:
             _saved_uuids = (client.get_settings() or {}).get("uuids")
@@ -229,7 +388,14 @@ def create_authenticated_client(
     # Restore device UUIDs from the prior session (captured above) so
     # Instagram recognises the same device fingerprint and does not flag
     # this as a new-device login, which would trigger security challenges.
-    client = new_client_fn(proxy)
+    client = _new_client_with_optional_geo(
+        new_client_fn,
+        proxy,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
     if _saved_uuids:
         try:
             client.set_uuids(_saved_uuids)
@@ -261,21 +427,33 @@ def complete_2fa_client(
     password: str,
     verification_code: str,
     proxy: Optional[str] = None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     *,
     ig_client_cls=IGClient,
-    new_client_fn: Callable[[Optional[str]], object] | None = None,
+    new_client_fn: Callable[..., object] | None = None,
 ):
     """Complete 2FA login for an account with a verification code."""
     if new_client_fn is None:
-        new_client_fn = lambda account_proxy: new_client(
+        new_client_fn = lambda account_proxy, **geo_kwargs: new_client(
             account_proxy,
             ig_client_cls=ig_client_cls,
+            **geo_kwargs,
         )
     session_file = SESSIONS_DIR / f"{username}.json"
     client = pop_pending_2fa_client(username)
     if client is None:
         # Fallback: create fresh client (handles TOTP case where identifier can refresh)
-        client = new_client_fn(proxy)
+        client = _new_client_with_optional_geo(
+            new_client_fn,
+            proxy,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
     client.login(username, password, verification_code=verification_code)
     client.dump_settings(session_file)
     return client

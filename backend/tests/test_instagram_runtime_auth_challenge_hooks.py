@@ -16,6 +16,10 @@ class _StubClient:
         self.proxy = None
         self.device = None
         self.user_agent = None
+        self.country = None
+        self.country_code = None
+        self.locale = None
+        self.timezone_offset = None
 
     def set_proxy(self, proxy: str) -> None:
         self.proxy = proxy
@@ -25,6 +29,18 @@ class _StubClient:
 
     def set_user_agent(self, user_agent: str) -> None:
         self.user_agent = user_agent
+
+    def set_country(self, country: str) -> None:
+        self.country = country
+
+    def set_country_code(self, country_code: int) -> None:
+        self.country_code = country_code
+
+    def set_locale(self, locale: str) -> None:
+        self.locale = locale
+
+    def set_timezone_offset(self, timezone_offset: int) -> None:
+        self.timezone_offset = timezone_offset
 
 
 def test_new_client_installs_non_interactive_challenge_handlers(monkeypatch: pytest.MonkeyPatch):
@@ -49,6 +65,54 @@ def test_new_client_installs_non_interactive_challenge_handlers(monkeypatch: pyt
         client.challenge_code_handler("alice", "EMAIL")
     with pytest.raises(ChallengeRequired):
         client.change_password_handler("alice")
+
+
+def test_new_client_applies_explicit_geo_locale_settings():
+    client = auth.new_client(
+        proxy=None,
+        country="US",
+        country_code=1,
+        locale="en_US",
+        timezone_offset=-18000,
+        ig_client_cls=_StubClient,
+        device_profile_factory=lambda: ({}, "ua"),
+    )
+
+    assert client.country == "US"
+    assert client.country_code == 1
+    assert client.locale == "en_US"
+    assert client.timezone_offset == -18000
+
+
+def test_new_client_uses_indonesia_defaults_when_unset():
+    client = auth.new_client(
+        proxy=None,
+        ig_client_cls=_StubClient,
+        device_profile_factory=lambda: ({}, "ua"),
+    )
+
+    assert client.country == "ID"
+    assert client.country_code == 62
+    assert client.locale == "id_ID"
+    assert client.timezone_offset == 25200
+
+
+def test_new_client_env_overrides_default_geo_settings(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("INSTAGRAM_COUNTRY", "JP")
+    monkeypatch.setenv("INSTAGRAM_COUNTRY_CODE", "81")
+    monkeypatch.setenv("INSTAGRAM_LOCALE", "ja_JP")
+    monkeypatch.setenv("INSTAGRAM_TIMEZONE_OFFSET", "32400")
+
+    client = auth.new_client(
+        proxy=None,
+        ig_client_cls=_StubClient,
+        device_profile_factory=lambda: ({}, "ua"),
+    )
+
+    assert client.country == "JP"
+    assert client.country_code == 81
+    assert client.locale == "ja_JP"
+    assert client.timezone_offset == 32400
 
 
 def test_create_authenticated_client_propagates_captcha_challenge_without_fallback(
@@ -91,4 +155,3 @@ def test_create_authenticated_client_propagates_captcha_challenge_without_fallba
 
     # Session restore should fail fast on challenge without extra fallback login attempts.
     assert client.login_calls == 1
-

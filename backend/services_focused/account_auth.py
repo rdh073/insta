@@ -50,6 +50,10 @@ def login_account(
     password: str,
     proxy: Optional[str] = None,
     totp_secret: Optional[str] = None,
+    country: Optional[str] = None,
+    country_code: Optional[int] = None,
+    locale: Optional[str] = None,
+    timezone_offset: Optional[int] = None,
 ) -> dict:
     existing = find_account_id_by_username(username)
     if existing and has_client(existing):
@@ -66,11 +70,24 @@ def login_account(
             "password": password,
             "proxy": proxy,
             "totp_secret": totp_secret,
+            "country": country,
+            "country_code": country_code,
+            "locale": locale,
+            "timezone_offset": timezone_offset,
         },
     )
 
     try:
-        client = create_authenticated_client(username, password, proxy)
+        client = create_authenticated_client(
+            username,
+            password,
+            proxy,
+            totp_secret=totp_secret,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
         result = activate_account_client(account_id, client)
         log_event(account_id, username, "login_success", status="active")
         return result
@@ -78,7 +95,16 @@ def login_account(
         if totp_secret:
             try:
                 code = generate_totp_code(totp_secret)
-                client = complete_2fa_client(username, password, code, proxy)
+                client = complete_2fa_client(
+                    username,
+                    password,
+                    code,
+                    proxy,
+                    country=country,
+                    country_code=country_code,
+                    locale=locale,
+                    timezone_offset=timezone_offset,
+                )
                 result = activate_account_client(account_id, client)
                 log_event(account_id, username, "login_success_totp", status="active")
                 return result
@@ -121,6 +147,10 @@ def complete_2fa_login_account(account_id: str, code: str, is_totp: bool = False
     username = meta.get("username", "")
     password = meta.get("password", "")
     proxy = meta.get("proxy")
+    country = meta.get("country")
+    country_code = meta.get("country_code")
+    locale = meta.get("locale")
+    timezone_offset = meta.get("timezone_offset")
 
     if is_totp:
         totp_secret = meta.get("totp_secret")
@@ -131,12 +161,33 @@ def complete_2fa_login_account(account_id: str, code: str, is_totp: bool = False
             raise ValueError("Invalid TOTP code")
         log_event(account_id, username, "totp_verified", status="active")
 
-        result = activate_account_client(account_id, complete_2fa_client(username, password, "", proxy))
+        result = activate_account_client(
+            account_id,
+            complete_2fa_client(
+                username,
+                password,
+                "",
+                proxy,
+                country=country,
+                country_code=country_code,
+                locale=locale,
+                timezone_offset=timezone_offset,
+            ),
+        )
         log_event(account_id, username, "login_success", status="active")
         return result
 
     try:
-        client = complete_2fa_client(username, password, code, proxy)
+        client = complete_2fa_client(
+            username,
+            password,
+            code,
+            proxy,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
         result = activate_account_client(account_id, client)
         log_event(account_id, username, "login_success", status="active")
         return result
@@ -265,4 +316,3 @@ def bulk_set_proxy(account_ids: list[str], proxy: str) -> list[dict]:
             }
         )
     return results
-

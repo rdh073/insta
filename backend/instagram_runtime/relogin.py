@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import random
 import time
 from typing import Callable
@@ -15,8 +16,8 @@ _COOLDOWN_RETRY_MAX_SECONDS = 120.0
 _COOLDOWN_RETRY_JITTER_MAX_SECONDS = 15.0
 
 ReloginStrategy = Callable[[str, str, str | None, str | None], object]
-CreateAuthenticatedClientFn = Callable[[str, str, str | None, str | None], object]
-NewClientFn = Callable[[str | None], object]
+CreateAuthenticatedClientFn = Callable[..., object]
+NewClientFn = Callable[..., object]
 ClassifyExceptionFn = Callable[..., object]
 SleepFn = Callable[[float], None]
 JitterUniformFn = Callable[[float, float], float]
@@ -79,10 +80,106 @@ def _relogin_session_restore(
     proxy: str | None,
     totp_secret: str | None,
     *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     create_authenticated_client_fn: CreateAuthenticatedClientFn = create_authenticated_client,
 ):
     """Relogin via session restore (try saved session, fall back to fresh login)."""
+    geo_kwargs = _geo_kwargs(
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
+    if not geo_kwargs:
+        return create_authenticated_client_fn(username, password, proxy, totp_secret)
+    try:
+        signature = inspect.signature(create_authenticated_client_fn)
+    except (TypeError, ValueError):
+        return create_authenticated_client_fn(username, password, proxy, totp_secret)
+
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return create_authenticated_client_fn(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            **geo_kwargs,
+        )
+
+    supported_kwargs = {
+        key: value for key, value in geo_kwargs.items() if key in signature.parameters
+    }
+    if supported_kwargs:
+        return create_authenticated_client_fn(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            **supported_kwargs,
+        )
     return create_authenticated_client_fn(username, password, proxy, totp_secret)
+
+
+def _new_client_with_optional_geo(
+    new_client_fn: NewClientFn,
+    proxy: str | None,
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+):
+    geo_kwargs = _geo_kwargs(
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
+    if not geo_kwargs:
+        return new_client_fn(proxy)
+
+    try:
+        signature = inspect.signature(new_client_fn)
+    except (TypeError, ValueError):
+        return new_client_fn(proxy)
+
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return new_client_fn(proxy, **geo_kwargs)
+
+    supported_kwargs = {
+        key: value for key, value in geo_kwargs.items() if key in signature.parameters
+    }
+    if supported_kwargs:
+        return new_client_fn(proxy, **supported_kwargs)
+    return new_client_fn(proxy)
+
+
+def _geo_kwargs(
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+) -> dict[str, str | int]:
+    kwargs: dict[str, str | int] = {}
+    if country is not None:
+        kwargs["country"] = country
+    if country_code is not None:
+        kwargs["country_code"] = country_code
+    if locale is not None:
+        kwargs["locale"] = locale
+    if timezone_offset is not None:
+        kwargs["timezone_offset"] = timezone_offset
+    return kwargs
 
 
 def _relogin_fresh_credentials(
@@ -91,6 +188,10 @@ def _relogin_fresh_credentials(
     proxy: str | None,
     totp_secret: str | None,
     *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     new_client_fn: NewClientFn = new_client,
 ):
     """Relogin with fresh credentials, bypassing the existing session file."""
@@ -103,7 +204,14 @@ def _relogin_fresh_credentials(
 
         return pyotp.TOTP(totp_secret).now()
 
-    client = new_client_fn(proxy)
+    client = _new_client_with_optional_geo(
+        new_client_fn,
+        proxy,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
     # Preserve device fingerprint — load UUIDs from any existing session so
     # Instagram recognises the same device on fresh-credential logins.
     if session_file.exists():
@@ -135,10 +243,21 @@ def _build_relogin_strategies(
     *,
     create_authenticated_client_fn: CreateAuthenticatedClientFn,
     new_client_fn: NewClientFn,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
 ) -> dict[str, ReloginStrategy]:
+    geo_kwargs = _geo_kwargs(
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
     if (
         create_authenticated_client_fn is create_authenticated_client
         and new_client_fn is new_client
+        and not geo_kwargs
     ):
         return _RELOGIN_STRATEGIES
 
@@ -148,6 +267,10 @@ def _build_relogin_strategies(
             password,
             proxy,
             totp_secret,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
             create_authenticated_client_fn=create_authenticated_client_fn,
         ),
         "fresh_credentials": lambda username, password, proxy, totp_secret: _relogin_fresh_credentials(
@@ -155,9 +278,94 @@ def _build_relogin_strategies(
             password,
             proxy,
             totp_secret,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
             new_client_fn=new_client_fn,
         ),
     }
+
+
+def _strategy_supports_kwargs(strategy: ReloginStrategy) -> bool:
+    try:
+        signature = inspect.signature(strategy)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+
+def _call_strategy_with_geo(
+    strategy: ReloginStrategy,
+    username: str,
+    password: str,
+    proxy: str | None,
+    totp_secret: str | None,
+    *,
+    geo_kwargs: dict[str, str | int],
+):
+    if not geo_kwargs:
+        return strategy(username, password, proxy, totp_secret)
+
+    if _strategy_supports_kwargs(strategy):
+        return strategy(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            **geo_kwargs,
+        )
+
+    try:
+        signature = inspect.signature(strategy)
+    except (TypeError, ValueError):
+        return strategy(username, password, proxy, totp_secret)
+
+    supported = {key: value for key, value in geo_kwargs.items() if key in signature.parameters}
+    if supported:
+        return strategy(
+            username,
+            password,
+            proxy,
+            totp_secret,
+            **supported,
+        )
+    return strategy(username, password, proxy, totp_secret)
+
+
+def _wrap_relogin_strategies_with_geo(
+    relogin_strategies: dict[str, ReloginStrategy],
+    *,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
+) -> dict[str, ReloginStrategy]:
+    geo_kwargs = _geo_kwargs(
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
+    )
+    if not geo_kwargs:
+        return relogin_strategies
+
+    wrapped: dict[str, ReloginStrategy] = {}
+    for key, strategy in relogin_strategies.items():
+        wrapped[key] = (
+            lambda username, password, proxy, totp_secret, _strategy=strategy: _call_strategy_with_geo(
+                _strategy,
+                username,
+                password,
+                proxy,
+                totp_secret,
+                geo_kwargs=geo_kwargs,
+            )
+        )
+    return wrapped
 
 
 def relogin_account_sync(
@@ -167,6 +375,10 @@ def relogin_account_sync(
     password: str,
     proxy: str | None = None,
     totp_secret: str | None = None,
+    country: str | None = None,
+    country_code: int | None = None,
+    locale: str | None = None,
+    timezone_offset: int | None = None,
     mode: str = "session_restore",
     create_authenticated_client_fn: CreateAuthenticatedClientFn = create_authenticated_client,
     new_client_fn: NewClientFn = new_client,
@@ -177,10 +389,24 @@ def relogin_account_sync(
     jitter_uniform_fn: JitterUniformFn = random.uniform,
 ) -> dict:
     """Synchronous relogin with retry for transient failures."""
-    strategies = relogin_strategies or _build_relogin_strategies(
-        create_authenticated_client_fn=create_authenticated_client_fn,
-        new_client_fn=new_client_fn,
-    )
+    if relogin_strategies is None:
+        strategies = _build_relogin_strategies(
+            create_authenticated_client_fn=create_authenticated_client_fn,
+            new_client_fn=new_client_fn,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
+    else:
+        strategies = _wrap_relogin_strategies_with_geo(
+            relogin_strategies,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
+
     default_strategy = strategies.get("session_restore", _RELOGIN_STRATEGIES["session_restore"])
     strategy = strategies.get(mode, default_strategy)
 

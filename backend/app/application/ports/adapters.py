@@ -39,6 +39,10 @@ class InstagramClient(Protocol):
         proxy: Optional[str],
         totp_secret: Optional[str] = None,
         verify_session: bool = False,
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
     ):
         """Create and authenticate a new Instagram client.
 
@@ -50,7 +54,17 @@ class InstagramClient(Protocol):
         """
         ...
 
-    def complete_2fa(self, username: str, password: str, code: str, proxy: Optional[str]):
+    def complete_2fa(
+        self,
+        username: str,
+        password: str,
+        code: str,
+        proxy: Optional[str],
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
+    ):
         """Complete SMS/email 2FA authentication after TwoFactorRequired was raised."""
         ...
 
@@ -62,6 +76,10 @@ class InstagramClient(Protocol):
         password: str,
         proxy: Optional[str] = None,
         totp_secret: Optional[str] = None,
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
         mode: ReloginMode = ReloginMode.SESSION_RESTORE,
     ) -> dict:
         """Relogin account using *mode* strategy and return account dict.

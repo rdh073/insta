@@ -76,6 +76,23 @@ class ReloginUseCases:
             self._account_locks[account_id] = asyncio.Lock()
         return self._account_locks[account_id]
 
+    @staticmethod
+    def _geo_kwargs(account: dict) -> dict[str, str | int]:
+        kwargs: dict[str, str | int] = {}
+        country = account.get("country")
+        if country is not None:
+            kwargs["country"] = country
+        country_code = account.get("country_code")
+        if country_code is not None:
+            kwargs["country_code"] = country_code
+        locale = account.get("locale")
+        if locale is not None:
+            kwargs["locale"] = locale
+        timezone_offset = account.get("timezone_offset")
+        if timezone_offset is not None:
+            kwargs["timezone_offset"] = timezone_offset
+        return kwargs
+
     def _uow_scope(self):
         """Return transaction context when UoW is configured."""
         if self.uow is None:
@@ -148,6 +165,7 @@ class ReloginUseCases:
                     password=password,
                     proxy=account.get("proxy"),
                     totp_secret=account.get("totp_secret"),
+                    **self._geo_kwargs(account),
                     mode=mode,
                 )
                 self.status_repo.set(account_id, "active")
@@ -211,6 +229,7 @@ class ReloginUseCases:
                         password=password,
                         proxy=account.get("proxy"),
                         totp_secret=account.get("totp_secret"),
+                        **self._geo_kwargs(account),
                         mode=mode,
                     )
                     self.status_repo.set(account_id, "active")

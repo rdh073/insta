@@ -22,6 +22,10 @@ class InstagramClientAdapter:
         proxy: Optional[str],
         totp_secret: Optional[str] = None,
         verify_session: bool = False,
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
     ):
         """Create and authenticate a new Instagram client."""
         return instagram_module.create_authenticated_client(
@@ -30,11 +34,34 @@ class InstagramClientAdapter:
             proxy,
             totp_secret,
             verify_session=verify_session,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
         )
 
-    def complete_2fa(self, username: str, password: str, code: str, proxy: Optional[str]):
+    def complete_2fa(
+        self,
+        username: str,
+        password: str,
+        code: str,
+        proxy: Optional[str],
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
+    ):
         """Complete 2FA authentication."""
-        return instagram_module.complete_2fa_client(username, password, code, proxy)
+        return instagram_module.complete_2fa_client(
+            username,
+            password,
+            code,
+            proxy,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
+        )
 
     def relogin_account(
         self,
@@ -44,6 +71,10 @@ class InstagramClientAdapter:
         password: str,
         proxy: Optional[str] = None,
         totp_secret: Optional[str] = None,
+        country: Optional[str] = None,
+        country_code: Optional[int] = None,
+        locale: Optional[str] = None,
+        timezone_offset: Optional[int] = None,
         mode: ReloginMode = ReloginMode.SESSION_RESTORE,
     ) -> dict:
         """Relogin account using *mode* strategy. Returns account dict.
@@ -59,6 +90,10 @@ class InstagramClientAdapter:
             password=password,
             proxy=proxy,
             totp_secret=totp_secret,
+            country=country,
+            country_code=country_code,
+            locale=locale,
+            timezone_offset=timezone_offset,
             mode=mode.value,
         )
 

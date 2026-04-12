@@ -27,6 +27,10 @@ class AccountRecord:
     username: str
     password: str = ""
     proxy: str | None = None
+    country: str | None = None
+    country_code: int | None = None
+    locale: str | None = None
+    timezone_offset: int | None = None
     totp_secret: str | None = None
     totp_enabled: bool = False
     full_name: str | None = None
@@ -40,10 +44,34 @@ class AccountRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AccountRecord:
+        def _optional_int(value: Any) -> int | None:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if not cleaned:
+                    return None
+                try:
+                    return int(cleaned)
+                except ValueError:
+                    return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
         return cls(
             username=str(data.get("username", "")),
             password=str(data.get("password", "")),
             proxy=data.get("proxy"),
+            country=data.get("country"),
+            country_code=_optional_int(data.get("country_code")),
+            locale=data.get("locale"),
+            timezone_offset=_optional_int(data.get("timezone_offset")),
             totp_secret=data.get("totp_secret"),
             totp_enabled=bool(data.get("totp_enabled", False)),
             full_name=data.get("full_name"),
@@ -60,6 +88,10 @@ class AccountRecord:
             "username": self.username,
             "password": self.password,
             "proxy": self.proxy,
+            "country": self.country,
+            "country_code": self.country_code,
+            "locale": self.locale,
+            "timezone_offset": self.timezone_offset,
             "totp_secret": self.totp_secret,
             "totp_enabled": self.totp_enabled,
             "full_name": self.full_name,

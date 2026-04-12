@@ -40,10 +40,17 @@ target_metadata = Base.metadata
 def get_database_url() -> str:
     """Resolve database URL following app config priority:
 
-    1. PERSISTENCE_DATABASE_URL (production override)
-    2. PERSISTENCE_SQLITE_PATH (explicit sqlite file)
-    3. Default sqlite in backend/sessions/persistence.sqlite3
+    1. Alembic config sqlalchemy.url (set programmatically by SqlitePersistenceStore)
+    2. PERSISTENCE_DATABASE_URL (production override)
+    3. PERSISTENCE_SQLITE_PATH (explicit sqlite file)
+    4. Default sqlite in backend/sessions/persistence.sqlite3
     """
+    # When migrations are invoked programmatically, sql_store sets this value
+    # to the active store URL (for tests and custom runtime DB paths).
+    configured_url = config.get_main_option("sqlalchemy.url", "").strip()
+    if configured_url and not configured_url.startswith("driver://"):
+        return configured_url
+
     # Check for explicit production database URL
     database_url = os.getenv("PERSISTENCE_DATABASE_URL")
     if database_url:

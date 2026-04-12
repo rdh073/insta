@@ -129,6 +129,25 @@ class AuthUseCases:
             last_error_code=None,
         )
 
+    @staticmethod
+    def _geo_kwargs(
+        *,
+        country: str | None = None,
+        country_code: int | None = None,
+        locale: str | None = None,
+        timezone_offset: int | None = None,
+    ) -> dict[str, str | int]:
+        kwargs: dict[str, str | int] = {}
+        if country is not None:
+            kwargs["country"] = country
+        if country_code is not None:
+            kwargs["country_code"] = country_code
+        if locale is not None:
+            kwargs["locale"] = locale
+        if timezone_offset is not None:
+            kwargs["timezone_offset"] = timezone_offset
+        return kwargs
+
     def login_account(self, request: LoginRequest) -> AccountResponse:
         """Login an account.
         
@@ -161,6 +180,10 @@ class AuthUseCases:
                     username=request.username,
                     password=request.password,
                     proxy=request.proxy,
+                    country=request.country,
+                    country_code=request.country_code,
+                    locale=request.locale,
+                    timezone_offset=request.timezone_offset,
                     totp_secret=totp_secret,
                 ),
             )
@@ -171,6 +194,12 @@ class AuthUseCases:
                     request.username,
                     request.password,
                     request.proxy,
+                    **self._geo_kwargs(
+                        country=request.country,
+                        country_code=request.country_code,
+                        locale=request.locale,
+                        timezone_offset=request.timezone_offset,
+                    ),
                 )
                 self._activate_account_client(account_id, client, hydrate_profile=False)
                 self._mark_verified(account_id)
@@ -195,6 +224,12 @@ class AuthUseCases:
                                 request.password,
                                 code,
                                 request.proxy,
+                                **self._geo_kwargs(
+                                    country=request.country,
+                                    country_code=request.country_code,
+                                    locale=request.locale,
+                                    timezone_offset=request.timezone_offset,
+                                ),
                             )
                             self._activate_account_client(account_id, client, hydrate_profile=False)
                             self._mark_verified(account_id)
@@ -280,7 +315,18 @@ class AuthUseCases:
             code = ""
 
         try:
-            client = self.instagram.complete_2fa(username, password, code, proxy)
+            client = self.instagram.complete_2fa(
+                username,
+                password,
+                code,
+                proxy,
+                **self._geo_kwargs(
+                    country=account.get("country"),
+                    country_code=account.get("country_code"),
+                    locale=account.get("locale"),
+                    timezone_offset=account.get("timezone_offset"),
+                ),
+            )
             self._activate_account_client(account_id, client, hydrate_profile=False)
             self.logger.log_event(account_id, username, "login_success", status="active")
             return AccountResponse(

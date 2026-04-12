@@ -86,6 +86,25 @@ class AccountAuthUseCases:
         account = self.account_repo.get(account_id)
         return (account or {}).get("username", default)
 
+    @staticmethod
+    def _geo_kwargs(
+        *,
+        country: str | None = None,
+        country_code: int | None = None,
+        locale: str | None = None,
+        timezone_offset: int | None = None,
+    ) -> dict[str, str | int]:
+        kwargs: dict[str, str | int] = {}
+        if country is not None:
+            kwargs["country"] = country
+        if country_code is not None:
+            kwargs["country_code"] = country_code
+        if locale is not None:
+            kwargs["locale"] = locale
+        if timezone_offset is not None:
+            kwargs["timezone_offset"] = timezone_offset
+        return kwargs
+
     def _activate_account_client(
         self,
         account_id: str,
@@ -258,6 +277,10 @@ class AccountAuthUseCases:
                     username=request.username,
                     password=request.password,
                     proxy=request.proxy,
+                    country=request.country,
+                    country_code=request.country_code,
+                    locale=request.locale,
+                    timezone_offset=request.timezone_offset,
                     totp_secret=totp_secret,
                 )
             else:
@@ -267,6 +290,10 @@ class AccountAuthUseCases:
                         username=request.username,
                         password=request.password,
                         proxy=request.proxy,
+                        country=request.country,
+                        country_code=request.country_code,
+                        locale=request.locale,
+                        timezone_offset=request.timezone_offset,
                         totp_secret=totp_secret,
                     ),
                 )
@@ -280,6 +307,12 @@ class AccountAuthUseCases:
                 request.password,
                 request.proxy,
                 totp_secret,
+                **self._geo_kwargs(
+                    country=request.country,
+                    country_code=request.country_code,
+                    locale=request.locale,
+                    timezone_offset=request.timezone_offset,
+                ),
             )
             return self._activate_and_respond(account_id, request.username, client)
         except Exception as exc:
@@ -346,7 +379,18 @@ class AccountAuthUseCases:
             code = ""
 
         try:
-            client = self.instagram.complete_2fa(username, password, code, proxy)
+            client = self.instagram.complete_2fa(
+                username,
+                password,
+                code,
+                proxy,
+                **self._geo_kwargs(
+                    country=account.get("country"),
+                    country_code=account.get("country_code"),
+                    locale=account.get("locale"),
+                    timezone_offset=account.get("timezone_offset"),
+                ),
+            )
             return self._activate_and_respond(account_id, username, client)
         except Exception as exc:
             failure = self.error_handler.handle(

@@ -93,12 +93,25 @@ def get_account_info_by_username(username: str) -> dict:
     return _account_query.get_account_info_by_username(username)
 
 
-def login_account(username: str, password: str, proxy: Optional[str] = None, totp_secret: Optional[str] = None) -> dict:
+def login_account(
+    username: str,
+    password: str,
+    proxy: Optional[str] = None,
+    totp_secret: Optional[str] = None,
+    country: Optional[str] = None,
+    country_code: Optional[int] = None,
+    locale: Optional[str] = None,
+    timezone_offset: Optional[int] = None,
+) -> dict:
     return _account_auth.login_account(
         username=username,
         password=password,
         proxy=proxy,
         totp_secret=totp_secret,
+        country=country,
+        country_code=country_code,
+        locale=locale,
+        timezone_offset=timezone_offset,
     )
 
 

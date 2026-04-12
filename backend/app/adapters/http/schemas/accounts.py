@@ -12,6 +12,10 @@ class LoginRequest(BaseModel):
     password: str
     proxy: Optional[str] = None
     totp_secret: Optional[str] = None
+    country: Optional[str] = None
+    country_code: Optional[int] = None
+    locale: Optional[str] = None
+    timezone_offset: Optional[int] = None
 
 
 class TwoFARequest(BaseModel):
