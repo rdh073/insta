@@ -68,7 +68,7 @@ def _base_state(**overrides):
         "approved_tool_calls": [], "tool_policy_flags": {},
         "risk_assessment": None, "approval_request": None,
         "approval_result": None, "review_findings": None,
-        "final_response": None, "approval_attempted": False,
+        "final_response": None, "copilot_memory_namespace": None, "approval_attempted": False,
     }
     state.update(overrides)
     return state
@@ -143,10 +143,6 @@ class TestPlanActionsMemoryRecall:
     async def test_injects_recent_interactions_into_planner(self):
         """Memory recall results appear in the planner's user payload."""
         mem = InMemoryCopilotMemoryAdapter()
-        await mem.store_interaction_summary("t-test", {
-            "goal": "past goal", "tools_used": ["get_followers"], "outcome": "success",
-        })
-
         captured_messages = []
         async def capture_completion(messages, **kwargs):
             captured_messages.extend(messages)
@@ -154,7 +150,12 @@ class TestPlanActionsMemoryRecall:
 
         nodes = _make_nodes(copilot_memory=mem)
         nodes.llm_gateway.request_completion = capture_completion
-        state = _base_state()
+        state = _base_state(thread_id="t-1", api_key="op-key-1", mentions=["acct_main"])
+
+        memory_ns = await nodes._resolve_copilot_memory_namespace(state, runtime_context={})
+        await mem.store_interaction_summary(memory_ns, {
+            "goal": "past goal", "tools_used": ["get_followers"], "outcome": "success",
+        })
 
         await nodes.plan_actions_node(state)
 
@@ -214,9 +215,10 @@ class TestFinishStoresMemory:
             approved_tool_calls=[{"id": "c1", "name": "get_followers", "arguments": {}}],
         )
 
-        await nodes.finish_node(state)
+        result = await nodes.finish_node(state)
+        memory_ns = result["copilot_memory_namespace"]
 
-        records = await mem.recall_recent_interactions("t-test")
+        records = await mem.recall_recent_interactions(memory_ns)
         assert len(records) == 1
         assert records[0]["goal"] == "show followers"
         assert records[0]["tools_used"] == ["get_followers"]
@@ -229,9 +231,10 @@ class TestFinishStoresMemory:
 
         state = _base_state(stop_reason="rejected", normalized_goal="delete post")
 
-        await nodes.finish_node(state)
+        result = await nodes.finish_node(state)
+        memory_ns = result["copilot_memory_namespace"]
 
-        records = await mem.recall_recent_interactions("t-test")
+        records = await mem.recall_recent_interactions(memory_ns)
         assert records[0]["outcome"] == "rejected"
 
     @pytest.mark.asyncio
@@ -241,3 +244,99 @@ class TestFinishStoresMemory:
 
         result = await nodes.finish_node(state)
         assert result["stop_reason"] == "done"
+
+
+class TestStableNamespaceMemoryBehavior:
+    @pytest.mark.asyncio
+    async def test_cross_thread_recall_for_same_namespace(self):
+        mem = InMemoryCopilotMemoryAdapter()
+        nodes = _make_nodes(copilot_memory=mem)
+
+        first_state = _base_state(
+            thread_id="thread-a",
+            api_key="operator-key-1",
+            mentions=["acct_same"],
+            normalized_goal="check followers",
+            approved_tool_calls=[{"id": "c1", "name": "get_followers", "arguments": {"username": "acct_same"}}],
+        )
+        finish_result = await nodes.finish_node(first_state)
+        namespace = finish_result["copilot_memory_namespace"]
+
+        captured_messages = []
+
+        async def capture_completion(messages, **kwargs):
+            captured_messages.extend(messages)
+            return {"content": json.dumps({"execution_plan": [], "proposed_tool_calls": []}), "finish_reason": "stop", "tool_calls": []}
+
+        nodes.llm_gateway.request_completion = capture_completion
+        second_state = _base_state(
+            thread_id="thread-b",
+            api_key="operator-key-1",
+            mentions=["acct_same"],
+        )
+
+        plan_result = await nodes.plan_actions_node(second_state)
+        assert plan_result["copilot_memory_namespace"] == namespace
+
+        user_msg = next(m for m in captured_messages if m["role"] == "user")
+        payload = json.loads(user_msg["content"])
+        assert payload["recent_interactions"][0]["goal"] == "check followers"
+
+    @pytest.mark.asyncio
+    async def test_namespace_isolation_between_accounts(self):
+        mem = InMemoryCopilotMemoryAdapter()
+        nodes = _make_nodes(copilot_memory=mem)
+
+        state_a = _base_state(
+            thread_id="thread-a",
+            api_key="operator-key-1",
+            mentions=["acct_a"],
+            normalized_goal="goal for a",
+            approved_tool_calls=[{"id": "c1", "name": "list_followers", "arguments": {"username": "acct_a"}}],
+        )
+        finish_a = await nodes.finish_node(state_a)
+
+        captured_messages = []
+
+        async def capture_completion(messages, **kwargs):
+            captured_messages.extend(messages)
+            return {"content": json.dumps({"execution_plan": [], "proposed_tool_calls": []}), "finish_reason": "stop", "tool_calls": []}
+
+        nodes.llm_gateway.request_completion = capture_completion
+        state_b = _base_state(
+            thread_id="thread-b",
+            api_key="operator-key-1",
+            mentions=["acct_b"],
+        )
+
+        plan_b = await nodes.plan_actions_node(state_b)
+        assert plan_b["copilot_memory_namespace"] != finish_a["copilot_memory_namespace"]
+
+        user_msg = next(m for m in captured_messages if m["role"] == "user")
+        payload = json.loads(user_msg["content"])
+        assert "recent_interactions" not in payload
+
+    @pytest.mark.asyncio
+    async def test_plan_and_finish_share_same_namespace_field(self):
+        mem = InMemoryCopilotMemoryAdapter()
+        nodes = _make_nodes(copilot_memory=mem)
+
+        state = _base_state(
+            thread_id="thread-z",
+            api_key="operator-key-2",
+            mentions=["acct_scope"],
+            normalized_goal="summarize account",
+            approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {"username": "acct_scope"}}],
+        )
+
+        plan_result = await nodes.plan_actions_node(state)
+        namespace = plan_result["copilot_memory_namespace"]
+        assert namespace
+
+        finish_state = dict(state)
+        finish_state["copilot_memory_namespace"] = namespace
+        finish_result = await nodes.finish_node(finish_state)
+        assert finish_result["copilot_memory_namespace"] == namespace
+
+        records = await mem.recall_recent_interactions(namespace)
+        assert len(records) == 1

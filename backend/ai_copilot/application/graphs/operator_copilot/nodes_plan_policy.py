@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -78,6 +79,168 @@ class OperatorCopilotPlanPolicyNodes:
         if not isinstance(context, dict):
             return {}
         return context
+
+    @staticmethod
+    def _normalize_namespace_token(value: str) -> str:
+        """Normalize free-form ids/usernames into a stable namespace-safe token."""
+        token = value.strip().lower().lstrip("@")
+        if not token:
+            return ""
+        allowed = []
+        for ch in token:
+            if ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch in ("_", "-", ".", ":"):
+                allowed.append(ch)
+            else:
+                allowed.append("_")
+        normalized = "".join(allowed).strip("._-:")
+        return normalized[:96]
+
+    @classmethod
+    def _managed_account_tokens(cls, runtime_context: dict | None) -> list[str]:
+        """Return normalized managed account usernames from planner runtime context."""
+        if not isinstance(runtime_context, dict):
+            return []
+        managed = runtime_context.get("managed_accounts")
+        if not isinstance(managed, list):
+            return []
+
+        tokens: list[str] = []
+        for entry in managed:
+            if not isinstance(entry, dict):
+                continue
+            username = entry.get("username")
+            if not isinstance(username, str):
+                continue
+            normalized = cls._normalize_namespace_token(username)
+            if normalized:
+                tokens.append(normalized)
+        return tokens
+
+    @classmethod
+    def _extract_account_tokens_from_calls(cls, calls: list[dict]) -> list[str]:
+        """Extract account-like identifiers from tool call arguments."""
+        keys = (
+            "username",
+            "account_username",
+            "account",
+            "source_account",
+            "account_id",
+            "accountId",
+        )
+        tokens: list[str] = []
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            args = call.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    continue
+            if not isinstance(args, dict):
+                continue
+            for key in keys:
+                raw = args.get(key)
+                if not isinstance(raw, str):
+                    continue
+                normalized = cls._normalize_namespace_token(raw)
+                if normalized:
+                    tokens.append(normalized)
+        return tokens
+
+    @classmethod
+    def _resolve_account_scope(
+        cls,
+        state: OperatorCopilotState,
+        runtime_context: dict | None = None,
+    ) -> str:
+        """Resolve account scope for memory namespace, preferring acting account signals."""
+        mentions = [
+            cls._normalize_namespace_token(raw)
+            for raw in (state.get("mentions") or [])
+            if isinstance(raw, str)
+        ]
+        mentions = [m for m in mentions if m]
+        managed_tokens = set(cls._managed_account_tokens(runtime_context))
+
+        if managed_tokens:
+            for mention in mentions:
+                if mention in managed_tokens:
+                    return mention
+
+        if mentions:
+            return mentions[0]
+
+        for key in ("approved_tool_calls", "proposed_tool_calls"):
+            calls = state.get(key) or []
+            if not isinstance(calls, list):
+                continue
+            call_tokens = cls._extract_account_tokens_from_calls(calls)
+            if managed_tokens:
+                for token in call_tokens:
+                    if token in managed_tokens:
+                        return token
+            if call_tokens:
+                return call_tokens[0]
+
+        return "global"
+
+    @classmethod
+    def _resolve_operator_scope(
+        cls,
+        state: OperatorCopilotState,
+        runtime_context: dict | None = None,
+    ) -> str:
+        """Resolve stable operator scope for memory namespace."""
+        explicit_scope = state.get("operator_id") or state.get("operator_scope")
+        if isinstance(explicit_scope, str):
+            normalized = cls._normalize_namespace_token(explicit_scope)
+            if normalized:
+                return f"operator:{normalized}"
+
+        managed_tokens = sorted(set(cls._managed_account_tokens(runtime_context)))
+        if managed_tokens:
+            digest = hashlib.sha1(",".join(managed_tokens).encode("utf-8")).hexdigest()[:16]
+            return f"managed:{digest}"
+
+        api_key = state.get("api_key")
+        if isinstance(api_key, str) and api_key.strip():
+            digest = hashlib.sha1(api_key.strip().encode("utf-8")).hexdigest()[:16]
+            return f"apikey:{digest}"
+
+        thread_id = state.get("thread_id")
+        if isinstance(thread_id, str) and thread_id.strip():
+            normalized = cls._normalize_namespace_token(thread_id)
+            if normalized:
+                return f"thread:{normalized}"
+
+        return "operator:default"
+
+    @classmethod
+    def _build_copilot_memory_namespace(
+        cls,
+        state: OperatorCopilotState,
+        runtime_context: dict | None = None,
+    ) -> str:
+        """Build deterministic memory namespace shared by planner recall and finish write."""
+        operator_scope = cls._resolve_operator_scope(state, runtime_context=runtime_context)
+        account_scope = cls._resolve_account_scope(state, runtime_context=runtime_context)
+        return f"copilot:{operator_scope}:account:{account_scope}"[:180]
+
+    async def _resolve_copilot_memory_namespace(
+        self,
+        state: OperatorCopilotState,
+        runtime_context: dict | None = None,
+    ) -> str:
+        """Resolve namespace, reusing persisted state value when available."""
+        existing = state.get("copilot_memory_namespace")
+        if isinstance(existing, str) and existing.strip():
+            return existing
+
+        context = runtime_context
+        if context is None:
+            context = await self._planner_runtime_context()
+        return self._build_copilot_memory_namespace(state, runtime_context=context)
 
     async def ingest_request_node(self, state: OperatorCopilotState) -> dict:
         """Receive and record the raw operator request."""
@@ -166,6 +329,10 @@ class OperatorCopilotPlanPolicyNodes:
         mentions = state.get("mentions") or []
         tool_schemas = self.tool_executor.get_schemas()
         runtime_context = await self._planner_runtime_context()
+        memory_ns = await self._resolve_copilot_memory_namespace(
+            state,
+            runtime_context=runtime_context,
+        )
 
         user_payload: dict = {
             "goal": normalized_goal,
@@ -178,7 +345,6 @@ class OperatorCopilotPlanPolicyNodes:
 
         if self.copilot_memory is not None:
             try:
-                memory_ns = state.get("thread_id", "default")[:36]
                 recent = await self.copilot_memory.recall_recent_interactions(memory_ns, limit=5)
                 if recent:
                     user_payload["recent_interactions"] = [
@@ -229,11 +395,13 @@ class OperatorCopilotPlanPolicyNodes:
             "proposed_tool_calls": proposed_tool_calls,
             "dropped_tool_calls": dropped_tool_calls,
             "runtime_context_keys": sorted(runtime_context.keys()),
+            "copilot_memory_namespace": memory_ns,
         })
 
         return {
             "execution_plan": execution_plan,
             "proposed_tool_calls": proposed_tool_calls,
+            "copilot_memory_namespace": memory_ns,
         }
 
     async def review_tool_policy_node(self, state: OperatorCopilotState) -> dict:

@@ -236,18 +236,21 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
         """Mark run as complete, log stop_reason, and persist interaction to memory."""
         stop_reason = state.get("stop_reason") or "done"
         final_stop = stop_reason if stop_reason != "responded" else "done"
+        existing_ns = state.get("copilot_memory_namespace")
+        memory_ns = existing_ns if isinstance(existing_ns, str) and existing_ns.strip() else None
+        if memory_ns is None and self.copilot_memory is not None:
+            memory_ns = await self._resolve_copilot_memory_namespace(state)
 
         await self.audit_log.log("stop_reason", {
             "stop_reason": final_stop,
             "thread_id": state.get("thread_id"),
         })
 
-        if self.copilot_memory is not None:
+        if self.copilot_memory is not None and memory_ns is not None:
             goal = state.get("normalized_goal") or state.get("operator_request", "")
             tools_used = [call.get("name", "") for call in state.get("approved_tool_calls", [])]
             outcome = "success" if final_stop == "done" and tools_used else final_stop
             try:
-                memory_ns = state.get("thread_id", "default")[:36]
                 await self.copilot_memory.store_interaction_summary(memory_ns, {
                     "goal": goal,
                     "tools_used": tools_used,
@@ -257,7 +260,10 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             except Exception:
                 logger.warning("Failed to store copilot interaction to memory")
 
-        return {"stop_reason": final_stop}
+        return {
+            "stop_reason": final_stop,
+            "copilot_memory_namespace": memory_ns,
+        }
 
 
 __all__ = ["OperatorCopilotApprovalExecutionNodes"]

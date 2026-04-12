@@ -150,6 +150,14 @@ class OperatorCopilotState(TypedDict):
     final_response: str | None
     """Final answer text to return to the operator."""
 
+    copilot_memory_namespace: str | None
+    """Stable namespace key used for Store-backed copilot memory.
+
+    Derived from operator/account context (not thread_id) so new threads can
+    recall relevant interaction summaries while keeping unrelated contexts
+    isolated.
+    """
+
     approval_attempted: bool
     """True after request_approval_if_needed_node has run once this session.
 
@@ -215,5 +223,6 @@ def make_initial_state(
         approval_result=None,
         review_findings=None,
         final_response=None,
+        copilot_memory_namespace=None,
         approval_attempted=False,
     )
