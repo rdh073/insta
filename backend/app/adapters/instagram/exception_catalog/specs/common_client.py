@@ -59,9 +59,9 @@ SPEC_CLIENT_BAD_REQUEST_ERROR = FailureSpec(
 
 SPEC_CLIENT_UNAUTHORIZED_ERROR = FailureSpec(
     code="unauthorized",
-    family="common_client",
+    family="private_auth",
     retryable=False,
-    requires_user_action=False,
+    requires_user_action=True,
     user_message="Unauthorized. Please log in again.",
     http_hint=401,
 )

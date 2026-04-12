@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.adapters.instagram.exception_handler import instagram_exception_handler
 from app.domain.instagram_failures import (
     InstagramAdapterError,
+    InstagramFailure,
 )  # re-export for adapter convenience
 
 __all__ = [
@@ -31,6 +32,18 @@ class InstagramRateLimitError(Exception):
         self.retry_after = retry_after
 
 
+_DEAD_SESSION_FAILURE_CODES = frozenset(
+    {
+        # Server-side session invalidation after force-logout.
+        "login_required",
+        # ClientUnauthorizedError variants from upstream.
+        "unauthorized",
+        # Authenticated request with missing/expired private session.
+        "pre_login_required",
+    }
+)
+
+
 def attach_instagram_failure(error: Exception, failure) -> Exception:
     """Attach translated InstagramFailure metadata to an exception instance."""
     error._instagram_failure = failure  # type: ignore[attr-defined]
@@ -50,10 +63,9 @@ def translate_instagram_error(
 
     * **Rate-limit** (http_hint 429) — marks the account in the
       ``rate_limit_guard`` cooldown window.
-    * **Dead session** (non-retryable + requires_user_action, e.g.
-      ``login_required``) — evicts the stale client from
-      ``client_repo`` so that ``_get_account_status()`` stops
-      returning ``"active"`` for a broken session.
+    * **Dead session** (explicit auth-invalid failure codes) — evicts stale
+      runtime/persisted session state so account status can no longer report
+      ``"active"`` for a broken authentication context.
     """
     from app.adapters.instagram.rate_limit_guard import rate_limit_guard
 
@@ -69,12 +81,7 @@ def translate_instagram_error(
             account_id, failure_code=failure.code, username=username
         )
 
-    if (
-        account_id
-        and not failure.retryable
-        and failure.requires_user_action
-        and failure.family == "private_auth"
-    ):
+    if account_id and _should_evict_dead_session(failure):
         _evict_dead_session(account_id)
 
     return failure
@@ -91,12 +98,32 @@ def _evict_dead_session(account_id: str) -> None:
         services = get_services()
         client_repo = services["_client_repo"]
         status_repo = services["_status_repo"]
+        account_repo = services.get("_account_repo")
+        session_store = services.get("session_store")
+
         if client_repo.exists(account_id):
             client_repo.remove(account_id)
         status_repo.set(account_id, "error")
+
+        if account_repo and session_store:
+            account = account_repo.get(account_id) or {}
+            username = (
+                account.get("username", "")
+                if isinstance(account, dict)
+                else getattr(account, "username", "")
+            )
+            if isinstance(username, str) and username:
+                session_store.delete_session(username)
     except Exception:
         # Best-effort — never let eviction crash the error path.
         pass
+
+
+def _should_evict_dead_session(failure: InstagramFailure) -> bool:
+    """Return True when failure metadata indicates a dead auth session."""
+    if failure.retryable:
+        return False
+    return (failure.code or "").strip() in _DEAD_SESSION_FAILURE_CODES
 
 
 def check_rate_limit(account_id: str) -> None:
