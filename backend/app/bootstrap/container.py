@@ -54,6 +54,8 @@ from app.adapters.persistence.factory import (
 from app.adapters.instagram import InstagramClientAdapter
 from app.adapters.persistence.post_job_control_adapter import PostJobControlAdapter
 from app.adapters.scheduler import PostJobQueue
+from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
+from app.adapters.scheduler.job_runtime_adapter import ThreadSafeJobRuntimeAdapter
 from app.adapters.ai.openai_gateway import AIGateway
 from app.adapters.ai.tool_registry import create_tool_registry
 from app.adapters.ai.tool_executor_adapter import ToolExecutorAdapter
@@ -505,6 +507,8 @@ def create_services():
 
     # ── 3. Job scheduling ─────────────────────────────────────────────────
     post_job_control = PostJobControlAdapter(job_repo=job_repo, uow=uow)
+    job_runtime = ThreadSafeJobRuntimeAdapter()
+    job_event_publisher = PostJobEventPublisherAdapter()
 
     def _run_and_sync_job(job_id: str) -> None:
         """Run the job then sync final state from in-memory store back to the DB.
@@ -531,6 +535,8 @@ def create_services():
     scheduler = PostJobQueue(
         run_fn=_run_and_sync_job,
         mark_scheduled_fn=lambda jid: post_job_control.set_job_status(jid, "scheduled"),
+        runtime=job_runtime,
+        event_publisher=job_event_publisher,
     )
 
     # ── 4. Account use cases ──────────────────────────────────────────────
@@ -612,6 +618,8 @@ def create_services():
         "session_store": SessionStore(),
         "scheduler": scheduler,
         "post_job_control": post_job_control,
+        "job_runtime": job_runtime,
+        "job_event_publisher": job_event_publisher,
         "oauth_token_store": oauth_token_store,
         "_account_repo": account_repo,
         "_client_repo": client_repo,

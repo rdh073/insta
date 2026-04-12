@@ -20,6 +20,10 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
+from app.adapters.scheduler.job_runtime_adapter import ThreadSafeJobRuntimeAdapter
+from app.application.ports.job_engine import JobEventPublisherPort, JobRuntimePort
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +49,10 @@ class PostJobQueue:
         Number of concurrent worker threads.  Default ``1`` is intentional —
         Instagram rate-limits make parallel *jobs* risky; within each job
         the ``PostJobExecutor`` already uploads to all accounts concurrently.
+    runtime:
+        Runtime lifecycle recorder for worker assignment and heartbeat metadata.
+    event_publisher:
+        Lifecycle event publisher. Contract is signal-only by event type.
     """
 
     def __init__(
@@ -52,9 +60,13 @@ class PostJobQueue:
         run_fn: Callable[[str], None],
         mark_scheduled_fn: Callable[[str], None] | None = None,
         workers: int = 1,
+        runtime: JobRuntimePort | None = None,
+        event_publisher: JobEventPublisherPort | None = None,
     ) -> None:
         self._run_fn = run_fn
         self._mark_scheduled = mark_scheduled_fn
+        self._runtime = runtime or ThreadSafeJobRuntimeAdapter()
+        self._event_publisher = event_publisher or PostJobEventPublisherAdapter()
         self._queue: queue.Queue[_JobItem | None] = queue.Queue()
         self._workers: list[threading.Thread] = []
         self._timers: set[threading.Timer] = set()
@@ -233,12 +245,9 @@ class PostJobQueue:
         except Exception:
             pass
 
-    @staticmethod
-    def _notify_event(event_type: str) -> None:
+    def _notify_event(self, job_id: str, event_type: str) -> None:
         try:
-            from app.adapters.scheduler.event_bus import post_job_event_bus
-
-            post_job_event_bus.notify(event_type)
+            self._event_publisher.publish(job_id, event_type)
         except Exception:
             pass
 
@@ -300,12 +309,38 @@ class PostJobQueue:
         if self._is_scheduled_without_media(item.job_id):
             self._set_job_status(item.job_id, "needs_media")
             logger.info("Skipping scheduled job %s with missing media", item.job_id)
-            self._notify_event("job_update")
+            self._notify_event(item.job_id, "job_update")
             return
 
+        worker_id = threading.current_thread().name
+        try:
+            self._runtime.start(item.job_id, worker_id)
+        except Exception:
+            logger.debug("runtime.start failed job_id=%s worker_id=%s", item.job_id, worker_id, exc_info=True)
+
         logger.info("Executing job %s", item.job_id)
-        self._run_fn(item.job_id)
+        try:
+            try:
+                self._runtime.heartbeat(item.job_id, worker_id)
+            except Exception:
+                logger.debug(
+                    "runtime.heartbeat failed before run job_id=%s worker_id=%s",
+                    item.job_id,
+                    worker_id,
+                    exc_info=True,
+                )
+            self._run_fn(item.job_id)
+        finally:
+            try:
+                self._runtime.heartbeat(item.job_id, worker_id)
+            except Exception:
+                logger.debug(
+                    "runtime.heartbeat failed after run job_id=%s worker_id=%s",
+                    item.job_id,
+                    worker_id,
+                    exc_info=True,
+                )
         logger.info("Job %s finished", item.job_id)
 
         # Notify SSE listeners that job state changed
-        self._notify_event("job_complete")
+        self._notify_event(item.job_id, "job_complete")

@@ -115,3 +115,48 @@ def test_invalid_scheduled_at_logs_and_runs_job_immediately(caplog) -> None:
         assert "Unhandled error processing job invalid-job" not in caplog.text
     finally:
         queue.shutdown(timeout=0.2)
+
+
+def test_queue_uses_runtime_port_and_event_publisher_port() -> None:
+    executed: list[str] = []
+    runtime_calls: list[tuple[str, str, str]] = []
+    published_events: list[tuple[str, str]] = []
+    completed = threading.Event()
+
+    class _Runtime:
+        def start(self, job_id: str, worker_id: str) -> None:
+            runtime_calls.append(("start", job_id, worker_id))
+
+        def heartbeat(self, job_id: str, worker_id: str) -> None:
+            runtime_calls.append(("heartbeat", job_id, worker_id))
+
+    class _Publisher:
+        def publish(self, job_id: str, event_type: str) -> None:
+            published_events.append((job_id, event_type))
+
+    def run(job_id: str) -> None:
+        executed.append(job_id)
+        completed.set()
+
+    queue = PostJobQueue(
+        run_fn=run,
+        workers=1,
+        runtime=_Runtime(),
+        event_publisher=_Publisher(),
+    )
+    queue.start()
+    try:
+        _seed_pending_job("runtime-job")
+        queue.enqueue("runtime-job")
+        assert completed.wait(timeout=1.0)
+        queue._queue.join()
+    finally:
+        queue.shutdown(timeout=0.2)
+
+    assert executed == ["runtime-job"]
+    assert runtime_calls[0][0] == "start"
+    assert runtime_calls[0][1] == "runtime-job"
+    assert runtime_calls[0][2].startswith("post-job-worker-")
+    heartbeat_calls = [c for c in runtime_calls if c[0] == "heartbeat"]
+    assert len(heartbeat_calls) == 2
+    assert published_events[-1] == ("runtime-job", "job_complete")

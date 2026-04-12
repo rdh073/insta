@@ -99,6 +99,18 @@ class ThreadSafeJobStore:
         self._stop_flags: dict[str, bool] = {}
         self._pause_events: dict[str, threading.Event] = {}
 
+    @staticmethod
+    def _ensure_runtime_meta(job: dict) -> dict:
+        extra = job.get("_extra_data")
+        if not isinstance(extra, dict):
+            extra = {}
+            job["_extra_data"] = extra
+        runtime = extra.get("job_runtime")
+        if not isinstance(runtime, dict):
+            runtime = {}
+            extra["job_runtime"] = runtime
+        return runtime
+
     # ── job CRUD ──────────────────────────────────────────────────────────
 
     def put(self, job_id: str, job: dict) -> None:
@@ -159,6 +171,44 @@ class ThreadSafeJobStore:
                 "failed": sum(1 for r in results if r.get("status") == "failed"),
                 "skipped": sum(1 for r in results if r.get("status") == "skipped"),
             }
+
+    def mark_started(self, job_id: str, worker_id: str, started_at: str) -> None:
+        with self._lock:
+            runtime = self._ensure_runtime_meta(self._jobs[job_id])
+            runtime["worker_id"] = worker_id
+            runtime["started_at"] = started_at
+            runtime["last_heartbeat_at"] = started_at
+
+    def mark_heartbeat(self, job_id: str, worker_id: str, heartbeat_at: str) -> None:
+        with self._lock:
+            runtime = self._ensure_runtime_meta(self._jobs[job_id])
+            active_worker = str(runtime.get("worker_id") or "")
+            if active_worker and active_worker != worker_id:
+                return
+            runtime["worker_id"] = worker_id
+            runtime.setdefault("started_at", heartbeat_at)
+            runtime["last_heartbeat_at"] = heartbeat_at
+
+    def get_runtime_metadata(self, job_id: str) -> dict[str, str]:
+        with self._lock:
+            job = self._jobs[job_id]
+            extra = job.get("_extra_data")
+            if not isinstance(extra, dict):
+                return {}
+            runtime = extra.get("job_runtime")
+            if not isinstance(runtime, dict):
+                return {}
+            worker_id = runtime.get("worker_id")
+            started_at = runtime.get("started_at")
+            last_heartbeat_at = runtime.get("last_heartbeat_at")
+            out: dict[str, str] = {}
+            if worker_id is not None:
+                out["worker_id"] = str(worker_id)
+            if started_at is not None:
+                out["started_at"] = str(started_at)
+            if last_heartbeat_at is not None:
+                out["last_heartbeat_at"] = str(last_heartbeat_at)
+            return out
 
     # ── stop / pause control ──────────────────────────────────────────────
 

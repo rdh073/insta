@@ -1,16 +1,12 @@
 """JobRuntimePort adapter backed by ThreadSafeJobStore.
 
-Phase 1 of the Robust Threaded Job Engine migration.
-
-Wraps the existing in-memory job store so that future operation handlers
-depend on the port contract, not on the legacy state module.
-
-start() and heartbeat() are intentional no-ops in this phase.
-Phase 5 will add worker_id bookkeeping and stale-detection sweep.
+Wraps the in-memory job store so operation handlers depend on a stable
+runtime contract, not direct ``state.py`` imports.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Optional
 
 from state import ThreadSafeJobStore, job_store
@@ -28,15 +24,38 @@ class ThreadSafeJobRuntimeAdapter:
     def __init__(self, store: ThreadSafeJobStore | None = None) -> None:
         self._store = store or job_store
 
+    @staticmethod
+    def _utcnow() -> dt.datetime:
+        return dt.datetime.now(dt.timezone.utc)
+
+    @staticmethod
+    def _to_iso8601(value: dt.datetime) -> str:
+        return value.astimezone(dt.timezone.utc).isoformat()
+
+    @staticmethod
+    def _parse_iso8601(value: object) -> Optional[dt.datetime]:
+        if value is None:
+            return None
+        if isinstance(value, dt.datetime):
+            parsed = value
+        else:
+            try:
+                parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+            return parsed.replace(tzinfo=dt.timezone.utc)
+        return parsed.astimezone(dt.timezone.utc)
+
     # ── JobRuntimePort ────────────────────────────────────────────────────
 
     def start(self, job_id: str, worker_id: str) -> None:
-        # Phase 5: persist worker_id and started_at into the job record.
-        pass
+        now = self._utcnow()
+        self._store.mark_started(job_id, worker_id, self._to_iso8601(now))
 
     def heartbeat(self, job_id: str, worker_id: str) -> None:
-        # Phase 5: update last_heartbeat_at for stale-job detection.
-        pass
+        now = self._utcnow()
+        self._store.mark_heartbeat(job_id, worker_id, self._to_iso8601(now))
 
     def transition(
         self,
@@ -71,8 +90,12 @@ class ThreadSafeJobRuntimeAdapter:
             tally = self._store.tally_results(job_id)
         except (KeyError, TypeError):
             tally = {}
+        runtime_meta = self._store.get_runtime_metadata(job_id)
         return JobSnapshot(
             job_id=job_id,
             state=state,
+            worker_id=runtime_meta.get("worker_id"),
+            started_at=self._parse_iso8601(runtime_meta.get("started_at")),
+            last_heartbeat_at=self._parse_iso8601(runtime_meta.get("last_heartbeat_at")),
             result_tally=tally,
         )

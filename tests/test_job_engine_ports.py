@@ -1,8 +1,8 @@
-"""Unit tests for Phase 1 job engine ports and adapters.
+"""Unit tests for job engine ports and scheduler adapters.
 
 Tests cover:
   - JobState enum semantics (values, terminal/active classification)
-  - ThreadSafeJobRuntimeAdapter behaviour (transition, pause/resume/cancel, snapshot)
+  - ThreadSafeJobRuntimeAdapter behaviour (transition, pause/resume/cancel, runtime snapshot)
   - PostJobEventPublisherAdapter (delegates to bus)
 
 All tests use injected stores/buses so no module-level singleton is touched.
@@ -10,7 +10,7 @@ All tests use injected stores/buses so no module-level singleton is touched.
 
 from __future__ import annotations
 
-import threading
+import datetime as dt
 
 import pytest
 
@@ -114,7 +114,7 @@ class TestThreadSafeJobRuntimeAdapter:
         assert store.get("job-1")["status"] == "stopped"
 
     def test_transition_accepts_failure_category(self) -> None:
-        """failure_category is accepted but not written in Phase 1 (no-op)."""
+        """failure_category remains optional context for current adapters."""
         adapter, store = self._make_adapter()
         adapter.transition("job-1", JobState.FAILED, failure_category="rate_limited")
         assert store.get("job-1")["status"] == "failed"
@@ -135,13 +135,43 @@ class TestThreadSafeJobRuntimeAdapter:
         adapter.request_resume("job-1")
         assert event.is_set()
 
-    def test_start_and_heartbeat_are_no_ops(self) -> None:
-        """No exceptions raised; no state written in Phase 1."""
+    def test_start_and_heartbeat_persist_runtime_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
         adapter, store = self._make_adapter()
+        times = iter(
+            [
+                dt.datetime(2026, 4, 12, 10, 0, tzinfo=dt.timezone.utc),
+                dt.datetime(2026, 4, 12, 10, 0, 5, tzinfo=dt.timezone.utc),
+            ]
+        )
+        monkeypatch.setattr(adapter, "_utcnow", lambda: next(times))
         adapter.start("job-1", "worker-0")
         adapter.heartbeat("job-1", "worker-0")
-        # Status unchanged
+        snap = adapter.snapshot("job-1")
         assert store.get("job-1")["status"] == "pending"
+        assert snap.worker_id == "worker-0"
+        assert snap.started_at == dt.datetime(2026, 4, 12, 10, 0, tzinfo=dt.timezone.utc)
+        assert snap.last_heartbeat_at == dt.datetime(2026, 4, 12, 10, 0, 5, tzinfo=dt.timezone.utc)
+
+    def test_heartbeat_with_other_worker_does_not_override_owner(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        adapter, _ = self._make_adapter()
+        times = iter(
+            [
+                dt.datetime(2026, 4, 12, 11, 0, tzinfo=dt.timezone.utc),
+                dt.datetime(2026, 4, 12, 11, 0, 2, tzinfo=dt.timezone.utc),
+                dt.datetime(2026, 4, 12, 11, 0, 4, tzinfo=dt.timezone.utc),
+            ]
+        )
+        monkeypatch.setattr(adapter, "_utcnow", lambda: next(times))
+        adapter.start("job-1", "worker-a")
+        adapter.heartbeat("job-1", "worker-b")
+        adapter.heartbeat("job-1", "worker-a")
+        snap = adapter.snapshot("job-1")
+        assert snap.worker_id == "worker-a"
+        assert snap.started_at == dt.datetime(2026, 4, 12, 11, 0, tzinfo=dt.timezone.utc)
+        assert snap.last_heartbeat_at == dt.datetime(2026, 4, 12, 11, 0, 4, tzinfo=dt.timezone.utc)
 
     def test_snapshot_returns_correct_state(self) -> None:
         adapter, store = self._make_adapter()
@@ -202,10 +232,11 @@ class TestPostJobEventPublisherAdapter:
         assert queue.get_nowait() == "job_complete"
         bus.unsubscribe(listener_id)
 
-    def test_publish_accepts_payload_without_error(self) -> None:
-        """Payload is accepted but not forwarded in Phase 1."""
+    def test_publish_rejects_payload_argument(self) -> None:
+        """Publisher contract is signal-only; payload is not accepted."""
         adapter, _ = self._make_adapter()
-        adapter.publish("job-1", "job_failed", payload={"reason": "timeout"})  # must not raise
+        with pytest.raises(TypeError):
+            adapter.publish("job-1", "job_failed", payload={"reason": "timeout"})  # type: ignore[call-arg]
 
 
 # ── JobExecutionResult ────────────────────────────────────────────────────────
@@ -228,3 +259,13 @@ class TestJobExecutionResult:
         )
         assert result.failure_category == "rate_limited"
         assert result.detail == "Too many requests"
+
+
+class TestContainerJobEngineWiring:
+    def test_container_wires_scheduler_with_engine_adapters(self) -> None:
+        from app.bootstrap.container import create_services
+
+        services = create_services()
+        scheduler = services["scheduler"]
+        assert services["job_runtime"] is scheduler._runtime
+        assert services["job_event_publisher"] is scheduler._event_publisher

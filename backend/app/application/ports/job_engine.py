@@ -4,9 +4,6 @@ These ports are narrow contracts for background-job lifecycle management.
 Adapters implement them using threads, queues, and persistence backends.
 The goal is to keep orchestration code (use cases, handlers) free of
 threading primitives and legacy state-module imports.
-
-Phase 1 of the Robust Threaded Job Engine migration: ports introduced with
-no behavior change.  Adapters wrap existing ThreadSafeJobStore and PostJobEventBus.
 """
 
 from __future__ import annotations
@@ -14,7 +11,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, Protocol
+from typing import Optional, Protocol
 
 
 class JobState(str, Enum):
@@ -125,13 +122,8 @@ class JobRuntimePort(Protocol):
 class JobEventPublisherPort(Protocol):
     """Publish job lifecycle events to consumers (SSE, audit log, metrics)."""
 
-    def publish(
-        self,
-        job_id: str,
-        event_type: str,
-        payload: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """Broadcast *event_type* for *job_id*.  Thread-safe and non-blocking."""
+    def publish(self, job_id: str, event_type: str) -> None:
+        """Broadcast *event_type* for *job_id*.  Consumers fetch details separately."""
         ...
 
 
