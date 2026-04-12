@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commandJsonRunner } from './command-json-runner';
 import { graphRunner } from './graph-runner';
-import type { CopilotEvent } from './operator-copilot';
+import { operatorCopilotApi, TransportContractError, type CopilotEvent } from './operator-copilot';
 import { useSettingsStore } from '../store/settings';
 
 async function collectEvents(stream: ReadableStream<CopilotEvent>): Promise<CopilotEvent[]> {
@@ -23,6 +23,13 @@ function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json' },
+  });
+}
+
+function emptySseResponse(status = 200): Response {
+  return new Response('', {
+    status,
+    headers: { 'content-type': 'text/event-stream; charset=utf-8' },
   });
 }
 
@@ -146,14 +153,45 @@ describe('command transport contracts', () => {
     expect(events[2].stop_reason).toBe('error');
   });
 
-  it('fails fast when SSE transport receives JSON instead of event-stream', async () => {
+  it('raises TransportContractError when graph runner receives non-SSE content type', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       status: 'recommendation_only',
       interrupted: false,
     })));
 
-    await expect(
-      collectEvents(graphRunner.run('/ai/campaign-monitor/run', { threadId: 't-1' })),
-    ).rejects.toThrow(/text\/event-stream/i);
+    const promise = collectEvents(graphRunner.run('/ai/campaign-monitor/run', { threadId: 't-1' }));
+    await expect(promise).rejects.toBeInstanceOf(TransportContractError);
+    await expect(promise).rejects.toThrow('/ai/campaign-monitor/run');
+    await expect(promise).rejects.toThrow(/text\/event-stream/i);
+  });
+
+  it('raises TransportContractError when graph runner SSE stream ends without events', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(emptySseResponse()));
+
+    const promise = collectEvents(graphRunner.run('/ai/campaign-monitor/run', { threadId: 't-empty' }));
+    await expect(promise).rejects.toBeInstanceOf(TransportContractError);
+    await expect(promise).rejects.toThrow('Stream ended without any SSE data events.');
+    await expect(promise).rejects.toThrow('/ai/campaign-monitor/run');
+  });
+
+  it('raises TransportContractError when operator copilot receives non-SSE content type', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      status: 'ok',
+      result: 'not-a-stream',
+    })));
+
+    const promise = collectEvents(operatorCopilotApi.stream({ message: 'hello' }));
+    await expect(promise).rejects.toBeInstanceOf(TransportContractError);
+    await expect(promise).rejects.toThrow('/ai/chat/graph');
+    await expect(promise).rejects.toThrow(/text\/event-stream/i);
+  });
+
+  it('raises TransportContractError when operator copilot SSE stream ends without events', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(emptySseResponse()));
+
+    const promise = collectEvents(operatorCopilotApi.stream({ message: 'hello' }));
+    await expect(promise).rejects.toBeInstanceOf(TransportContractError);
+    await expect(promise).rejects.toThrow('Stream ended without any SSE data events.');
+    await expect(promise).rejects.toThrow('/ai/chat/graph');
   });
 });

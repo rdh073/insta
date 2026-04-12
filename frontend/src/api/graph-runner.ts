@@ -1,13 +1,28 @@
 import { buildApiUrl } from '../lib/api-base';
 import { useSettingsStore } from '../store/settings';
 import type { CopilotEvent } from './operator-copilot';
-import { NetworkError, ServerError, StreamAbortedError } from './operator-copilot';
+import { NetworkError, ServerError, StreamAbortedError, TransportContractError } from './operator-copilot';
 
 function isAbortError(err: unknown): boolean {
   return (
     err instanceof Error &&
     (err.name === 'AbortError' || err.name === 'StreamAbortedError' || err.message === 'The user aborted a request.')
   );
+}
+
+function isSseContentType(contentType: string | null): boolean {
+  if (!contentType) return false;
+  return contentType.toLowerCase().includes('text/event-stream');
+}
+
+function buildSseContentTypeMismatchMessage(
+  endpoint: string,
+  contentType: string | null,
+  detail: string,
+): string {
+  const contentTypeLabel = contentType?.trim() || 'unknown';
+  const suffix = detail.trim() ? ` Backend detail: ${detail.trim().slice(0, 240)}` : '';
+  return `Transport contract mismatch for ${endpoint}: expected text/event-stream but received ${contentTypeLabel}.${suffix}`;
 }
 
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -27,7 +42,12 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
   return (await response.text().catch(() => '')) || fallback;
 }
 
-function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableStream<CopilotEvent> {
+function sseStream(
+  url: string,
+  body: unknown,
+  endpoint: string,
+  signal?: AbortSignal,
+): ReadableStream<CopilotEvent> {
   return new ReadableStream<CopilotEvent>({
     async start(controller) {
       if (signal?.aborted) {
@@ -68,13 +88,15 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
         return;
       }
 
-      const contentType = response.headers.get('content-type')?.toLowerCase() || '';
-      if (!contentType.includes('text/event-stream')) {
-        const detail = await readErrorMessage(
-          response,
-          `Transport contract mismatch: expected text/event-stream but got ${contentType || 'unknown'}.`,
+      const contentType = response.headers.get('content-type');
+      if (!isSseContentType(contentType)) {
+        const detail = await readErrorMessage(response, '');
+        controller.error(
+          new TransportContractError(
+            buildSseContentTypeMismatchMessage(endpoint, contentType, detail),
+            response.status,
+          ),
         );
-        controller.error(new ServerError(detail, response.status));
         return;
       }
 
@@ -121,7 +143,12 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
       }
 
       if (!sawEvent) {
-        controller.error(new Error('Stream ended without any SSE data events.'));
+        controller.error(
+          new TransportContractError(
+            `Transport contract mismatch for ${endpoint}: Stream ended without any SSE data events.`,
+            response.status,
+          ),
+        );
         return;
       }
       controller.close();
@@ -137,7 +164,7 @@ export const graphRunner = {
     signal?: AbortSignal,
   ): ReadableStream<CopilotEvent> {
     const url = buildApiUrl(endpoint, backendUrl);
-    return sseStream(url, body, signal);
+    return sseStream(url, body, endpoint, signal);
   },
 
   resume(
@@ -147,6 +174,6 @@ export const graphRunner = {
     signal?: AbortSignal,
   ): ReadableStream<CopilotEvent> {
     const url = buildApiUrl(endpoint, backendUrl);
-    return sseStream(url, body, signal);
+    return sseStream(url, body, endpoint, signal);
   },
 };

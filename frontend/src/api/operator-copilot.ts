@@ -61,6 +61,13 @@ export class ServerError extends Error {
   }
 }
 
+export class TransportContractError extends ServerError {
+  constructor(message: string, status: number, code = 'transport_contract_mismatch') {
+    super(message, status, code);
+    this.name = 'TransportContractError';
+  }
+}
+
 export class StreamAbortedError extends Error {
   constructor() {
     super('Stream was cancelled.');
@@ -94,9 +101,29 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
+function isSseContentType(contentType: string | null): boolean {
+  if (!contentType) return false;
+  return contentType.toLowerCase().includes('text/event-stream');
+}
+
+function buildSseContentTypeMismatchMessage(
+  endpoint: string,
+  contentType: string | null,
+  detail: string,
+): string {
+  const contentTypeLabel = contentType?.trim() || 'unknown';
+  const suffix = detail.trim() ? ` Backend detail: ${detail.trim().slice(0, 240)}` : '';
+  return `Transport contract mismatch for ${endpoint}: expected text/event-stream but received ${contentTypeLabel}.${suffix}`;
+}
+
 // ── SSE stream ─────────────────────────────────────────────────────────────────
 
-function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableStream<CopilotEvent> {
+function sseStream(
+  url: string,
+  body: unknown,
+  endpoint: string,
+  signal?: AbortSignal,
+): ReadableStream<CopilotEvent> {
   return new ReadableStream<CopilotEvent>({
     async start(controller) {
       // Bail immediately if already aborted before the fetch starts
@@ -138,13 +165,15 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
         return;
       }
 
-      const contentType = response.headers.get('content-type')?.toLowerCase() || '';
-      if (!contentType.includes('text/event-stream')) {
-        const detail = await readErrorMessage(
-          response,
-          `Transport contract mismatch: expected text/event-stream but got ${contentType || 'unknown'}.`,
+      const contentType = response.headers.get('content-type');
+      if (!isSseContentType(contentType)) {
+        const detail = await readErrorMessage(response, '');
+        controller.error(
+          new TransportContractError(
+            buildSseContentTypeMismatchMessage(endpoint, contentType, detail),
+            response.status,
+          ),
         );
-        controller.error(new ServerError(detail, response.status));
         return;
       }
 
@@ -191,7 +220,12 @@ function sseStream(url: string, body: unknown, signal?: AbortSignal): ReadableSt
       }
 
       if (!sawEvent) {
-        controller.error(new NetworkError('Stream ended without any SSE data events.'));
+        controller.error(
+          new TransportContractError(
+            `Transport contract mismatch for ${endpoint}: Stream ended without any SSE data events.`,
+            response.status,
+          ),
+        );
         return;
       }
       controller.close();
@@ -245,7 +279,7 @@ export const operatorCopilotApi = {
       fileName: req.fileName,
       fileContent: req.fileContent,
     };
-    return sseStream(url, body, req.signal);
+    return sseStream(url, body, '/ai/chat/graph', req.signal);
   },
 
   resume(req: CopilotResumeRequest, backendUrl?: string): ReadableStream<CopilotEvent> {
@@ -255,6 +289,6 @@ export const operatorCopilotApi = {
       approvalResult: req.approvalResult,
       editedCalls: req.editedCalls,
     };
-    return sseStream(url, body, req.signal);
+    return sseStream(url, body, '/ai/chat/graph/resume', req.signal);
   },
 };
