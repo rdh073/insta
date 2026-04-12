@@ -1,4 +1,4 @@
-"""Short-lived one-time SSE token store.
+"""Short-lived reusable SSE token store.
 
 Solves the problem that the browser's native EventSource API cannot send
 custom headers, so the API key would have to go in the query string where
@@ -6,11 +6,11 @@ it is logged by every reverse proxy on the path.
 
 Flow:
   1. Frontend calls POST /api/sse/token with X-API-Key header → gets a
-     single-use token valid for TTL_SECONDS.
+     token valid for TTL_SECONDS.
   2. Frontend opens EventSource with ?sse_token=<token>.
-  3. Middleware consumes (validates + deletes) the token on the first
-     request — logging the token is harmless because it is already
-     invalidated by the time any log is read.
+  3. Middleware validates the token on each SSE request. The same token can
+     be reused until it expires, so EventSource auto-reconnect works.
+  4. Expired tokens are rejected and evicted from the in-memory store.
 
 Thread-safe via a plain threading.Lock (uvicorn single-worker is async
 but background tasks may run in threads).
@@ -24,7 +24,7 @@ from threading import Lock
 
 
 class SseTokenStore:
-    """In-process store for short-lived one-time SSE tokens."""
+    """In-process store for short-lived reusable SSE tokens."""
 
     TTL_SECONDS: int = 300  # 5 minutes — covers instagrapi slow ops + reconnect windows
 
@@ -46,7 +46,10 @@ class SseTokenStore:
 
         Tokens are reusable within their TTL so that EventSource auto-reconnect
         (which reuses the same URL) keeps working after a transient disconnect.
-        The token becomes invalid only when it expires.
+        Validation semantics:
+        - Empty or unknown token: invalid.
+        - Expired token: invalid and removed from the store.
+        - Unexpired token: valid and still reusable until expiry.
         """
         if not token:
             return False
