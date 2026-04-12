@@ -7,16 +7,6 @@ from pydantic import BaseModel, Field
 from app.adapters.ai.provider_catalog import is_provider_enabled, provider_feature_flag_key
 
 
-class LoginRequest(BaseModel):
-    password: str = Field(..., description="Admin dashboard password")
-
-
-class LoginResponse(BaseModel):
-    token: str
-    token_type: str = "bearer"
-    expires_in_hours: int = 24
-
-
 class LLMConfigCreate(BaseModel):
     label: str = Field(..., description="Human-readable name, e.g. 'My ChatGPT Plus'")
     provider: str = Field(

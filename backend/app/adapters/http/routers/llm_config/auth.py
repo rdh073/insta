@@ -2,14 +2,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.adapters.http.dependencies import get_services
-
-from .schemas import LoginRequest, LoginResponse
-
-router = APIRouter()
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -66,30 +62,3 @@ async def require_admin_auth_if_enabled(
         return
 
     await require_admin_auth(credentials=credentials, auth_usecases=auth_usecases)
-
-
-@router.post("/auth/login", response_model=LoginResponse, summary="Admin dashboard login")
-async def login(
-    request: LoginRequest,
-    auth_usecases=Depends(get_auth_usecases),
-):
-    """Authenticate with admin password. Returns a JWT token valid for 24 hours."""
-    if auth_usecases is None or not auth_usecases.is_enabled():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Dashboard auth is disabled. Set ENABLE_DASHBOARD_AUTH=true with ADMIN_PASSWORD and AUTH_SECRET to enable it.",
-        )
-    try:
-        token = auth_usecases.login(request.password)
-        return LoginResponse(token=token)
-    except PermissionError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(e),
-        )
