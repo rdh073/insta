@@ -226,10 +226,16 @@ class TestListCommentsPageValidation:
     def test_passes_cursor_to_port(self):
         uc, reader, _ = _build_use_cases()
         reader.list_comments_page.return_value = _make_page()
+        opaque_cursor = "ZXlKd1lXZGxJam95ZlE9PQ=="
 
-        uc.list_comments_page("acc-1", "media-1", 10, cursor="abc123")
+        uc.list_comments_page("acc-1", "media-1", 10, cursor=opaque_cursor)
 
-        reader.list_comments_page.assert_called_once_with("acc-1", "media-1", 10, "abc123")
+        reader.list_comments_page.assert_called_once_with(
+            "acc-1",
+            "media-1",
+            10,
+            opaque_cursor,
+        )
 
     def test_none_cursor_passes_through(self):
         uc, reader, _ = _build_use_cases()

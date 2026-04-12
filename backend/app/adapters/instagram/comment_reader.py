@@ -98,9 +98,9 @@ class InstagramCommentReaderAdapter:
             raise ValueError(f"Account {account_id} not found or not authenticated")
 
         try:
-            # Call vendor method to get paginated comments
-            # min_id is the cursor in instagrapi; None/0 means start from beginning
-            min_id = int(cursor) if cursor else None
+            # Call vendor method to get paginated comments.
+            # Treat cursor as an opaque token and pass it through unchanged.
+            min_id = cursor
             comments, next_min_id = client.media_comments_chunk(
                 media_id,
                 max_amount=page_size,
@@ -110,8 +110,9 @@ class InstagramCommentReaderAdapter:
             # Map comments to DTOs
             comment_summaries = [self._map_comment_to_summary(c) for c in comments]
 
-            # Convert next_min_id to string cursor (or None if exhausted)
-            next_cursor = str(next_min_id) if next_min_id else None
+            # Preserve vendor cursor token as-is (stringified for DTO contract).
+            # Only None indicates no further page.
+            next_cursor = None if next_min_id is None else str(next_min_id)
 
             return CommentPage(
                 comments=comment_summaries,

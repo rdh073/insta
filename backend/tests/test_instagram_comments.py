@@ -61,7 +61,7 @@ class TestCommentReaderAdapter:
             self._create_mock_comment(pk=100, text="Page 1, Item 1"),
             self._create_mock_comment(pk=101, text="Page 1, Item 2"),
         ]
-        next_min_id = 99  # Cursor for next page
+        next_min_id = "Q1VSU09SX1RPS0VOPQ=="  # Opaque cursor for next page
         mock_client.media_comments_chunk.return_value = (mock_comments, next_min_id)
 
         # Create mock repo
@@ -75,7 +75,7 @@ class TestCommentReaderAdapter:
         assert isinstance(result, CommentPage)
         assert len(result.comments) == 2
         assert result.comments[0].pk == 100
-        assert result.next_cursor == "99"
+        assert result.next_cursor == "Q1VSU09SX1RPS0VOPQ=="
         mock_client.media_comments_chunk.assert_called_once()
 
     def test_list_comments_page_with_cursor(self):
@@ -91,13 +91,19 @@ class TestCommentReaderAdapter:
 
         # Test adapter with cursor
         adapter = InstagramCommentReaderAdapter(mock_repo)
-        result = adapter.list_comments_page("acc-123", "media-456", page_size=10, cursor="99")
+        opaque_cursor = "eyJjdXJzb3IiOiJwYWdlLTIifQ=="
+        result = adapter.list_comments_page(
+            "acc-123",
+            "media-456",
+            page_size=10,
+            cursor=opaque_cursor,
+        )
 
         assert len(result.comments) == 1
         assert result.next_cursor is None  # No more pages
-        # Verify cursor was converted to int and passed as min_id
+        # Verify opaque cursor is passed through unchanged as min_id
         call_args = mock_client.media_comments_chunk.call_args
-        assert call_args.kwargs.get("min_id") == 99
+        assert call_args.kwargs.get("min_id") == opaque_cursor
 
     def test_comment_author_extraction(self):
         """Verify comment author is extracted from nested user object."""
