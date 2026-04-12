@@ -35,6 +35,24 @@ from ai_copilot.application.smart_engagement.state import AuditEvent
 _DEFAULT_LOG_PATH = "/tmp/smart-engagement-audit.jsonl"
 
 
+def _normalize_event(event: AuditEvent) -> tuple[AuditEvent, str]:
+    """Normalize event payload and return (normalized_event, thread_id)."""
+    raw_event_data = event.get("event_data") or {}
+    event_data = raw_event_data if isinstance(raw_event_data, dict) else {}
+
+    normalized_data = dict(event_data)
+    thread_id = normalized_data.get("thread_id") or event.get("thread_id") or "default"
+    normalized_data.setdefault("thread_id", thread_id)
+
+    normalized_event = AuditEvent(
+        event_type=str(event.get("event_type", "")),
+        node_name=str(event.get("node_name", "")),
+        event_data=normalized_data,
+        timestamp=float(event.get("timestamp", time.time())),
+    )
+    return normalized_event, str(thread_id)
+
+
 class FileAuditLogAdapter(AuditLogPort):
     """Audit log adapter that writes events to a JSONL file.
 
@@ -76,16 +94,17 @@ class FileAuditLogAdapter(AuditLogPort):
         Args:
             event: AuditEvent with event_type, node_name, event_data, timestamp
         """
-        event_data = event.get("event_data", {})
+        normalized_event, thread_id = _normalize_event(event)
+        event_data = normalized_event.get("event_data", {})
 
         # Build enriched log record with traceable top-level fields
         record = {
             # Core event fields
-            "event_type": event.get("event_type"),
-            "node_name": event.get("node_name"),
-            "timestamp": event.get("timestamp", time.time()),
+            "event_type": normalized_event.get("event_type"),
+            "node_name": normalized_event.get("node_name"),
+            "timestamp": normalized_event.get("timestamp", time.time()),
             # Traceable context fields (extracted from event_data)
-            "thread_id": event_data.get("thread_id"),
+            "thread_id": thread_id,
             "source_account": event_data.get("account_id"),
             "target_id": event_data.get("target_id"),
             # Action details
@@ -136,12 +155,21 @@ class FileAuditLogAdapter(AuditLogPort):
                         continue
                     try:
                         record = json.loads(line)
-                        if record.get("thread_id") == thread_id:
+                        event_data = record.get("event_data", {})
+                        if not isinstance(event_data, dict):
+                            event_data = {}
+
+                        record_thread_id = record.get("thread_id") or event_data.get(
+                            "thread_id"
+                        )
+                        if record_thread_id == thread_id:
+                            normalized_data = dict(event_data)
+                            normalized_data.setdefault("thread_id", record_thread_id)
                             events.append(
                                 AuditEvent(
                                     event_type=record.get("event_type", "unknown"),
                                     node_name=record.get("node_name", ""),
-                                    event_data=record.get("event_data", {}),
+                                    event_data=normalized_data,
                                     timestamp=record.get("timestamp", 0.0),
                                 )
                             )

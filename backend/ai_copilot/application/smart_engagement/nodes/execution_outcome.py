@@ -109,6 +109,7 @@ class ExecutionOutcomeNodesMixin:
             )
 
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="action_executed",
                     node_name="execute_action",
@@ -120,7 +121,7 @@ class ExecutionOutcomeNodesMixin:
                         "reason_code": result.get("reason_code"),
                     },
                     timestamp=time.time(),
-                )
+                ),
             )
 
             return {"execution_result": result, "audit_trail": [event]}
@@ -139,6 +140,7 @@ class ExecutionOutcomeNodesMixin:
                 timestamp=time.time(),
             )
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="execution_error",
                     node_name="execute_action",
@@ -149,7 +151,7 @@ class ExecutionOutcomeNodesMixin:
                         "reason_code": "execution_failed",
                     },
                     timestamp=time.time(),
-                )
+                ),
             )
             return {"execution_result": result, "audit_trail": [event]}
 
@@ -213,6 +215,7 @@ class ExecutionOutcomeNodesMixin:
                     logger.warning("Failed to store engagement outcome to memory")
 
         event = await self._emit(
+            state,
             AuditEvent(
                 event_type="workflow_completed",
                 node_name="log_outcome",

@@ -33,16 +33,16 @@ class ContextNodesMixin:
         structured_goal = _parse_goal(goal)
 
         event = await self._emit(
+            state,
             AuditEvent(
                 event_type="goal_ingested",
                 node_name="ingest_goal",
                 event_data={
                     "goal": goal,
                     "structured_goal": structured_goal,
-                    "thread_id": state.get("thread_id"),
                 },
                 timestamp=time.time(),
-            )
+            ),
         )
 
         return {
@@ -83,12 +83,13 @@ class ContextNodesMixin:
             # that don't support it) so this is always safe to call.
             if not is_healthy and health.get("login_state") != "logged_in":
                 refresh_event = await self._emit(
+                    state,
                     AuditEvent(
                         event_type="session_refresh_attempted",
                         node_name="load_account_context",
                         event_data={"account_id": account_id, "reason": "session_not_loaded"},
                         timestamp=time.time(),
-                    )
+                    ),
                 )
                 refreshed = await self.account_context.try_refresh_session(account_id)
                 if refreshed:
@@ -104,6 +105,7 @@ class ContextNodesMixin:
                     refresh_status = "failed"
 
                 refresh_done_event = await self._emit(
+                    state,
                     AuditEvent(
                         event_type="session_refresh_result",
                         node_name="load_account_context",
@@ -113,18 +115,19 @@ class ContextNodesMixin:
                             "now_healthy": is_healthy,
                         },
                         timestamp=time.time(),
-                    )
+                    ),
                 )
 
                 if not is_healthy:
                     reason = _account_not_healthy_reason(health)
                     skip_event = await self._emit(
+                        state,
                         AuditEvent(
                             event_type="action_skipped",
                             node_name="load_account_context",
                             event_data={"reason": reason},
                             timestamp=time.time(),
-                        )
+                        ),
                     )
                     return {
                         "account_health": health,
@@ -139,6 +142,7 @@ class ContextNodesMixin:
                         refresh_event,
                         refresh_done_event,
                         await self._emit(
+                            state,
                             AuditEvent(
                                 event_type="account_loaded",
                                 node_name="load_account_context",
@@ -149,7 +153,7 @@ class ContextNodesMixin:
                                     "session_refreshed": True,
                                 },
                                 timestamp=time.time(),
-                            )
+                            ),
                         ),
                     ],
                 }
@@ -157,12 +161,13 @@ class ContextNodesMixin:
             if not is_healthy:
                 reason = _account_not_healthy_reason(health)
                 event = await self._emit(
+                    state,
                     AuditEvent(
                         event_type="action_skipped",
                         node_name="load_account_context",
                         event_data={"reason": reason},
                         timestamp=time.time(),
-                    )
+                    ),
                 )
                 return {
                     "account_health": health,
@@ -172,6 +177,7 @@ class ContextNodesMixin:
                 }
 
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="account_loaded",
                     node_name="load_account_context",
@@ -181,7 +187,7 @@ class ContextNodesMixin:
                         "login_state": health.get("login_state"),
                     },
                     timestamp=time.time(),
-                )
+                ),
             )
 
             return {"account_health": health, "audit_trail": [event]}
@@ -190,12 +196,13 @@ class ContextNodesMixin:
             reason = f"Account context error: {str(e)[:80]}"
             logger.exception("load_account_context failed for account=%s", account_id)
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="node_error",
                     node_name="load_account_context",
                     event_data={"error": reason, "account_id": account_id},
                     timestamp=time.time(),
-                )
+                ),
             )
             return {
                 "account_health": None,

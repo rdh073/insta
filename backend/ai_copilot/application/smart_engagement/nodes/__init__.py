@@ -49,7 +49,11 @@ from ai_copilot.application.smart_engagement.ports import (
     RiskScoringPort,
 )
 from ai_copilot.application.smart_engagement.scoring import _score_candidate
-from ai_copilot.application.smart_engagement.state import AuditEvent, ExecutionResult
+from ai_copilot.application.smart_engagement.state import (
+    AuditEvent,
+    ExecutionResult,
+    SmartEngagementState,
+)
 
 
 class SmartEngagementNodes(
@@ -97,10 +101,32 @@ class SmartEngagementNodes(
         self.engagement_memory = engagement_memory
         self.max_steps = max_steps
 
-    async def _emit(self, event: AuditEvent) -> AuditEvent:
-        """Log event to AuditLogPort AND return it for state accumulation."""
-        await self.audit_log.log_event(event)
-        return event
+    async def _emit(
+        self,
+        state: SmartEngagementState,
+        event: AuditEvent,
+    ) -> AuditEvent:
+        """Normalize + log event, then return it for state accumulation."""
+        raw_event_data = event.get("event_data") or {}
+        event_data = raw_event_data if isinstance(raw_event_data, dict) else {}
+
+        normalized_data = dict(event_data)
+        thread_id = state.get("thread_id")
+        if isinstance(thread_id, str) and thread_id.strip():
+            normalized_data.setdefault("thread_id", thread_id)
+
+        account_id = state.get("account_id")
+        if isinstance(account_id, str) and account_id.strip():
+            normalized_data.setdefault("account_id", account_id)
+
+        normalized_event = AuditEvent(
+            event_type=str(event.get("event_type", "")),
+            node_name=str(event.get("node_name", "")),
+            event_data=normalized_data,
+            timestamp=float(event.get("timestamp", time.time())),
+        )
+        await self.audit_log.log_event(normalized_event)
+        return normalized_event
 
     def _normalize_execution_result(
         self,

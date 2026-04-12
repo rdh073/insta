@@ -71,6 +71,7 @@ class DiscoveryNodesMixin:
             if not candidates:
                 reason = f"No candidates found for goal: {goal!r}"
                 event = await self._emit(
+                    state,
                     AuditEvent(
                         event_type="action_skipped",
                         node_name="discover_candidates",
@@ -80,7 +81,7 @@ class DiscoveryNodesMixin:
                             "excluded_count": len(excluded_ids),
                         },
                         timestamp=time.time(),
-                    )
+                    ),
                 )
                 return {
                     "candidate_targets": [],
@@ -91,6 +92,7 @@ class DiscoveryNodesMixin:
                 }
 
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="candidates_discovered",
                     node_name="discover_candidates",
@@ -100,7 +102,7 @@ class DiscoveryNodesMixin:
                         "excluded_count": len(excluded_ids),
                     },
                     timestamp=time.time(),
-                )
+                ),
             )
 
             return {
@@ -115,12 +117,13 @@ class DiscoveryNodesMixin:
                 "discover_candidates failed for account=%s goal=%r", account_id, goal
             )
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="node_error",
                     node_name="discover_candidates",
                     event_data={"error": reason, "account_id": account_id, "goal": goal},
                     timestamp=time.time(),
-                )
+                ),
             )
             return {
                 "candidate_targets": [],
@@ -164,6 +167,7 @@ class DiscoveryNodesMixin:
         selected = scored[0]
 
         event = await self._emit(
+            state,
             AuditEvent(
                 event_type="target_selected",
                 node_name="rank_candidates",

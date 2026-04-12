@@ -59,6 +59,7 @@ class DraftRiskNodesMixin:
         )
 
         event = await self._emit(
+            state,
             AuditEvent(
                 event_type="action_drafted",
                 node_name="draft_action",
@@ -107,6 +108,7 @@ class DraftRiskNodesMixin:
             )
 
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="scored",
                     node_name="score_risk",
@@ -117,7 +119,7 @@ class DraftRiskNodesMixin:
                         "reasoning": risk.get("reasoning"),
                     },
                     timestamp=time.time(),
-                )
+                ),
             )
 
             # Fail-fast: high risk → log_outcome
@@ -137,12 +139,13 @@ class DraftRiskNodesMixin:
                 "score_risk failed for action_type=%s", proposed_action.get("action_type")
             )
             event = await self._emit(
+                state,
                 AuditEvent(
                     event_type="node_error",
                     node_name="score_risk",
                     event_data={"error": reason, "action_type": proposed_action.get("action_type")},
                     timestamp=time.time(),
-                )
+                ),
             )
             return {
                 "risk_assessment": None,

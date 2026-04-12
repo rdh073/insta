@@ -68,8 +68,11 @@ class _FakeAccountContext(AccountContextPort):
 
 
 class _FakeCandidates(EngagementCandidatePort):
+    def __init__(self, candidates: list[EngagementTarget] | None = None):
+        self._candidates = candidates or []
+
     async def discover_candidates(self, account_id, goal, filters=None):
-        return []
+        return list(self._candidates)
 
     async def get_target_metadata(self, target_id):
         return {}
@@ -105,15 +108,19 @@ class _FakeExecutor(EngagementExecutorPort):
         return True
 
 
-def _make_nodes(audit_log=None):
+def _make_nodes(
+    audit_log=None,
+    candidate_discovery: EngagementCandidatePort | None = None,
+    executor: EngagementExecutorPort | None = None,
+):
     from ai_copilot.application.smart_engagement.nodes import SmartEngagementNodes
 
     return SmartEngagementNodes(
         account_context=_FakeAccountContext(),
-        candidate_discovery=_FakeCandidates(),
+        candidate_discovery=candidate_discovery or _FakeCandidates(),
         risk_scoring=_FakeRisk(),
         approval=_FakeApproval(),
-        executor=_FakeExecutor(),
+        executor=executor or _FakeExecutor(),
         audit_log=audit_log or _InMemoryAuditLog(),
     )
 
@@ -132,6 +139,39 @@ def _base_state(**overrides):
         "outcome_reason": None, "approval_timeout": 3600.0, "max_targets": 5, "max_actions_per_target": 3,
     }
     state.update(overrides)
+    return state
+
+
+def _merge_state(state: dict, updates: dict) -> dict:
+    """Merge node updates while preserving append-only audit trail semantics."""
+    merged = dict(state)
+    existing_trail = list(state.get("audit_trail", []))
+    merged.update(updates)
+    new_trail = updates.get("audit_trail")
+    if isinstance(new_trail, list):
+        merged["audit_trail"] = existing_trail + new_trail
+    return merged
+
+
+async def _run_mixed_trace_flow(nodes, state: dict) -> dict:
+    """Run a mixed-node sequence to produce a full traceable audit trail."""
+    state = _merge_state(state, await nodes.ingest_goal_node(state))
+    state = _merge_state(state, await nodes.load_account_context_node(state))
+    state = _merge_state(state, await nodes.discover_candidates_node(state))
+    state = _merge_state(state, await nodes.rank_candidates_node(state))
+    state = _merge_state(state, await nodes.draft_action_node(state))
+    state = _merge_state(state, await nodes.score_risk_node(state))
+
+    from unittest.mock import patch
+
+    with patch(
+        "ai_copilot.application.smart_engagement.nodes.interrupt",
+        return_value={"decision": "approved", "notes": "contract trace"},
+    ):
+        state = _merge_state(state, await nodes.request_approval_node(state))
+
+    state = _merge_state(state, await nodes.execute_action_node(state))
+    state = _merge_state(state, await nodes.log_outcome_node(state))
     return state
 
 
@@ -413,6 +453,105 @@ async def test_file_audit_log_none_values_excluded():
     # None values should be excluded
     for key, val in record.items():
         assert val is not None, f"Field {key!r} should not be None in log record"
+
+    Path(tmp_path).unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_inmemory_adapter_mixed_nodes_preserve_thread_traceability():
+    """In-memory retrieval returns a complete mixed-node trail with thread_id on all events."""
+    from ai_copilot.adapters.audit_log_adapter import InMemoryAuditLogAdapter
+
+    thread_id = "thread_trace_inmemory"
+    audit_log = InMemoryAuditLogAdapter()
+    candidates = [
+        EngagementTarget(
+            target_id="user_trace",
+            target_type="account",
+            metadata={"engagement_rate": 0.12, "follower_count": 500},
+        )
+    ]
+    nodes = _make_nodes(
+        audit_log=audit_log,
+        candidate_discovery=_FakeCandidates(candidates=candidates),
+    )
+    state = _base_state(
+        thread_id=thread_id,
+        mode="execute",
+        goal="comment on educational posts",
+    )
+
+    await _run_mixed_trace_flow(nodes, state)
+    trail = await audit_log.get_audit_trail(thread_id)
+
+    expected_types = [
+        "goal_ingested",
+        "account_loaded",
+        "candidates_discovered",
+        "target_selected",
+        "action_drafted",
+        "scored",
+        "approval_requested",
+        "approval_decided",
+        "action_executed",
+        "workflow_completed",
+    ]
+    assert [event["event_type"] for event in trail] == expected_types
+    assert all(event["event_data"].get("thread_id") == thread_id for event in trail)
+    timestamps = [event["timestamp"] for event in trail]
+    assert timestamps == sorted(timestamps)
+
+
+@pytest.mark.asyncio
+async def test_file_adapter_mixed_nodes_preserve_thread_traceability():
+    """File-backed retrieval returns a complete mixed-node trail with thread_id on all events."""
+    from ai_copilot.adapters.file_audit_log_adapter import FileAuditLogAdapter
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        tmp_path = f.name
+
+    thread_id = "thread_trace_file"
+    audit_log = FileAuditLogAdapter(log_path=tmp_path)
+    candidates = [
+        EngagementTarget(
+            target_id="user_trace_file",
+            target_type="account",
+            metadata={"engagement_rate": 0.08, "follower_count": 900},
+        )
+    ]
+    nodes = _make_nodes(
+        audit_log=audit_log,
+        candidate_discovery=_FakeCandidates(candidates=candidates),
+    )
+    state = _base_state(
+        thread_id=thread_id,
+        mode="execute",
+        goal="comment on educational posts",
+    )
+
+    await _run_mixed_trace_flow(nodes, state)
+    trail = await audit_log.get_audit_trail(thread_id)
+
+    expected_types = [
+        "goal_ingested",
+        "account_loaded",
+        "candidates_discovered",
+        "target_selected",
+        "action_drafted",
+        "scored",
+        "approval_requested",
+        "approval_decided",
+        "action_executed",
+        "workflow_completed",
+    ]
+    assert [event["event_type"] for event in trail] == expected_types
+    assert all(event["event_data"].get("thread_id") == thread_id for event in trail)
+    timestamps = [event["timestamp"] for event in trail]
+    assert timestamps == sorted(timestamps)
+
+    records = audit_log.read_all_records(limit=50)
+    thread_records = [r for r in records if r.get("thread_id") == thread_id]
+    assert len(thread_records) == len(expected_types)
 
     Path(tmp_path).unlink(missing_ok=True)
 

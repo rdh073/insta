@@ -114,6 +114,7 @@ class ApprovalNodesMixin:
         }
 
         req_event = await self._emit(
+            state,
             AuditEvent(
                 event_type="approval_requested",
                 node_name="request_approval",
@@ -187,6 +188,7 @@ class ApprovalNodesMixin:
         }
 
         dec_event = await self._emit(
+            state,
             AuditEvent(
                 event_type="approval_decided",
                 node_name="request_approval",
