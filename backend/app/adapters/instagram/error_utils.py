@@ -9,6 +9,7 @@ from app.domain.instagram_failures import (
 
 __all__ = [
     "translate_instagram_error",
+    "attach_instagram_failure",
     "check_rate_limit",
     "InstagramRateLimitError",
     "InstagramAdapterError",
@@ -28,6 +29,12 @@ class InstagramRateLimitError(Exception):
     def __init__(self, message: str = "", retry_after: float = 0.0) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+
+
+def attach_instagram_failure(error: Exception, failure) -> Exception:
+    """Attach translated InstagramFailure metadata to an exception instance."""
+    error._instagram_failure = failure  # type: ignore[attr-defined]
+    return error
 
 
 def translate_instagram_error(

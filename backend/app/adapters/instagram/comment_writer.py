@@ -13,7 +13,10 @@ from app.application.dto.instagram_comment_dto import (
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.comment_reader import InstagramCommentReaderAdapter
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramCommentWriterAdapter:
@@ -75,7 +78,7 @@ class InstagramCommentWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="create_comment", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def delete_comment(
         self,

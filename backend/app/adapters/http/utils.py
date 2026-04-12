@@ -2,18 +2,12 @@
 
 PHASE B MIGRATION:
 - Removed ai_tools imports (legacy AI assistant dependency)
-- This module now only provides format_error and format_instagram_failure
-- These functions are used by non-AI routes (accounts, dashboard, logs, smart_engagement)
+- This module now provides reusable error formatters used by HTTP routers
 - Legacy AI utility functions (stream_tool_calls, resolve_ai_provider, etc.)
   have been removed as they were dead code (unused by AIChartUseCases)
 """
 
 from __future__ import annotations
-
-import json
-import uuid
-from typing import Optional
-
 
 def format_error(error: Exception, context: str = "Error") -> str:
     """Format exceptions into user-facing text without vendor class parsing."""
@@ -54,6 +48,53 @@ def format_instagram_failure(failure) -> dict:
         "code": failure.code,
         "family": failure.family,
     }
+
+
+def format_instagram_http_error(
+    error: Exception,
+    *,
+    context: str,
+    validation_status: int = 400,
+    fallback_status: int = 400,
+) -> tuple[int, str | dict]:
+    """Map an exception from Instagram routes into status + HTTP detail payload.
+
+    Contract:
+    - Translated Instagram failures keep their ``http_hint`` and return a
+      structured payload: ``{"message", "code", "family"}``.
+    - Plain validation/domain ``ValueError`` remains ``validation_status``
+      with string detail (historical router contract).
+    - Legacy ``InstagramRateLimitError`` is surfaced as HTTP 429.
+    """
+    from app.adapters.instagram.error_utils import InstagramRateLimitError
+
+    translated_failure = getattr(error, "_instagram_failure", None)
+    if translated_failure is not None:
+        payload = format_instagram_failure(translated_failure)
+        return int(payload["status_code"]), {
+            "message": str(payload["detail"]),
+            "code": payload.get("code", "unknown_error"),
+            "family": payload.get("family", "unknown"),
+        }
+
+    payload = format_instagram_failure(error)
+    if payload.get("code"):
+        return int(payload["status_code"]), {
+            "message": str(payload["detail"]),
+            "code": payload.get("code", "unknown_error"),
+            "family": payload.get("family", "unknown"),
+        }
+
+    if isinstance(error, InstagramRateLimitError):
+        return 429, format_error(
+            error,
+            "Rate limited by Instagram. Please wait before trying again.",
+        )
+
+    if isinstance(error, ValueError):
+        return validation_status, format_error(error, context)
+
+    return fallback_status, format_error(error, context)
 
 
 # PHASE B MIGRATION: Dead code functions removed

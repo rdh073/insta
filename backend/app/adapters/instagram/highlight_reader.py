@@ -16,7 +16,10 @@ from app.application.dto.instagram_highlight_dto import (
 from app.application.dto.instagram_story_dto import StorySummary
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.story_reader import InstagramStoryReaderAdapter
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramHighlightReaderAdapter:
@@ -58,7 +61,7 @@ class InstagramHighlightReaderAdapter:
             return int(Client().highlight_pk_from_url(url))
         except Exception as e:
             failure = translate_instagram_error(e, operation="resolve_highlight_url")
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_highlight(
         self,
@@ -93,7 +96,7 @@ class InstagramHighlightReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_highlight", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def list_user_highlights(
         self,
@@ -130,7 +133,7 @@ class InstagramHighlightReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_user_highlights", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_highlight_to_summary(highlight: Any) -> HighlightSummary:

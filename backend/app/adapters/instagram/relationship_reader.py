@@ -7,7 +7,10 @@ application-owned PublicUserProfile DTOs.
 
 from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramRelationshipReaderAdapter:
@@ -35,7 +38,7 @@ class InstagramRelationshipReaderAdapter:
                 operation="user_followers",
                 account_id=account_id,
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
         return [self._map_user_to_profile(user) for user in users.values()]
 
     def list_following(
@@ -57,7 +60,7 @@ class InstagramRelationshipReaderAdapter:
                 operation="user_following",
                 account_id=account_id,
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
         return [self._map_user_to_profile(user) for user in users.values()]
 
     def search_followers(
@@ -79,7 +82,7 @@ class InstagramRelationshipReaderAdapter:
                 operation="search_followers",
                 account_id=account_id,
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
         return [self._map_user_to_profile(user) for user in users]
 
     def search_following(
@@ -101,7 +104,7 @@ class InstagramRelationshipReaderAdapter:
                 operation="search_following",
                 account_id=account_id,
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
         return [self._map_user_to_profile(user) for user in users]
 
     @staticmethod

@@ -13,7 +13,10 @@ from app.application.dto.instagram_comment_dto import (
     CommentPage,
 )
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramCommentReaderAdapter:
@@ -69,7 +72,7 @@ class InstagramCommentReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_comments", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def list_comments_page(
         self,
@@ -123,7 +126,7 @@ class InstagramCommentReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_comments_page", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_comment_to_summary(comment: Any) -> CommentSummary:

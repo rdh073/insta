@@ -10,12 +10,17 @@ from app.adapters.http.schemas.instagram import (
     StoryMarkSeenEnvelope,
     StoryPublishEnvelope,
 )
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_instagram_http_error
 from app.application.dto.instagram_story_dto import StoryPublishRequest
 
 from .mappers import _to_story_detail, _to_story_receipt, _to_story_summary
 
 router = APIRouter()
+
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/story/pk-from-url")
@@ -27,14 +32,8 @@ def get_story_pk_from_url(
     try:
         story_pk = usecases.get_story_pk_from_url(url)
         return {"storyPk": story_pk}
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Resolve story url failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Resolve story url failed")
-        )
+        _raise_instagram_error(exc, context="Resolve story url failed")
 
 
 @router.get("/story/{account_id}/{story_pk}")
@@ -48,14 +47,8 @@ def get_story(
     try:
         story = usecases.get_story(account_id, story_pk, use_cache=use_cache)
         return _to_story_detail(story)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get story failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get story failed")
-        )
+        _raise_instagram_error(exc, context="Get story failed")
 
 
 @router.get("/story/{account_id}/user/{user_id}")
@@ -69,14 +62,8 @@ def list_user_stories(
     try:
         stories = usecases.list_user_stories(account_id, user_id, amount=amount)
         return {"count": len(stories), "items": [_to_story_summary(s) for s in stories]}
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List user stories failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List user stories failed")
-        )
+        _raise_instagram_error(exc, context="List user stories failed")
 
 
 @router.post("/story/publish")
@@ -95,14 +82,8 @@ def publish_story(
         )
         story = usecases.publish_story(body.account_id, request)
         return _to_story_detail(story)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Publish story failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Publish story failed")
-        )
+        _raise_instagram_error(exc, context="Publish story failed")
 
 
 @router.post("/story/delete")
@@ -114,14 +95,8 @@ def delete_story(
     try:
         receipt = usecases.delete_story(body.account_id, body.story_pk)
         return _to_story_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete story failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete story failed")
-        )
+        _raise_instagram_error(exc, context="Delete story failed")
 
 
 @router.post("/story/mark-seen")
@@ -137,11 +112,5 @@ def mark_story_seen(
             skipped_story_pks=body.skipped_story_pks,
         )
         return _to_story_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Mark story seen failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Mark story seen failed")
-        )
+        _raise_instagram_error(exc, context="Mark story seen failed")

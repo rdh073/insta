@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.adapters.http.dependencies import get_media_usecases
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_instagram_http_error
 
 from .mappers import _to_media, _to_oembed
 
@@ -22,14 +22,11 @@ def get_media_by_pk(
     try:
         media = usecases.get_media_by_pk(account_id, media_pk)
         return _to_media(media)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media by pk failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media by pk failed")
+        status_code, detail = format_instagram_http_error(
+            exc, context="Get media by pk failed"
         )
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/media/{account_id}/code/{code}")
@@ -42,14 +39,11 @@ def get_media_by_code(
     try:
         media = usecases.get_media_by_code(account_id, code)
         return _to_media(media)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media by code failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media by code failed")
+        status_code, detail = format_instagram_http_error(
+            exc, context="Get media by code failed"
         )
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/media/{account_id}/user/{user_id}")
@@ -63,14 +57,11 @@ def get_user_medias(
     try:
         medias = usecases.get_user_medias(account_id, user_id, amount=amount)
         return {"count": len(medias), "posts": [_to_media(m) for m in medias]}
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get user medias failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get user medias failed")
+        status_code, detail = format_instagram_http_error(
+            exc, context="Get user medias failed"
         )
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/media/{account_id}/oembed")
@@ -83,11 +74,8 @@ def get_media_oembed(
     try:
         oembed = usecases.get_media_oembed(account_id, url)
         return _to_oembed(oembed)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media oembed failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get media oembed failed")
+        status_code, detail = format_instagram_http_error(
+            exc, context="Get media oembed failed"
         )
+        raise HTTPException(status_code=status_code, detail=detail)

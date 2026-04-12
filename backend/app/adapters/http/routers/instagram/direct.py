@@ -13,7 +13,7 @@ from app.adapters.http.schemas.instagram import (
     DirectSendUsersEnvelope,
     DirectThreadActionEnvelope,
 )
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_instagram_http_error
 
 from .mappers import (
     _to_direct_message,
@@ -24,6 +24,11 @@ from .mappers import (
 )
 
 router = APIRouter()
+
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.post("/direct/send")
@@ -40,10 +45,8 @@ def send_direct_message(
             "text": message.text,
             "sentAt": message.sent_at.isoformat() if message.sent_at else None,
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Send DM failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Send DM failed"))
+        _raise_instagram_error(exc, context="Send DM failed")
 
 
 @router.post("/direct/find-or-create")
@@ -58,14 +61,8 @@ def find_or_create_direct_thread(
             participant_user_ids=body.participant_user_ids,
         )
         return _to_direct_thread_summary(thread)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Find/create thread failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Find/create thread failed")
-        )
+        _raise_instagram_error(exc, context="Find/create thread failed")
 
 
 @router.post("/direct/send-thread")
@@ -81,14 +78,8 @@ def send_direct_to_thread(
             text=body.text,
         )
         return _to_direct_message(message)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Send to thread failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Send to thread failed")
-        )
+        _raise_instagram_error(exc, context="Send to thread failed")
 
 
 @router.post("/direct/send-users")
@@ -104,14 +95,8 @@ def send_direct_to_users(
             text=body.text,
         )
         return _to_direct_message(message)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Send to users failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Send to users failed")
-        )
+        _raise_instagram_error(exc, context="Send to users failed")
 
 
 @router.post("/direct/delete-message")
@@ -127,14 +112,8 @@ def delete_direct_message(
             direct_message_id=body.direct_message_id,
         )
         return _to_direct_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete DM failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete DM failed")
-        )
+        _raise_instagram_error(exc, context="Delete DM failed")
 
 
 @router.post("/direct/approve-pending")
@@ -149,14 +128,8 @@ def approve_pending_direct_thread(
             direct_thread_id=body.direct_thread_id,
         )
         return _to_direct_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Approve pending thread failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Approve pending thread failed")
-        )
+        _raise_instagram_error(exc, context="Approve pending thread failed")
 
 
 @router.post("/direct/mark-seen")
@@ -171,14 +144,8 @@ def mark_direct_thread_seen(
             direct_thread_id=body.direct_thread_id,
         )
         return _to_direct_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Mark thread seen failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Mark thread seen failed")
-        )
+        _raise_instagram_error(exc, context="Mark thread seen failed")
 
 
 @router.get("/direct/{account_id}/inbox")
@@ -202,14 +169,8 @@ def list_inbox(
                 for t in threads
             ],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List inbox failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List inbox failed")
-        )
+        _raise_instagram_error(exc, context="List inbox failed")
 
 
 @router.get("/direct/{account_id}/pending")
@@ -225,14 +186,8 @@ def list_pending_inbox(
             "count": len(threads),
             "threads": [_to_direct_thread_summary(t) for t in threads],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List pending inbox failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List pending inbox failed")
-        )
+        _raise_instagram_error(exc, context="List pending inbox failed")
 
 
 @router.get("/direct/{account_id}/thread/{direct_thread_id}")
@@ -246,14 +201,8 @@ def get_direct_thread(
     try:
         thread = usecases.get_thread(account_id, direct_thread_id, amount=amount)
         return _to_direct_thread_detail(thread)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get direct thread failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get direct thread failed")
-        )
+        _raise_instagram_error(exc, context="Get direct thread failed")
 
 
 @router.get("/direct/{account_id}/thread/{direct_thread_id}/messages")
@@ -270,14 +219,8 @@ def list_direct_messages(
             "count": len(messages),
             "messages": [_to_direct_message(m) for m in messages],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List direct messages failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List direct messages failed")
-        )
+        _raise_instagram_error(exc, context="List direct messages failed")
 
 
 @router.get("/direct/{account_id}/search")
@@ -293,11 +236,5 @@ def search_direct_threads(
             "count": len(users),
             "users": [_to_direct_search_user(user) for user in users],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Search direct users failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Search direct users failed")
-        )
+        _raise_instagram_error(exc, context="Search direct users failed")

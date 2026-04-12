@@ -14,7 +14,10 @@ from app.application.dto.instagram_highlight_dto import (
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.highlight_reader import InstagramHighlightReaderAdapter
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramHighlightWriterAdapter:
@@ -83,7 +86,7 @@ class InstagramHighlightWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="create_highlight", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def change_title(
         self,
@@ -120,7 +123,7 @@ class InstagramHighlightWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="change_highlight_title", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def add_stories(
         self,
@@ -157,7 +160,7 @@ class InstagramHighlightWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="add_highlight_stories", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def remove_stories(
         self,
@@ -194,7 +197,7 @@ class InstagramHighlightWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="remove_highlight_stories", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def delete_highlight(
         self,

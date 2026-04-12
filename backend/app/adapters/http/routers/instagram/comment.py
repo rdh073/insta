@@ -11,11 +11,16 @@ from app.adapters.http.schemas.instagram import (
     CommentLikeEnvelope,
     CommentPinEnvelope,
 )
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_instagram_http_error
 
 from .mappers import _to_comment, _to_comment_receipt
 
 router = APIRouter()
+
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.post("/comment")
@@ -37,14 +42,8 @@ def create_comment(
             "author": comment.author.username,
             "createdAt": comment.created_at.isoformat() if comment.created_at else None,
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Create comment failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Create comment failed")
-        )
+        _raise_instagram_error(exc, context="Create comment failed")
 
 
 @router.get("/comment/{account_id}/{media_id}")
@@ -70,14 +69,8 @@ def list_comments(
                 for c in comments
             ],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List comments failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List comments failed")
-        )
+        _raise_instagram_error(exc, context="List comments failed")
 
 
 @router.get("/comment/{account_id}/{media_id}/page")
@@ -101,14 +94,8 @@ def list_comments_page(
             "nextCursor": page.next_cursor,
             "comments": [_to_comment(c) for c in page.comments],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List comments page failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List comments page failed")
-        )
+        _raise_instagram_error(exc, context="List comments page failed")
 
 
 @router.post("/comment/delete")
@@ -124,14 +111,8 @@ def delete_comment(
             comment_id=body.comment_id,
         )
         return _to_comment_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete comment failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete comment failed")
-        )
+        _raise_instagram_error(exc, context="Delete comment failed")
 
 
 @router.post("/comment/like")
@@ -143,10 +124,8 @@ def like_comment(
     try:
         receipt = usecases.like_comment(account_id=body.account_id, comment_id=body.comment_id)
         return _to_comment_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Like comment failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Like comment failed"))
+        _raise_instagram_error(exc, context="Like comment failed")
 
 
 @router.post("/comment/unlike")
@@ -158,10 +137,8 @@ def unlike_comment(
     try:
         receipt = usecases.unlike_comment(account_id=body.account_id, comment_id=body.comment_id)
         return _to_comment_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Unlike comment failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Unlike comment failed"))
+        _raise_instagram_error(exc, context="Unlike comment failed")
 
 
 @router.post("/comment/pin")
@@ -175,10 +152,8 @@ def pin_comment(
             account_id=body.account_id, media_id=body.media_id, comment_id=body.comment_id
         )
         return _to_comment_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Pin comment failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Pin comment failed"))
+        _raise_instagram_error(exc, context="Pin comment failed")
 
 
 @router.post("/comment/unpin")
@@ -192,7 +167,5 @@ def unpin_comment(
             account_id=body.account_id, media_id=body.media_id, comment_id=body.comment_id
         )
         return _to_comment_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Unpin comment failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Unpin comment failed"))
+        _raise_instagram_error(exc, context="Unpin comment failed")

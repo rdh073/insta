@@ -12,7 +12,10 @@ from app.application.dto.instagram_story_dto import (
     StoryDetail,
 )
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramStoryReaderAdapter:
@@ -53,7 +56,7 @@ class InstagramStoryReaderAdapter:
             return int(Client().story_pk_from_url(url))
         except Exception as e:
             failure = translate_instagram_error(e, operation="resolve_story_url")
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_story(
         self,
@@ -89,7 +92,7 @@ class InstagramStoryReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_story", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def list_user_stories(
         self,
@@ -125,7 +128,7 @@ class InstagramStoryReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_user_stories", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_story_to_summary(story: Any) -> StorySummary:

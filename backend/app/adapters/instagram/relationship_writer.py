@@ -6,6 +6,7 @@ InstagramRelationshipWriter port.
 
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
     translate_instagram_error,
     check_rate_limit,
     InstagramRateLimitError,
@@ -34,8 +35,10 @@ class InstagramRelationshipWriterAdapter:
                 account_id=account_id,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def unfollow_user(self, account_id: str, user_id: int) -> bool:
         """Unfollow a user via instagrapi."""
@@ -53,8 +56,10 @@ class InstagramRelationshipWriterAdapter:
                 account_id=account_id,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def remove_follower(self, account_id: str, user_id: int) -> bool:
         """Remove a follower via instagrapi."""
@@ -72,8 +77,10 @@ class InstagramRelationshipWriterAdapter:
                 account_id=account_id,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def close_friend_add(self, account_id: str, user_id: int) -> bool:
         """Add a user to Close Friends list via instagrapi."""
@@ -91,8 +98,10 @@ class InstagramRelationshipWriterAdapter:
                 account_id=account_id,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def close_friend_remove(self, account_id: str, user_id: int) -> bool:
         """Remove a user from Close Friends list via instagrapi."""
@@ -110,5 +119,7 @@ class InstagramRelationshipWriterAdapter:
                 account_id=account_id,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e

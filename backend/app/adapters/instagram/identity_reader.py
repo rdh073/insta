@@ -11,6 +11,7 @@ from app.application.dto.instagram_identity_dto import (
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
     translate_instagram_error,
     check_rate_limit,
     InstagramRateLimitError,
@@ -159,7 +160,7 @@ class InstagramIdentityReaderAdapter:
                 operation="user_info",
                 account_id=account_id,
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
         # Map to DTO, converting HttpUrl fields to strings
         return PublicUserProfile(
@@ -209,8 +210,10 @@ class InstagramIdentityReaderAdapter:
                 username=username,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
         # Map to DTO, converting HttpUrl fields to strings
         return PublicUserProfile(
@@ -261,8 +264,10 @@ class InstagramIdentityReaderAdapter:
                 username=username,
             )
             if failure.http_hint == 429:
-                raise InstagramRateLimitError(failure.user_message)
-            raise ValueError(failure.user_message)
+                raise attach_instagram_failure(
+                    InstagramRateLimitError(failure.user_message), failure
+                ) from e
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
         return int(user_id)
 

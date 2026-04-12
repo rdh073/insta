@@ -32,7 +32,10 @@ from app.application.dto.instagram_story_dto import (
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.story_reader import InstagramStoryReaderAdapter
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramStoryPublisherAdapter:
@@ -120,7 +123,7 @@ class InstagramStoryPublisherAdapter:
             failure = translate_instagram_error(
                 e, operation="publish_story", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def delete_story(
         self,

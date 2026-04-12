@@ -14,7 +14,10 @@ from app.application.dto.instagram_media_dto import (
     MediaOembedSummary,
 )
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramMediaReaderAdapter:
@@ -62,7 +65,7 @@ class InstagramMediaReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_media_by_pk", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_media_by_code(self, account_id: str, code: str) -> MediaSummary:
         """
@@ -92,7 +95,7 @@ class InstagramMediaReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_media_by_code", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_user_medias(
         self, account_id: str, user_id: int, amount: int = 12
@@ -125,7 +128,7 @@ class InstagramMediaReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_user_medias", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_media_oembed(self, account_id: str, url: str) -> MediaOembedSummary:
         """
@@ -155,7 +158,7 @@ class InstagramMediaReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_media_oembed", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_media_to_summary(media) -> MediaSummary:

@@ -16,7 +16,10 @@ from app.application.dto.instagram_direct_dto import (
 )
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.direct_reader import InstagramDirectReaderAdapter
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramDirectWriterAdapter:
@@ -69,7 +72,7 @@ class InstagramDirectWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="find_or_create_thread", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def send_to_thread(
         self,
@@ -108,7 +111,7 @@ class InstagramDirectWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="send_to_thread", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def send_to_users(
         self,
@@ -145,7 +148,7 @@ class InstagramDirectWriterAdapter:
             failure = translate_instagram_error(
                 e, operation="send_to_users", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def delete_message(
         self,

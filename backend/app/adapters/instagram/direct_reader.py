@@ -15,7 +15,10 @@ from app.application.dto.instagram_direct_dto import (
     DirectSearchUserSummary,
 )
 from app.application.ports.repositories import ClientRepository
-from app.adapters.instagram.error_utils import translate_instagram_error
+from app.adapters.instagram.error_utils import (
+    attach_instagram_failure,
+    translate_instagram_error,
+)
 
 
 class InstagramDirectReaderAdapter:
@@ -76,7 +79,7 @@ class InstagramDirectReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_inbox_threads", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def list_pending_threads(
         self,
@@ -111,7 +114,7 @@ class InstagramDirectReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_pending_threads", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def get_thread(
         self,
@@ -155,7 +158,7 @@ class InstagramDirectReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="get_direct_thread", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def list_messages(
         self,
@@ -192,7 +195,7 @@ class InstagramDirectReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="list_direct_messages", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     def search_threads(
         self,
@@ -227,7 +230,7 @@ class InstagramDirectReaderAdapter:
             failure = translate_instagram_error(
                 e, operation="search_direct_threads", account_id=account_id
             )
-            raise ValueError(failure.user_message)
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_thread_to_summary(thread: Any, is_pending: bool = False) -> DirectThreadSummary:

@@ -7,16 +7,19 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
-from app.adapters.instagram.error_utils import InstagramRateLimitError
 from app.adapters.http.dependencies import get_relationship_usecases
 from app.adapters.http.streaming import sse_response
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_error, format_instagram_http_error
 
 from .mappers import _to_public_profile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/relationships/{account_id}/followers")
@@ -30,14 +33,8 @@ def list_followers(
     try:
         followers = usecases.list_followers(account_id, username, amount=amount)
         return [_to_public_profile(item) for item in followers]
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Followers read failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Followers read failed")
-        )
+        _raise_instagram_error(exc, context="Followers read failed")
 
 
 @router.get("/relationships/{account_id}/following")
@@ -51,14 +48,8 @@ def list_following(
     try:
         following = usecases.list_following(account_id, username, amount=amount)
         return [_to_public_profile(item) for item in following]
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Following read failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Following read failed")
-        )
+        _raise_instagram_error(exc, context="Following read failed")
 
 
 @router.get("/relationships/{account_id}/followers/search")
@@ -72,14 +63,8 @@ def search_followers(
     try:
         results = usecases.search_followers(account_id, username, query=query)
         return [_to_public_profile(item) for item in results]
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Follower search failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Follower search failed")
-        )
+        _raise_instagram_error(exc, context="Follower search failed")
 
 
 @router.get("/relationships/{account_id}/following/search")
@@ -93,14 +78,8 @@ def search_following(
     try:
         results = usecases.search_following(account_id, username, query=query)
         return [_to_public_profile(item) for item in results]
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Following search failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Following search failed")
-        )
+        _raise_instagram_error(exc, context="Following search failed")
 
 
 @router.post("/relationships/{account_id}/follow")
@@ -113,17 +92,8 @@ def follow_user(
     try:
         success = usecases.follow_user(account_id, target_username)
         return {"success": success, "action": "follow", "target": target_username}
-    except InstagramRateLimitError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=format_error(
-                exc, "Rate limited by Instagram. Please wait before trying again."
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Follow failed"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=format_error(exc, "Follow failed"))
+        _raise_instagram_error(exc, context="Follow failed")
 
 
 @router.post("/relationships/{account_id}/unfollow")
@@ -136,21 +106,8 @@ def unfollow_user(
     try:
         success = usecases.unfollow_user(account_id, target_username)
         return {"success": success, "action": "unfollow", "target": target_username}
-    except InstagramRateLimitError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=format_error(
-                exc, "Rate limited by Instagram. Please wait before trying again."
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Unfollow failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Unfollow failed")
-        )
+        _raise_instagram_error(exc, context="Unfollow failed")
 
 
 @router.post("/relationships/{account_id}/remove-follower")
@@ -167,21 +124,8 @@ def remove_follower(
             "action": "remove_follower",
             "target": target_username,
         }
-    except InstagramRateLimitError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=format_error(
-                exc, "Rate limited by Instagram. Please wait before trying again."
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Remove follower failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Remove follower failed")
-        )
+        _raise_instagram_error(exc, context="Remove follower failed")
 
 
 @router.post("/relationships/{account_id}/close-friends/add")
@@ -198,21 +142,8 @@ def close_friend_add(
             "action": "close_friend_add",
             "target": target_username,
         }
-    except InstagramRateLimitError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=format_error(
-                exc, "Rate limited by Instagram. Please wait before trying again."
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Close friend add failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Close friend add failed")
-        )
+        _raise_instagram_error(exc, context="Close friend add failed")
 
 
 @router.post("/relationships/{account_id}/close-friends/remove")
@@ -231,21 +162,8 @@ def close_friend_remove(
             "action": "close_friend_remove",
             "target": target_username,
         }
-    except InstagramRateLimitError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=format_error(
-                exc, "Rate limited by Instagram. Please wait before trying again."
-            ),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Close friend remove failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Close friend remove failed")
-        )
+        _raise_instagram_error(exc, context="Close friend remove failed")
 
 
 # ---------------------------------------------------------------------------

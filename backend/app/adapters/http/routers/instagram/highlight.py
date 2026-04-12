@@ -11,11 +11,16 @@ from app.adapters.http.schemas.instagram import (
     HighlightDeleteEnvelope,
     HighlightStoriesEnvelope,
 )
-from app.adapters.http.utils import format_error
+from app.adapters.http.utils import format_instagram_http_error
 
 from .mappers import _to_highlight_detail, _to_highlight_receipt, _to_highlight_summary
 
 router = APIRouter()
+
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/highlight/pk-from-url")
@@ -27,14 +32,8 @@ def get_highlight_pk_from_url(
     try:
         highlight_pk = usecases.get_highlight_pk_from_url(url)
         return {"highlightPk": highlight_pk}
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Resolve highlight url failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Resolve highlight url failed")
-        )
+        _raise_instagram_error(exc, context="Resolve highlight url failed")
 
 
 @router.get("/highlight/{account_id}/{highlight_pk}")
@@ -47,14 +46,8 @@ def get_highlight(
     try:
         highlight = usecases.get_highlight(account_id, highlight_pk)
         return _to_highlight_detail(highlight)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get highlight failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Get highlight failed")
-        )
+        _raise_instagram_error(exc, context="Get highlight failed")
 
 
 @router.get("/highlight/{account_id}/user/{user_id}")
@@ -71,14 +64,8 @@ def list_user_highlights(
             "count": len(highlights),
             "items": [_to_highlight_summary(h) for h in highlights],
         }
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List highlights failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "List highlights failed")
-        )
+        _raise_instagram_error(exc, context="List highlights failed")
 
 
 @router.post("/highlight/create")
@@ -96,14 +83,8 @@ def create_highlight(
             crop_rect=body.crop_rect,
         )
         return _to_highlight_detail(highlight)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Create highlight failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Create highlight failed")
-        )
+        _raise_instagram_error(exc, context="Create highlight failed")
 
 
 @router.post("/highlight/change-title")
@@ -117,14 +98,8 @@ def change_highlight_title(
             body.account_id, body.highlight_pk, body.title
         )
         return _to_highlight_detail(highlight)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Change highlight title failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Change highlight title failed")
-        )
+        _raise_instagram_error(exc, context="Change highlight title failed")
 
 
 @router.post("/highlight/add-stories")
@@ -138,14 +113,8 @@ def add_highlight_stories(
             body.account_id, body.highlight_pk, body.story_ids
         )
         return _to_highlight_detail(highlight)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Add highlight stories failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Add highlight stories failed")
-        )
+        _raise_instagram_error(exc, context="Add highlight stories failed")
 
 
 @router.post("/highlight/remove-stories")
@@ -159,14 +128,8 @@ def remove_highlight_stories(
             body.account_id, body.highlight_pk, body.story_ids
         )
         return _to_highlight_detail(highlight)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Remove highlight stories failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Remove highlight stories failed")
-        )
+        _raise_instagram_error(exc, context="Remove highlight stories failed")
 
 
 @router.post("/highlight/delete")
@@ -178,11 +141,5 @@ def delete_highlight(
     try:
         receipt = usecases.delete_highlight(body.account_id, body.highlight_pk)
         return _to_highlight_receipt(receipt)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete highlight failed")
-        )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=format_error(exc, "Delete highlight failed")
-        )
+        _raise_instagram_error(exc, context="Delete highlight failed")
