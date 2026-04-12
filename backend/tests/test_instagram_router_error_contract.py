@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Callable
+from unittest.mock import Mock
 
 import pytest
 
@@ -39,6 +40,7 @@ from app.adapters.http.routers.instagram.media import router as media_router
 from app.adapters.http.routers.instagram.relationships import router as relationships_router
 from app.adapters.http.routers.instagram.story import router as story_router
 from app.adapters.instagram.error_utils import InstagramRateLimitError
+from app.application.use_cases.relationships import RelationshipUseCases
 from app.domain.instagram_failures import InstagramFailure
 
 
@@ -416,6 +418,25 @@ ROUTE_CASES: tuple[RouteCase, ...] = (
     ),
 )
 
+RELATIONSHIP_READ_REQUESTS: tuple[tuple[str, dict[str, Any]], ...] = (
+    (
+        "/api/instagram/relationships/acc-1/followers",
+        {"username": "target", "amount": 1},
+    ),
+    (
+        "/api/instagram/relationships/acc-1/following",
+        {"username": "target", "amount": 1},
+    ),
+    (
+        "/api/instagram/relationships/acc-1/followers/search",
+        {"username": "target", "query": "ta"},
+    ),
+    (
+        "/api/instagram/relationships/acc-1/following/search",
+        {"username": "target", "query": "ta"},
+    ),
+)
+
 
 @pytest.fixture
 def app() -> FastAPI:
@@ -461,6 +482,36 @@ def _translated_error(
     error = ValueError(message)
     error._instagram_failure = failure  # type: ignore[attr-defined]
     return error
+
+
+def _build_relationship_usecases_with_wrapped_resolution_failure(
+    *,
+    failure: InstagramFailure,
+) -> tuple[RelationshipUseCases, Mock, Mock]:
+    account_repo = Mock()
+    account_repo.get.return_value = {"username": "operator"}
+    client_repo = Mock()
+    client_repo.exists.return_value = True
+    identity_reader = Mock()
+    relationship_reader = Mock()
+
+    def _raise_wrapped(*_args, **_kwargs):
+        source = ValueError(failure.user_message)
+        source._instagram_failure = failure  # type: ignore[attr-defined]
+        raise ValueError(failure.user_message) from source
+
+    identity_reader.get_public_user_by_username.side_effect = _raise_wrapped
+
+    return (
+        RelationshipUseCases(
+            account_repo=account_repo,
+            client_repo=client_repo,
+            identity_reader=identity_reader,
+            relationship_reader=relationship_reader,
+        ),
+        identity_reader,
+        relationship_reader,
+    )
 
 
 @pytest.mark.parametrize("case", ROUTE_CASES, ids=lambda case: case.name)
@@ -564,3 +615,93 @@ def test_legacy_instagram_rate_limit_error_still_returns_429(
         app.dependency_overrides.clear()
 
     assert response.status_code == 429
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    RELATIONSHIP_READ_REQUESTS,
+    ids=(
+        "relationships:list_followers",
+        "relationships:list_following",
+        "relationships:search_followers",
+        "relationships:search_following",
+    ),
+)
+def test_relationship_read_username_resolution_wrapped_rate_limit_maps_to_429(
+    app: FastAPI,
+    client: TestClient,
+    path: str,
+    params: dict[str, Any],
+):
+    failure = InstagramFailure(
+        code="rate_limit",
+        family="common_client",
+        retryable=True,
+        requires_user_action=False,
+        user_message="Rate limited. Please wait a moment.",
+        http_hint=429,
+    )
+    usecases, identity_reader, relationship_reader = (
+        _build_relationship_usecases_with_wrapped_resolution_failure(failure=failure)
+    )
+    app.dependency_overrides[get_relationship_usecases] = lambda: usecases
+    try:
+        response = client.get(path, params=params)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == {
+        "message": "Rate limited. Please wait a moment.",
+        "code": "rate_limit",
+        "family": "common_client",
+    }
+    identity_reader.get_public_user_by_username.assert_called_once_with(
+        "acc-1", "target"
+    )
+    assert relationship_reader.mock_calls == []
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    RELATIONSHIP_READ_REQUESTS,
+    ids=(
+        "relationships:list_followers",
+        "relationships:list_following",
+        "relationships:search_followers",
+        "relationships:search_following",
+    ),
+)
+def test_relationship_read_username_resolution_wrapped_unauthorized_maps_to_401(
+    app: FastAPI,
+    client: TestClient,
+    path: str,
+    params: dict[str, Any],
+):
+    failure = InstagramFailure(
+        code="login_required",
+        family="private_auth",
+        retryable=False,
+        requires_user_action=True,
+        user_message="Login required. Please re-authenticate.",
+        http_hint=401,
+    )
+    usecases, identity_reader, relationship_reader = (
+        _build_relationship_usecases_with_wrapped_resolution_failure(failure=failure)
+    )
+    app.dependency_overrides[get_relationship_usecases] = lambda: usecases
+    try:
+        response = client.get(path, params=params)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {
+        "message": "Login required. Please re-authenticate.",
+        "code": "login_required",
+        "family": "private_auth",
+    }
+    identity_reader.get_public_user_by_username.assert_called_once_with(
+        "acc-1", "target"
+    )
+    assert relationship_reader.mock_calls == []

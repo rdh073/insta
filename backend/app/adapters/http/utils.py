@@ -9,6 +9,42 @@ PHASE B MIGRATION:
 
 from __future__ import annotations
 
+
+def _iter_exception_chain(error: Exception, *, max_depth: int = 8):
+    """Yield an exception and its cause/context chain (cycle-safe)."""
+    seen: set[int] = set()
+    current: Exception | None = error
+    depth = 0
+    while current is not None and depth < max_depth:
+        current_id = id(current)
+        if current_id in seen:
+            break
+        seen.add(current_id)
+        yield current
+        next_error = getattr(current, "__cause__", None) or getattr(
+            current, "__context__", None
+        )
+        if next_error is current:
+            break
+        current = next_error
+        depth += 1
+
+
+def _find_translated_instagram_payload(error: Exception) -> dict | None:
+    """Find translated Instagram failure metadata on an exception chain."""
+    for candidate in _iter_exception_chain(error):
+        attached_failure = getattr(candidate, "_instagram_failure", None)
+        if attached_failure is not None:
+            payload = format_instagram_failure(attached_failure)
+            if payload.get("code"):
+                return payload
+
+        payload = format_instagram_failure(candidate)
+        if payload.get("code"):
+            return payload
+    return None
+
+
 def format_error(error: Exception, context: str = "Error") -> str:
     """Format exceptions into user-facing text without vendor class parsing."""
     failure_payload = format_instagram_failure(error)
@@ -62,27 +98,19 @@ def format_instagram_http_error(
     Contract:
     - Translated Instagram failures keep their ``http_hint`` and return a
       structured payload: ``{"message", "code", "family"}``.
+      Wrapped errors are unwrapped through ``__cause__``/``__context__``.
     - Plain validation/domain ``ValueError`` remains ``validation_status``
       with string detail (historical router contract).
     - Legacy ``InstagramRateLimitError`` is surfaced as HTTP 429.
     """
     from app.adapters.instagram.error_utils import InstagramRateLimitError
 
-    translated_failure = getattr(error, "_instagram_failure", None)
-    if translated_failure is not None:
-        payload = format_instagram_failure(translated_failure)
-        return int(payload["status_code"]), {
-            "message": str(payload["detail"]),
-            "code": payload.get("code", "unknown_error"),
-            "family": payload.get("family", "unknown"),
-        }
-
-    payload = format_instagram_failure(error)
-    if payload.get("code"):
-        return int(payload["status_code"]), {
-            "message": str(payload["detail"]),
-            "code": payload.get("code", "unknown_error"),
-            "family": payload.get("family", "unknown"),
+    translated_payload = _find_translated_instagram_payload(error)
+    if translated_payload is not None:
+        return int(translated_payload["status_code"]), {
+            "message": str(translated_payload["detail"]),
+            "code": translated_payload.get("code", "unknown_error"),
+            "family": translated_payload.get("family", "unknown"),
         }
 
     if isinstance(error, InstagramRateLimitError):
