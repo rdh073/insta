@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AxiosResponse } from 'axios';
-import { api } from './client';
+import { api, API_TIMEOUT_MS } from './client';
 import { dashboardApi, DashboardContractError } from './dashboard';
 
 describe('dashboardApi contract normalization', () => {
@@ -90,5 +90,19 @@ describe('dashboardApi contract normalization', () => {
     } as AxiosResponse<unknown>);
 
     await expect(dashboardApi.get()).rejects.toBeInstanceOf(DashboardContractError);
+  });
+
+  it('uses long timeout override for relogin', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { id: 'acct-1', username: 'alpha' },
+    } as AxiosResponse<unknown>);
+
+    await dashboardApi.relogin('acct-1');
+
+    expect(postSpy).toHaveBeenCalledWith(
+      '/accounts/acct-1/relogin',
+      undefined,
+      { timeout: API_TIMEOUT_MS.relogin },
+    );
   });
 });

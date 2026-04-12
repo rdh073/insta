@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InternalAxiosRequestConfig } from 'axios';
-import { api } from './client';
+import { api, API_TIMEOUT_MS } from './client';
 import { useSettingsStore } from '../store/settings';
 
 function getRequestInterceptor(): (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig {
@@ -15,6 +15,11 @@ function getRequestInterceptor(): (config: InternalAxiosRequestConfig) => Intern
 }
 
 describe('api client interceptor', () => {
+  it('uses a finite default timeout', () => {
+    expect(api.defaults.timeout).toBe(API_TIMEOUT_MS.default);
+    expect(api.defaults.timeout).toBeGreaterThan(0);
+  });
+
   it('injects X-API-Key and Authorization from settings store', () => {
     useSettingsStore.setState({
       backendUrl: 'http://127.0.0.1:8000',

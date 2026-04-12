@@ -21,9 +21,11 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { logsApi } from '../api/logs';
+import { getErrorMessage } from '../lib/error';
 import type { ActivityLogEntry } from '../types';
 import { useActivityStore } from '../store/activity';
 import { cn } from '../lib/cn';
+import { getPollBackoffDelay, SingleFlightRequestRunner } from '../lib/single-flight';
 
 // ─── Event registry ──────────────────────────────────────────────────────────
 
@@ -81,6 +83,7 @@ const LEVEL_STYLES: Record<Level, { badge: string; dot: string; icon: string }> 
 const ALL_EVENTS = Object.keys(EVENT_META);
 const LIMIT = 100;
 const AUTO_REFRESH_MS = 5000;
+const AUTO_REFRESH_MAX_BACKOFF_MS = 60_000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -118,11 +121,16 @@ function downloadJson(entries: ActivityLogEntry[]) {
 
 export function ActivityPage() {
   const didInitialLoad = useRef(false);
-  const autoRefreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollFailuresRef = useRef(0);
+  const requestRunnerRef = useRef(new SingleFlightRequestRunner());
+  const mountedRef = useRef(true);
 
   const [entries, setEntries] = useState<ActivityLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [nextAutoRefreshMs, setNextAutoRefreshMs] = useState(AUTO_REFRESH_MS);
   const username = useActivityStore((s) => s.username);
   const setUsername = useActivityStore((s) => s.setUsername);
   const event = useActivityStore((s) => s.event);
@@ -134,25 +142,71 @@ export function ActivityPage() {
   const [offset, setOffset] = useState(0);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
+  const clearAutoRefreshTimer = useCallback(() => {
+    if (autoRefreshTimer.current) {
+      clearTimeout(autoRefreshTimer.current);
+      autoRefreshTimer.current = null;
+    }
+  }, []);
+
   const load = useCallback(
-    async (nextOffset = 0) => {
-      setLoading(true);
-      try {
-        const data = await logsApi.get({
-          limit: LIMIT,
-          offset: nextOffset,
-          username: username.trim() || undefined,
-          event: event || undefined,
-        });
-        setEntries(data.entries);
-        setTotal(data.total);
+    async ({
+      nextOffset = 0,
+      source = 'manual',
+      showLoading = true,
+      cancelPrevious = false,
+      skipIfInFlight = false,
+    }: {
+      nextOffset?: number;
+      source?: 'initial' | 'manual' | 'poll';
+      showLoading?: boolean;
+      cancelPrevious?: boolean;
+      skipIfInFlight?: boolean;
+    } = {}) => {
+      if (showLoading && mountedRef.current) {
+        setLoading(true);
+      }
+
+      const result = await requestRunnerRef.current.run(
+        (signal) =>
+          logsApi.get(
+            {
+              limit: LIMIT,
+              offset: nextOffset,
+              username: username.trim() || undefined,
+              event: event || undefined,
+            },
+            { signal },
+          ),
+        { cancelPrevious, skipIfInFlight },
+      );
+
+      if (!mountedRef.current) {
+        return result;
+      }
+
+      if (result.kind === 'success') {
+        pollFailuresRef.current = 0;
+        setLoadError(null);
+        setEntries(result.value.entries);
+        setTotal(result.value.total);
         setOffset(nextOffset);
         setLastRefreshed(new Date());
-      } catch {
-        // keep previous data on error
-      } finally {
+      } else if (result.kind === 'error') {
+        const message = getErrorMessage(result.error, 'Failed to load activity log');
+        if (source === 'poll') {
+          pollFailuresRef.current += 1;
+          setLoadError(`Auto-refresh degraded. ${message}`);
+        } else {
+          setLoadError(message);
+        }
+      }
+
+      if (showLoading && (result.kind !== 'aborted' || !requestRunnerRef.current.isInFlight())) {
         setLoading(false);
       }
+
+      return result;
     },
     [event, username],
   );
@@ -161,20 +215,90 @@ export function ActivityPage() {
   useEffect(() => {
     if (didInitialLoad.current) return;
     didInitialLoad.current = true;
-    void load(0);
+    queueMicrotask(() => {
+      void load({
+        nextOffset: 0,
+        source: 'initial',
+        showLoading: true,
+        cancelPrevious: true,
+      });
+    });
   }, [load]);
 
   // Auto-refresh
   useEffect(() => {
-    if (autoRefresh) {
-      autoRefreshTimer.current = setInterval(() => void load(0), AUTO_REFRESH_MS);
-    } else {
-      if (autoRefreshTimer.current) clearInterval(autoRefreshTimer.current);
+    clearAutoRefreshTimer();
+    if (!autoRefresh) {
+      pollFailuresRef.current = 0;
+      queueMicrotask(() => {
+        if (mountedRef.current) {
+          setNextAutoRefreshMs(AUTO_REFRESH_MS);
+        }
+      });
+      return;
     }
-    return () => {
-      if (autoRefreshTimer.current) clearInterval(autoRefreshTimer.current);
+
+    let disposed = false;
+    const scheduleNextPoll = (delayMs: number) => {
+      if (disposed) return;
+      clearAutoRefreshTimer();
+      setNextAutoRefreshMs(delayMs);
+      autoRefreshTimer.current = setTimeout(() => {
+        void runPoll();
+      }, delayMs);
     };
-  }, [autoRefresh, load]);
+
+    const runPoll = async () => {
+      if (disposed) return;
+      const result = await load({
+        nextOffset: 0,
+        source: 'poll',
+        showLoading: false,
+        skipIfInFlight: true,
+      });
+      if (disposed) return;
+      const delayMs =
+        result.kind === 'error'
+          ? getPollBackoffDelay(AUTO_REFRESH_MS, pollFailuresRef.current, AUTO_REFRESH_MAX_BACKOFF_MS)
+          : AUTO_REFRESH_MS;
+      scheduleNextPoll(delayMs);
+    };
+
+    scheduleNextPoll(AUTO_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      clearAutoRefreshTimer();
+    };
+  }, [autoRefresh, clearAutoRefreshTimer, load]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const runner = requestRunnerRef.current;
+    return () => {
+      mountedRef.current = false;
+      clearAutoRefreshTimer();
+      runner.abortCurrent();
+    };
+  }, [clearAutoRefreshTimer]);
+
+  const refreshCurrentPage = useCallback(async () => {
+    await load({
+      nextOffset: offset,
+      source: 'manual',
+      showLoading: true,
+      cancelPrevious: true,
+    });
+  }, [load, offset]);
+
+  const applyFilters = useCallback(async () => {
+    await load({
+      nextOffset: 0,
+      source: 'manual',
+      showLoading: true,
+      cancelPrevious: true,
+    });
+  }, [load]);
 
   const visible = entries.filter((e) => matchesSearch(e, search));
 
@@ -195,41 +319,49 @@ export function ActivityPage() {
         description="Structured event stream — logins, relogins, uploads, circuit breakers, proxy changes."
         icon={<ScrollText className="h-6 w-6 text-[#7dcfff]" />}
         actions={
-          <div className="flex items-center gap-2">
-            {/* Live indicator */}
-            {autoRefresh && (
-              <span className="flex items-center gap-1.5 text-xs text-[#9ece6a]">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#9ece6a] opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9ece6a]" />
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              {/* Live indicator */}
+              {autoRefresh && (
+                <span className="flex items-center gap-1.5 text-xs text-[#9ece6a]">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#9ece6a] opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9ece6a]" />
+                  </span>
+                  LIVE
                 </span>
-                LIVE
+              )}
+              <Button
+                variant={autoRefresh ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setAutoRefresh(!autoRefresh)}
+              >
+                <Activity className="h-4 w-4" />
+                {autoRefresh ? 'Live On' : 'Live Off'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void refreshCurrentPage()}
+                loading={loading}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => downloadJson(visible)}
+                disabled={visible.length === 0}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </div>
+            {loadError && (
+              <span className="text-[11px] text-[#e0af68]">
+                {autoRefresh ? `Retrying in ${Math.max(1, Math.round(nextAutoRefreshMs / 1000))}s. ` : ''}
+                {loadError}
               </span>
             )}
-            <Button
-              variant={autoRefresh ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setAutoRefresh(!autoRefresh)}
-            >
-              <Activity className="h-4 w-4" />
-              {autoRefresh ? 'Live On' : 'Live Off'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void load(offset)}
-              loading={loading}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => downloadJson(visible)}
-              disabled={visible.length === 0}
-            >
-              <Download className="h-4 w-4" />
-            </Button>
           </div>
         }
       />
@@ -242,7 +374,7 @@ export function ActivityPage() {
             id="log-username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void load(0)}
+            onKeyDown={(e) => e.key === 'Enter' && void applyFilters()}
             placeholder="@filter_by_user"
             className="glass-field text-sm"
           />
@@ -261,7 +393,7 @@ export function ActivityPage() {
             ))}
           </select>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => void load(0)}>
+        <Button variant="secondary" size="sm" onClick={() => void applyFilters()}>
           Apply
         </Button>
 
@@ -360,7 +492,14 @@ export function ActivityPage() {
               variant="secondary"
               size="sm"
               disabled={offset === 0}
-              onClick={() => void load(Math.max(0, offset - LIMIT))}
+              onClick={() =>
+                void load({
+                  nextOffset: Math.max(0, offset - LIMIT),
+                  source: 'manual',
+                  showLoading: true,
+                  cancelPrevious: true,
+                })
+              }
             >
               Previous
             </Button>
@@ -368,7 +507,14 @@ export function ActivityPage() {
               variant="secondary"
               size="sm"
               disabled={offset + LIMIT >= total}
-              onClick={() => void load(offset + LIMIT)}
+              onClick={() =>
+                void load({
+                  nextOffset: offset + LIMIT,
+                  source: 'manual',
+                  showLoading: true,
+                  cancelPrevious: true,
+                })
+              }
             >
               Next
             </Button>

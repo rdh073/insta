@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, API_TIMEOUT_MS } from './client';
 import type { Account, BulkAccountResult, ProxyCheckResult } from '../types';
 
 export interface RateLimitEntry {
@@ -50,10 +50,14 @@ export const accountsApi = {
     api.patch(`/accounts/${id}/proxy`, { proxy }).then((r) => r.data),
 
   relogin: (id: string) =>
-    api.post<Account>(`/accounts/${id}/relogin`).then((r) => r.data),
+    api
+      .post<Account>(`/accounts/${id}/relogin`, undefined, { timeout: API_TIMEOUT_MS.relogin })
+      .then((r) => r.data),
 
   bulkRelogin: (ids: string[]) =>
-    api.post<BulkAccountResult[]>('/accounts/bulk/relogin', { account_ids: ids }).then((r) => r.data),
+    api
+      .post<BulkAccountResult[]>('/accounts/bulk/relogin', { account_ids: ids }, { timeout: API_TIMEOUT_MS.bulkRelogin })
+      .then((r) => r.data),
 
   bulkLogout: (ids: string[]) =>
     api.post<BulkAccountResult[]>('/accounts/bulk/logout', { account_ids: ids }).then((r) => r.data),

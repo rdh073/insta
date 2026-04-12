@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, API_TIMEOUT_MS } from './client';
 import type { Account, PostJob } from '../types';
 
 const CONTRACT_ERROR_PREFIX = 'Dashboard API contract mismatch';
@@ -249,6 +249,14 @@ export function parseDashboardResult(payload: unknown): DashboardData {
 }
 
 export const dashboardApi = {
-  get: () => api.get<unknown>('/dashboard').then((r) => parseDashboardResult(r.data)),
-  relogin: (id: string) => api.post<Account>(`/accounts/${id}/relogin`).then((r) => r.data),
+  get: (options?: { signal?: AbortSignal }) => {
+    const req = options?.signal
+      ? api.get<unknown>('/dashboard', { signal: options.signal })
+      : api.get<unknown>('/dashboard');
+    return req.then((r) => parseDashboardResult(r.data));
+  },
+  relogin: (id: string) =>
+    api
+      .post<Account>(`/accounts/${id}/relogin`, undefined, { timeout: API_TIMEOUT_MS.relogin })
+      .then((r) => r.data),
 };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -16,10 +16,14 @@ import {
 import toast from 'react-hot-toast';
 import { dashboardApi, type DashboardData } from '../api/dashboard';
 import { getErrorMessage } from '../lib/error';
+import { getPollBackoffDelay, SingleFlightRequestRunner } from '../lib/single-flight';
 import { useAccountStore } from '../store/accounts';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
+
+const DASHBOARD_POLL_INTERVAL_MS = 5_000;
+const DASHBOARD_POLL_MAX_BACKOFF_MS = 60_000;
 
 function pct(value: number, total: number) {
   if (!total) return 0;
@@ -218,29 +222,129 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [relogining, setRelogining] = useState<Record<string, boolean>>({});
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [nextPollInMs, setNextPollInMs] = useState(DASHBOARD_POLL_INTERVAL_MS);
+  const pollFailuresRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const requestRunnerRef = useRef(new SingleFlightRequestRunner());
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const next = await dashboardApi.get();
-      setData(next);
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to load dashboard'));
-    } finally {
-      setLoading(false);
+  const clearPollTimer = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
   }, []);
 
-  useEffect(() => {
-    void load();
+  const load = useCallback(
+    async ({
+      source = 'manual',
+      showLoading = true,
+      cancelPrevious = false,
+      skipIfInFlight = false,
+    }: {
+      source?: 'initial' | 'manual' | 'poll';
+      showLoading?: boolean;
+      cancelPrevious?: boolean;
+      skipIfInFlight?: boolean;
+    } = {}) => {
+      if (showLoading && mountedRef.current) {
+        setLoading(true);
+      }
+
+      const result = await requestRunnerRef.current.run(
+        (signal) => dashboardApi.get({ signal }),
+        { cancelPrevious, skipIfInFlight },
+      );
+
+      if (!mountedRef.current) {
+        return result;
+      }
+
+      if (result.kind === 'success') {
+        pollFailuresRef.current = 0;
+        setData(result.value);
+        setLastRefreshed(new Date());
+        setPollError(null);
+      } else if (result.kind === 'error') {
+        const message = getErrorMessage(result.error, 'Failed to load dashboard');
+        if (source === 'poll') {
+          pollFailuresRef.current += 1;
+          setPollError(message);
+        } else {
+          toast.error(message);
+        }
+      }
+
+      if (showLoading && (result.kind !== 'aborted' || !requestRunnerRef.current.isInFlight())) {
+        setLoading(false);
+      }
+
+      return result;
+    },
+    [],
+  );
+
+  const refreshNow = useCallback(async () => {
+    await load({ source: 'manual', showLoading: true, cancelPrevious: true });
   }, [load]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      void load();
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [load]);
+    mountedRef.current = true;
+    const runner = requestRunnerRef.current;
+    let disposed = false;
+
+    const schedulePoll = (delayMs: number, tick: () => void) => {
+      if (disposed) {
+        return;
+      }
+      clearPollTimer();
+      setNextPollInMs(delayMs);
+      pollTimerRef.current = setTimeout(tick, delayMs);
+    };
+
+    const runPoll = async () => {
+      if (disposed) {
+        return;
+      }
+      const result = await load({
+        source: 'poll',
+        showLoading: false,
+        skipIfInFlight: true,
+      });
+      if (disposed) {
+        return;
+      }
+      const delayMs =
+        result.kind === 'error'
+          ? getPollBackoffDelay(DASHBOARD_POLL_INTERVAL_MS, pollFailuresRef.current, DASHBOARD_POLL_MAX_BACKOFF_MS)
+          : DASHBOARD_POLL_INTERVAL_MS;
+      schedulePoll(delayMs, () => {
+        void runPoll();
+      });
+    };
+
+    void load({
+      source: 'initial',
+      showLoading: true,
+      cancelPrevious: true,
+    }).finally(() => {
+      if (disposed) {
+        return;
+      }
+      schedulePoll(DASHBOARD_POLL_INTERVAL_MS, () => {
+        void runPoll();
+      });
+    });
+
+    return () => {
+      disposed = true;
+      mountedRef.current = false;
+      clearPollTimer();
+      runner.abortCurrent();
+    };
+  }, [clearPollTimer, load]);
 
   const handleRelogin = async (id: string) => {
     setRelogining((current) => ({ ...current, [id]: true }));
@@ -248,8 +352,7 @@ export function DashboardPage() {
       const account = await dashboardApi.relogin(id);
       upsertAccount(account);
       toast.success(`@${account.username} relogged in`);
-      const nextData = await dashboardApi.get();
-      setData(nextData);
+      await load({ source: 'manual', showLoading: false, cancelPrevious: true });
     } catch (error) {
       toast.error(getErrorMessage(error, 'Relogin failed'));
     } finally {
@@ -259,7 +362,10 @@ export function DashboardPage() {
 
   const stats = data?.accounts;
   const total = stats?.total ?? 0;
-  const lastRefresh = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const lastRefresh = lastRefreshed
+    ? lastRefreshed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const nextRetrySeconds = Math.max(1, Math.round(nextPollInMs / 1000));
 
   return (
     <div className="page-shell max-w-7xl space-y-6">
@@ -269,10 +375,17 @@ export function DashboardPage() {
         description="A live view across connected identities, job outcomes, and error buckets so operators can spot drift before it compounds."
         icon={<TrendingUp className="h-6 w-6 text-[var(--color-info-fg)]" />}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void load()} loading={loading}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button variant="secondary" size="sm" onClick={() => void refreshNow()} loading={loading}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+            {pollError && (
+              <span className="text-[11px] text-[var(--color-warning-fg)]">
+                Auto-refresh retrying in {nextRetrySeconds}s
+              </span>
+            )}
+          </div>
         }
       >
         <div className="metric-grid">
