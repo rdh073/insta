@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass
 from typing import AsyncIterator
 
@@ -178,38 +179,57 @@ class RelationshipUseCases:
 
         async def _process_account(account_id: str) -> None:
             nonlocal completed
-            account = self.account_repo.get(account_id)
-            username = (account or {}).get("username", account_id)
+            username = account_id
+            remaining_targets = deque(targets)
 
-            for target in targets:
-                async with semaphore:
-                    try:
-                        success = await asyncio.to_thread(fn, account_id, target)
-                        result = {
-                            "account_id": account_id,
-                            "account": username,
-                            "target": target,
-                            "action": action,
-                            "success": bool(success),
-                        }
-                    except Exception as exc:
-                        result = {
-                            "account_id": account_id,
-                            "account": username,
-                            "target": target,
-                            "action": action,
-                            "success": False,
-                            "error": str(exc)[:200],
-                        }
+            async def _enqueue_result(
+                target: str, success: bool, error: str | None = None
+            ) -> None:
+                nonlocal completed
+                result = {
+                    "account_id": account_id,
+                    "account": username,
+                    "target": target,
+                    "action": action,
+                    "success": bool(success),
+                }
+                if error:
+                    result["error"] = error[:200]
+                completed += 1
+                result["completed"] = completed
+                result["total"] = total
+                await result_queue.put(result)
 
-                    completed += 1
-                    result["completed"] = completed
-                    result["total"] = total
-                    await result_queue.put(result)
+            try:
+                account = self.account_repo.get(account_id)
+                username = (account or {}).get("username", account_id)
 
-                    # Rate limit delay between actions per account
-                    if delay_between > 0:
-                        await asyncio.sleep(delay_between)
+                while remaining_targets:
+                    target = remaining_targets.popleft()
+                    async with semaphore:
+                        try:
+                            success = await asyncio.to_thread(fn, account_id, target)
+                            await _enqueue_result(target, bool(success))
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            await _enqueue_result(target, False, str(exc))
+
+                        # Rate limit delay between actions per account
+                        if delay_between > 0:
+                            await asyncio.sleep(delay_between)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Account-level setup errors used to drop the whole account task and
+                # stall the queue consumer. Emit failures for all remaining targets
+                # so completed accounting always reaches `total`.
+                logger.exception(
+                    "Batch %s setup failed for account %s", action, account_id
+                )
+                error = str(exc)
+                for target in remaining_targets:
+                    await _enqueue_result(target, False, error)
 
         # Launch all accounts in parallel
         tasks = [asyncio.create_task(_process_account(aid)) for aid in account_ids]

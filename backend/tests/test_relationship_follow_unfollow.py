@@ -676,3 +676,51 @@ class TestBatchPayloadShape:
         assert item["success"] is False
         assert "error" in item
         assert item["action"] == "unfollow"
+
+    def test_batch_follow_setup_exception_before_enqueue_does_not_hang(self):
+        """Account-level setup exceptions must emit failures instead of deadlocking."""
+        mock_writer = Mock()
+        mock_writer.follow_user.return_value = True
+        mock_reader = Mock()
+        mock_reader.get_user_id_by_username.return_value = 1
+
+        account_repo = Mock()
+
+        def _get_account(account_id: str):
+            if account_id == "acc-bad":
+                raise RuntimeError("lookup failed before enqueue")
+            return {"username": "good-account"}
+
+        account_repo.get.side_effect = _get_account
+        client_repo = Mock()
+        client_repo.exists.return_value = True
+
+        use_cases = RelationshipUseCases(
+            account_repo=account_repo,
+            client_repo=client_repo,
+            identity_reader=mock_reader,
+            relationship_reader=Mock(),
+            relationship_writer=mock_writer,
+        )
+
+        async def _collect():
+            items = []
+            async for item in use_cases.batch_follow(
+                account_ids=["acc-good", "acc-bad"],
+                targets=["t1", "t2"],
+                concurrency=2,
+                delay_between=0.0,
+            ):
+                items.append(item)
+            return items
+
+        results = asyncio.run(asyncio.wait_for(_collect(), timeout=1.0))
+
+        assert len(results) == 4
+        assert all(item["total"] == 4 for item in results)
+        assert max(item["completed"] for item in results) == 4
+
+        bad_results = [item for item in results if item["account_id"] == "acc-bad"]
+        assert len(bad_results) == 2
+        assert all(item["success"] is False for item in bad_results)
+        assert all("error" in item for item in bad_results)
