@@ -38,23 +38,33 @@ def current_persistence_backend() -> str:
 
 
 @lru_cache(maxsize=None)
-def build_sql_persistence_store() -> SqlitePersistenceStore | None:
-    """Build (and cache) a SQL persistence store when a durable backend is enabled.
-
-    Cached so the engine and connection pool are created exactly once per process,
-    and Alembic migrations run only once on startup.
-    """
-    persistence_backend = current_persistence_backend()
+def _build_sql_persistence_store_cached(
+    persistence_backend: str,
+    database_url: str | None,
+    sqlite_path: str | None,
+) -> SqlitePersistenceStore | None:
+    """Build a SQL persistence store for a specific backend configuration."""
     if persistence_backend not in {"sqlite", "sql"}:
         return None
 
-    database_url = os.getenv("PERSISTENCE_DATABASE_URL")
     if database_url:
         return SqlitePersistenceStore(database_url=database_url)
 
+    assert sqlite_path is not None
+    return SqlitePersistenceStore(db_path=Path(sqlite_path))
+
+
+def build_sql_persistence_store() -> SqlitePersistenceStore | None:
+    """Build (and cache) a SQL persistence store for the active env configuration.
+
+    The cache key includes backend + connection inputs so runtime backend switches
+    in tests do not reuse stale stores from a previous configuration.
+    """
+    persistence_backend = current_persistence_backend()
+    database_url = os.getenv("PERSISTENCE_DATABASE_URL")
     default_db_path = Path(__file__).parent.parent.parent.parent / "sessions" / "persistence.sqlite3"
-    db_path = Path(os.getenv("PERSISTENCE_SQLITE_PATH", str(default_db_path)))
-    return SqlitePersistenceStore(db_path=db_path)
+    sqlite_path = os.getenv("PERSISTENCE_SQLITE_PATH", str(default_db_path))
+    return _build_sql_persistence_store_cached(persistence_backend, database_url, sqlite_path)
 
 
 def build_persistence_adapters():

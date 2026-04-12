@@ -12,6 +12,7 @@ class CreatePostJobRequest:
     caption: str
     account_ids: list[str]
     media_paths: list[str]
+    scheduled_at: Optional[str] = None
     media_type: Optional[str] = None
     thumbnail_path: Optional[str] = None
     igtv_title: Optional[str] = None

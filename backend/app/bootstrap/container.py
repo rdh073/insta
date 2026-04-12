@@ -504,7 +504,7 @@ def create_services():
     instagram = ig["instagram"]
 
     # ── 3. Job scheduling ─────────────────────────────────────────────────
-    post_job_control = PostJobControlAdapter()
+    post_job_control = PostJobControlAdapter(job_repo=job_repo, uow=uow)
 
     def _run_and_sync_job(job_id: str) -> None:
         """Run the job then sync final state from in-memory store back to the DB.

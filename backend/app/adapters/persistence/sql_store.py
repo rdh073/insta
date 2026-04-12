@@ -262,10 +262,15 @@ class SqlitePersistenceStore:
 
         Uses the programmatic Alembic API so both fresh databases (migrations run
         from scratch) and existing databases (only pending migrations applied) are
-        handled correctly. Falls back to create_all() if alembic.ini is not found.
+        handled correctly. Falls back to create_all() if Alembic is unavailable
+        or alembic.ini is not found.
         """
-        from alembic.config import Config
-        from alembic import command
+        try:
+            from alembic.config import Config
+            from alembic import command
+        except ModuleNotFoundError:
+            Base.metadata.create_all(self.engine)
+            return
 
         # sql_store.py lives at backend/app/adapters/persistence/sql_store.py
         # so 4 levels up resolves to the backend/ root where alembic.ini lives.

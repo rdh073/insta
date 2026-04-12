@@ -36,6 +36,7 @@ class CreatePostJobRequest:
     caption: str
     account_ids: list[str]
     media_paths: list[str]
+    scheduled_at: Optional[str] = None
     media_type: Optional[str] = None
     thumbnail_path: Optional[str] = None
     igtv_title: Optional[str] = None
@@ -182,6 +183,7 @@ class PostJobUseCases:
         """Create a new post job."""
         with self._uow_scope():
             caption = _validate_caption(request.caption)
+            initial_status = "scheduled" if request.scheduled_at else "pending"
 
             # Determine media type: explicit override or infer from files
             inferred = (
@@ -213,10 +215,11 @@ class PostJobUseCases:
                 media_urls=[],
                 media_type=media_type,
                 targets=[{"accountId": account_id} for account_id in request.account_ids],
-                status="pending",
+                status=initial_status,
                 results=results,
                 created_at=_utc_now_iso(),
                 media_paths=request.media_paths,
+                scheduled_at=request.scheduled_at,
                 thumbnail_path=request.thumbnail_path,
                 igtv_title=request.igtv_title,
                 usertags=request.usertags or [],
@@ -228,12 +231,13 @@ class PostJobUseCases:
             return PostJobDTO(
                 id=job_id,
                 caption=caption,
-                status="pending",
+                status=initial_status,
                 media_type=media_type,
                 targets=job.targets,
                 results=results,
                 created_at=job.created_at,
                 media_urls=job.media_urls,
+                scheduled_at=job.scheduled_at,
             )
 
     def create_scheduled_post_draft(self, request: CreateScheduledPostRequest) -> PostJobResult:

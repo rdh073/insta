@@ -83,6 +83,7 @@ async def create_post(
         caption=caption,
         account_ids=ids,
         media_paths=media_paths,
+        scheduled_at=scheduled_at,
         media_type=media_type or None,
         thumbnail_path=thumbnail_path,
         igtv_title=igtv_title or None,

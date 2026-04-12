@@ -28,6 +28,7 @@ from app.bootstrap.runtime import APP_VERSION, load_runtime_settings
 
 
 logger = logging.getLogger("instamanager.bootstrap")
+_RESTORE_ELIGIBLE_STATUSES = frozenset({"pending", "scheduled"})
 
 
 def _resolve_oauth_state_secret() -> str:
@@ -58,16 +59,17 @@ async def _restore_pending_jobs(job_repo, scheduler, session_restore_done: async
         logger.warning("job_restore.list_failed reason=%s", exc)
         return
 
-    pending = [j for j in jobs if j.status in ("pending", "scheduled")]
-    if not pending:
-        return
-
-    # Dual-write back to in-memory state first so control endpoints work.
-    for job in pending:
+    # Dual-write every persisted job back to in-memory runtime state first so
+    # control/status endpoints remain coherent after restart.
+    for job in jobs:
         try:
             job_repo.set(job.id, job)
         except Exception as exc:
             logger.warning("job_restore.hydrate_skip job_id=%s reason=%s", job.id, exc)
+
+    pending = [j for j in jobs if j.status in _RESTORE_ELIGIBLE_STATUSES]
+    if not pending:
+        return
 
     logger.info("job_restore.start count=%d (waiting for sessions)", len(pending))
 
