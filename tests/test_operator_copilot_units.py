@@ -110,6 +110,18 @@ def test_classify_write_sensitive():
     assert cls.requires_approval is True
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    ["like_comment", "unlike_comment", "pin_comment", "unpin_comment"],
+)
+def test_comment_moderation_tools_classified_write_sensitive(tool_name):
+    reg = ToolPolicyRegistry()
+    cls = reg.classify(tool_name)
+    assert cls.policy == ToolPolicy.WRITE_SENSITIVE
+    assert cls.requires_approval is True
+    assert "comment" in cls.reason.lower()
+
+
 def test_classify_blocked():
     reg = ToolPolicyRegistry()
     cls = reg.classify("delete_account")

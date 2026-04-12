@@ -93,13 +93,47 @@ def _post_approval_llm_responses() -> list[str]:
     return [review, summary]
 
 
-def _make_use_case(llm_responses, tool_results=None):
+def _comment_moderation_llm_responses(tool_name: str, arguments: dict) -> list[str]:
+    classify = json.dumps({
+        "normalized_goal": f"{tool_name} on a comment",
+        "blocked": False,
+        "block_reason": None,
+        "category": "comment_moderation",
+    })
+    plan = json.dumps({
+        "execution_plan": [
+            {"step": 1, "tool": tool_name, "reason": "moderate comment state", "risk_level": "medium"}
+        ],
+        "proposed_tool_calls": [
+            {"id": "c1", "name": tool_name, "arguments": arguments}
+        ],
+    })
+    return [classify, plan]
+
+
+_COMMENT_MODERATION_CASES = [
+    pytest.param("like_comment", {"username": "acct1", "comment_id": 1001}, id="like_comment"),
+    pytest.param("unlike_comment", {"username": "acct1", "comment_id": 1002}, id="unlike_comment"),
+    pytest.param(
+        "pin_comment",
+        {"username": "acct1", "media_id": "17890001", "comment_id": 1003},
+        id="pin_comment",
+    ),
+    pytest.param(
+        "unpin_comment",
+        {"username": "acct1", "media_id": "17890002", "comment_id": 1004},
+        id="unpin_comment",
+    ),
+]
+
+
+def _make_use_case(llm_responses, tool_results=None, schemas=None):
     from ai_copilot.application.use_cases.run_operator_copilot import RunOperatorCopilotUseCase
 
     llm = FakeLLMGateway(responses=llm_responses)
     executor = FakeToolExecutor(
         results=tool_results or {"list_accounts": {"accounts": [{"id": "a1"}]}},
-        schemas=[
+        schemas=schemas or [
             {"function": {"name": "list_accounts", "description": "lists accounts"}},
             {"function": {"name": "follow_user", "description": "follows a user"}},
         ],
@@ -337,6 +371,32 @@ async def test_write_sensitive_emits_policy_result_needs_approval():
     assert pr["needs_approval"] is True
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name,arguments", _COMMENT_MODERATION_CASES)
+async def test_comment_moderation_tools_visible_to_planner_and_gated(tool_name, arguments):
+    use_case, _, _ = _make_use_case(
+        _comment_moderation_llm_responses(tool_name, arguments),
+        tool_results={tool_name: {"success": True}},
+        schemas=[{"function": {"name": tool_name, "description": f"does {tool_name}"}}],
+    )
+    events = await _collect(use_case.run(f"please {tool_name}", thread_id=f"t-comment-gate-{tool_name}"))
+
+    plan_ready = _find(events, "plan_ready")
+    assert plan_ready is not None
+    assert plan_ready["tool_count"] == 1
+    assert plan_ready["proposed_tool_calls"][0]["name"] == tool_name
+    assert plan_ready["proposed_tool_calls"][0]["arguments"] == arguments
+
+    policy_result = _find(events, "policy_result")
+    assert policy_result is not None
+    assert policy_result["flags"]["c1"] == "write_sensitive"
+    assert policy_result["needs_approval"] is True
+
+    approval_required = _find(events, "approval_required")
+    assert approval_required is not None
+    assert approval_required["payload"]["proposed_tool_calls"][0]["name"] == tool_name
+
+
 # ===========================================================================
 # 5. Resume with "approved"
 # ===========================================================================
@@ -379,6 +439,31 @@ async def test_resume_approved_emits_final_response():
     fr = _find(events, "final_response")
     assert fr is not None
     assert fr["text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name,arguments", _COMMENT_MODERATION_CASES)
+async def test_comment_moderation_tools_execute_after_approved_resume(tool_name, arguments):
+    use_case, executor, _ = _make_use_case(
+        _comment_moderation_llm_responses(tool_name, arguments) + _post_approval_llm_responses(),
+        tool_results={tool_name: {"success": True}},
+        schemas=[{"function": {"name": tool_name, "description": f"does {tool_name}"}}],
+    )
+
+    await _collect(use_case.run(f"please {tool_name}", thread_id=f"t-comment-resume-{tool_name}"))
+    events = await _collect(use_case.resume(
+        thread_id=f"t-comment-resume-{tool_name}",
+        approval_result="approved",
+    ))
+
+    assert executor.was_called_with(tool_name)
+    called_name, called_args = executor.calls[0]
+    assert called_name == tool_name
+    assert called_args == arguments
+
+    finish = _find(events, "run_finish")
+    assert finish is not None
+    assert finish["stop_reason"] == "done"
 
 
 # ===========================================================================

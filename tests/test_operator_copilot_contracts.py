@@ -332,6 +332,14 @@ def _make_bridge(
     )
 
 
+_COMMENT_MODERATION_TOOLS = [
+    "like_comment",
+    "unlike_comment",
+    "pin_comment",
+    "unpin_comment",
+]
+
+
 def test_bridge_filters_blocked_tools_from_schemas():
     bridge = _make_bridge(["list_accounts", "delete_account", "follow_user"])
     schemas = bridge.get_schemas()
@@ -355,6 +363,50 @@ def test_bridge_annotates_write_sensitive_description():
     desc = schemas[0]["function"]["description"]
     assert "write-sensitive" in desc.lower()
     assert "approval" in desc.lower()
+
+
+def test_bridge_exposes_comment_moderation_tools_with_policy_hints():
+    bridge = _make_bridge(_COMMENT_MODERATION_TOOLS)
+    schemas = bridge.get_schemas()
+    by_name = {schema["function"]["name"]: schema for schema in schemas}
+
+    for tool_name in _COMMENT_MODERATION_TOOLS:
+        assert tool_name in by_name
+        desc = by_name[tool_name]["function"]["description"].lower()
+        assert "write-sensitive" in desc
+        assert "approval" in desc
+
+
+def test_bridge_exposes_registered_comment_moderation_tools_with_policy_hints():
+    from app.adapters.ai.tool_registry.builder import create_tool_registry
+    from ai_copilot.adapters.tool_registry_bridge import ToolRegistryBridgeAdapter
+
+    sentinel = object()
+    tool_registry = create_tool_registry(
+        account_usecases=sentinel,
+        postjob_usecases=sentinel,
+        hashtag_use_cases=sentinel,
+        collection_use_cases=sentinel,
+        media_use_cases=sentinel,
+        story_use_cases=sentinel,
+        highlight_use_cases=sentinel,
+        comment_use_cases=sentinel,
+        direct_use_cases=sentinel,
+        insight_use_cases=sentinel,
+        relationship_use_cases=sentinel,
+        account_profile_usecases=sentinel,
+        account_auth_usecases=sentinel,
+        account_proxy_usecases=sentinel,
+        proxy_pool_usecases=sentinel,
+    )
+    bridge = ToolRegistryBridgeAdapter(tool_registry=tool_registry)
+    by_name = {schema["function"]["name"]: schema for schema in bridge.get_schemas()}
+
+    for tool_name in _COMMENT_MODERATION_TOOLS:
+        assert tool_name in by_name
+        desc = by_name[tool_name]["function"]["description"].lower()
+        assert "write-sensitive" in desc
+        assert "approval" in desc
 
 
 def test_bridge_no_annotation_when_disabled():
@@ -400,6 +452,14 @@ async def test_bridge_execute_unknown_tool_raises():
 async def test_bridge_execute_passes_through_for_readable():
     bridge = _make_bridge(["list_accounts"])
     result = await bridge.execute("list_accounts", {})
+    assert result == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", _COMMENT_MODERATION_TOOLS)
+async def test_bridge_execute_allows_comment_moderation_tools(tool_name):
+    bridge = _make_bridge([tool_name])
+    result = await bridge.execute(tool_name, {})
     assert result == {}
 
 
