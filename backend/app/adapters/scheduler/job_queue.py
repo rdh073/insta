@@ -224,6 +224,40 @@ class PostJobQueue:
             return True, ""
         return True, str(raw).lower()
 
+    @staticmethod
+    def _set_job_status(job_id: str, status: str) -> None:
+        try:
+            import state
+
+            state.job_store.set_job_status(job_id, status)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _notify_event(event_type: str) -> None:
+        try:
+            from app.adapters.scheduler.event_bus import post_job_event_bus
+
+            post_job_event_bus.notify(event_type)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _is_scheduled_without_media(job_id: str) -> bool:
+        try:
+            from state import get_job
+
+            job = get_job(job_id)
+        except Exception:
+            return False
+
+        status = str(job.get("status") or "").lower()
+        if status != "scheduled":
+            return False
+
+        media_paths = job.get("_media_paths") or []
+        return len(media_paths) == 0
+
     def _is_runnable_before_run(self, job_id: str) -> bool:
         state_available, status = self._read_job_status(job_id)
         if not state_available:
@@ -262,13 +296,16 @@ class PostJobQueue:
     def _handle(self, item: _JobItem) -> None:
         if not self._is_runnable_before_run(item.job_id):
             return
+
+        if self._is_scheduled_without_media(item.job_id):
+            self._set_job_status(item.job_id, "needs_media")
+            logger.info("Skipping scheduled job %s with missing media", item.job_id)
+            self._notify_event("job_update")
+            return
+
         logger.info("Executing job %s", item.job_id)
         self._run_fn(item.job_id)
         logger.info("Job %s finished", item.job_id)
 
         # Notify SSE listeners that job state changed
-        try:
-            from app.adapters.scheduler.event_bus import post_job_event_bus
-            post_job_event_bus.notify("job_complete")
-        except Exception:
-            pass
+        self._notify_event("job_complete")
