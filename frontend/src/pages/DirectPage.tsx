@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { useDirectStore } from '../store/direct';
 import type { InboxTab } from '../store/direct';
 import { cn } from '../lib/cn';
+import { DIRECT_SEARCH_DEBOUNCE_MS, DirectSearchScheduler } from './directSearchScheduler';
 
 // ─── Thread row ───────────────────────────────────────────────────────────────
 
@@ -130,18 +131,56 @@ export function DirectPage() {
   const [sending, setSending] = useState(false);
   const [approving, setApproving] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const searchSchedulerRef = useRef(new DirectSearchScheduler(DIRECT_SEARCH_DEBOUNCE_MS));
 
-  // Load inbox when account changes
-  useEffect(() => {
-    if (!accountId) return;
-    void loadInbox();
-  }, [accountId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => {
+    searchSchedulerRef.current.cancelPending();
+  }, []);
 
   // Load pending when tab switches to pending
   useEffect(() => {
     if (!accountId || inboxTab !== 'pending') return;
     void loadPending();
   }, [accountId, inboxTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!accountId) {
+      searchSchedulerRef.current.cancelPending();
+      setLoadingThreads(false);
+      return;
+    }
+
+    const trimmedQuery = searchQuery.trim();
+    const immediate = trimmedQuery.length === 0;
+
+    searchSchedulerRef.current.schedule(
+      trimmedQuery,
+      ({ query, signal, token }) => {
+        void (async () => {
+          setLoadingThreads(true);
+          try {
+            const result = query.length
+              ? await directApi.searchThreads(accountId, query, { signal })
+              : await directApi.listInbox(accountId, 30, { signal });
+            if (signal.aborted || !searchSchedulerRef.current.isLatest(token)) {
+              return;
+            }
+            setThreads(result.threads);
+          } catch (e) {
+            if (signal.aborted || !searchSchedulerRef.current.isLatest(token)) {
+              return;
+            }
+            toast.error((e as Error).message);
+          } finally {
+            if (searchSchedulerRef.current.isLatest(token)) {
+              setLoadingThreads(false);
+            }
+          }
+        })();
+      },
+      { immediate },
+    );
+  }, [accountId, searchQuery, setThreads]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -171,21 +210,8 @@ export function DirectPage() {
     }
   }
 
-  async function handleSearch(q: string) {
+  function handleSearch(q: string) {
     setSearchQuery(q);
-    if (!q.trim()) {
-      void loadInbox();
-      return;
-    }
-    setLoadingThreads(true);
-    try {
-      const result = await directApi.searchThreads(accountId, q.trim());
-      setThreads(result.threads);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setLoadingThreads(false);
-    }
   }
 
   async function selectThread(thread: DirectThreadSummary) {

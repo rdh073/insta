@@ -12,6 +12,10 @@ import type {
 const CONTRACT_ERROR_PREFIX = 'Direct API contract mismatch';
 export const DIRECT_SEARCH_SYNTHETIC_PREFIX = 'search-user:';
 
+interface DirectRequestOptions {
+  signal?: AbortSignal;
+}
+
 export class DirectContractError extends Error {
   constructor(message: string) {
     super(message);
@@ -226,9 +230,12 @@ export function getSyntheticSearchUserId(threadId: string): number | null {
 }
 
 export const directApi = {
-  listInbox: (accountId: string, amount = 20) =>
+  listInbox: (accountId: string, amount = 20, options?: DirectRequestOptions) =>
     api
-      .get<unknown>(`/instagram/direct/${accountId}/inbox`, { params: { amount } })
+      .get<unknown>(`/instagram/direct/${accountId}/inbox`, {
+        params: { amount },
+        signal: options?.signal,
+      })
       .then((r) => parseDirectInboxResult(r.data, 'inbox')),
 
   listPending: (accountId: string, amount = 20) =>
@@ -251,9 +258,12 @@ export const directApi = {
       )
       .then((r) => r.data),
 
-  searchThreads: (accountId: string, query: string) =>
+  searchThreads: (accountId: string, query: string, options?: DirectRequestOptions) =>
     api
-      .get<unknown>(`/instagram/direct/${accountId}/search`, { params: { query } })
+      .get<unknown>(`/instagram/direct/${accountId}/search`, {
+        params: { query },
+        signal: options?.signal,
+      })
       .then((r) => parseDirectInboxResult(r.data, 'search')),
 
   findOrCreate: (accountId: string, participantUserIds: number[], dryRun = false) =>
