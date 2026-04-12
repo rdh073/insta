@@ -19,7 +19,6 @@ Dependency direction: api → this use case → graph → ports ← adapters
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import AsyncIterator
 
@@ -39,6 +38,10 @@ from ai_copilot.application.ports import (
     CheckpointFactoryPort,
 )
 from ai_copilot.application.operator_copilot_policy import ToolPolicyRegistry
+from ai_copilot.application.use_cases.langgraph_runtime_adapter import (
+    DEFAULT_LANGGRAPH_VERSION_STRATEGY,
+    astream_with_contract,
+)
 
 # ── Sentinel node name where the graph suspends for approval ──────────────────
 _APPROVAL_NODE = "request_approval_if_needed"
@@ -106,6 +109,7 @@ class RunOperatorCopilotUseCase:
         self.tool_executor = tool_executor
         self.approval_port = approval_port
         self.audit_log = audit_log
+        self._version_strategy = DEFAULT_LANGGRAPH_VERSION_STRATEGY
 
         if checkpointer is not None:
             self._checkpointer = checkpointer
@@ -213,22 +217,20 @@ class RunOperatorCopilotUseCase:
         yield _emit_start(run_id, thread_id)
 
         try:
-            async for chunk in self._graph.astream(graph_input, config, stream_mode="updates"):
-                for node_name, node_output in chunk.items():
-                    if node_name == "__interrupt__":
-                        # Graph suspended for approval.
-                        # LangGraph returns node_output as a tuple of Interrupt objects,
-                        # each with a .value attribute holding the interrupt payload.
-                        interrupt_items = (
-                            node_output
-                            if isinstance(node_output, (list, tuple))
-                            else [node_output]
-                        )
-                        for item in interrupt_items:
-                            value = getattr(item, "value", item)
-                            yield _emit_approval_required(thread_id, value)
+            async for chunk in astream_with_contract(
+                self._graph,
+                graph_input,
+                config=config,
+                stream_mode="updates",
+                strategy=self._version_strategy,
+            ):
+                for entry in chunk.entries:
+                    if entry.kind == "interrupt":
+                        yield _emit_approval_required(thread_id, entry.payload)
                         return
 
+                    node_name = entry.node_name or ""
+                    node_output = entry.payload
                     yield _emit_node_update(node_name, node_output)
 
                     # ── Typed UI contract events ─────────────────────────────

@@ -33,6 +33,13 @@ from ai_copilot.application.smart_engagement.ports import (
     RiskScoringPort,
 )
 from ai_copilot.application.smart_engagement.state import SmartEngagementState
+from ai_copilot.application.use_cases.langgraph_runtime_adapter import (
+    DEFAULT_LANGGRAPH_VERSION_STRATEGY,
+    ainvoke_with_contract,
+    first_interrupt_payload,
+    interrupt_payloads_from_exception,
+    normalize_invoke_result,
+)
 
 
 class SmartEngagementUseCase:
@@ -116,6 +123,7 @@ class SmartEngagementUseCase:
         self._store = store
         self._checkpoint_factory = checkpoint_factory
         self._graph_lock = asyncio.Lock()
+        self._version_strategy = DEFAULT_LANGGRAPH_VERSION_STRATEGY
 
         if checkpoint_factory is None:
             # Eager path: caller supplied a pre-created checkpointer (tests, MemorySaver)
@@ -226,10 +234,14 @@ class SmartEngagementUseCase:
         }
 
         try:
-            result = await self.graph.ainvoke(initial_state, config=config)
+            raw_result = await ainvoke_with_contract(
+                self.graph,
+                initial_state,
+                config=config,
+                strategy=self._version_strategy,
+            )
         except Exception as e:
-            # Check if this is an interrupt (LangGraph raises GraphInterrupt)
-            interrupt_payload = _extract_interrupt_payload(e)
+            interrupt_payload = first_interrupt_payload(interrupt_payloads_from_exception(e))
             if interrupt_payload is not None:
                 trail = await self._recover_audit_trail(thread_id)
                 return {
@@ -250,20 +262,20 @@ class SmartEngagementUseCase:
                 "audit_trail": trail,
             }
 
-        # Check if graph paused at interrupt (returned state with __interrupt__ key)
-        if isinstance(result, dict) and "__interrupt__" in result:
-            interrupt_data = result["__interrupt__"]
-            payload = interrupt_data[0].value if interrupt_data else {}
+        result = normalize_invoke_result(raw_result)
+        payload = first_interrupt_payload(result.interrupt_payloads)
+        if payload is not None:
+            value = result.value if isinstance(result.value, dict) else {}
             return {
                 "mode": execution_mode,
                 "status": "interrupted",
                 "interrupted": True,
                 "interrupt_payload": payload,
                 "thread_id": thread_id,
-                "audit_trail": result.get("audit_trail", []),
+                "audit_trail": value.get("audit_trail", []),
             }
 
-        return self._format_response(result, execution_mode, thread_id)
+        return self._format_response(result.value, execution_mode, thread_id)
 
     async def resume(
         self,
@@ -288,12 +300,14 @@ class SmartEngagementUseCase:
         config = {"configurable": {"thread_id": thread_id}}
 
         try:
-            result = await self.graph.ainvoke(
+            raw_result = await ainvoke_with_contract(
+                self.graph,
                 Command(resume=decision),
                 config=config,
+                strategy=self._version_strategy,
             )
         except Exception as e:
-            interrupt_payload = _extract_interrupt_payload(e)
+            interrupt_payload = first_interrupt_payload(interrupt_payloads_from_exception(e))
             if interrupt_payload is not None:
                 trail = await self._recover_audit_trail(thread_id)
                 return {
@@ -314,8 +328,21 @@ class SmartEngagementUseCase:
                 "audit_trail": trail,
             }
 
-        mode = result.get("mode", "execute") if isinstance(result, dict) else "execute"
-        return self._format_response(result, mode, thread_id)
+        result = normalize_invoke_result(raw_result)
+        payload = first_interrupt_payload(result.interrupt_payloads)
+        if payload is not None:
+            value = result.value if isinstance(result.value, dict) else {}
+            return {
+                "mode": "execute",
+                "status": "interrupted",
+                "interrupted": True,
+                "interrupt_payload": payload,
+                "thread_id": thread_id,
+                "audit_trail": value.get("audit_trail", []),
+            }
+
+        mode = result.value.get("mode", "execute") if isinstance(result.value, dict) else "execute"
+        return self._format_response(result.value, mode, thread_id)
 
     async def _recover_audit_trail(self, thread_id: str) -> list:
         """Best-effort recovery of audit trail from the audit log port."""
@@ -378,25 +405,3 @@ class SmartEngagementUseCase:
             response["execution"] = result
 
         return response
-
-
-def _extract_interrupt_payload(exc: Exception) -> dict | None:
-    """Extract interrupt payload from LangGraph GraphInterrupt exception.
-
-    Returns the interrupt value if exc is a GraphInterrupt, else None.
-    """
-    # LangGraph raises GraphInterrupt when interrupt() is called
-    exc_type = type(exc).__name__
-    if "GraphInterrupt" in exc_type or "Interrupt" in exc_type:
-        # The interrupt value is typically stored in exc.args or exc.value
-        args = getattr(exc, "args", ())
-        if args:
-            first = args[0]
-            # LangGraph wraps interrupt payload in a list of Interrupt objects
-            if isinstance(first, (list, tuple)) and first:
-                item = first[0]
-                if hasattr(item, "value"):
-                    return item.value
-                return item
-            return first
-    return None
