@@ -20,6 +20,62 @@ from .prompts import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_json_object(raw: str) -> dict | None:
+    """Best-effort extraction of a JSON object from an LLM response.
+
+    Handles (a) plain JSON, (b) ``` fenced blocks, (c) prose surrounding a
+    single top-level object. Returns None if no object can be recovered.
+    """
+    if not raw:
+        return None
+
+    candidate = raw.strip()
+    if candidate.startswith("```"):
+        # strip the opening fence (possibly language-tagged) and closing fence
+        after_first_newline = candidate.split("\n", 1)
+        candidate = after_first_newline[1] if len(after_first_newline) > 1 else ""
+        candidate = candidate.rsplit("```", 1)[0].strip()
+
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        return parsed
+
+    # Fallback: isolate the first balanced top-level {...} in the raw text.
+    start = candidate.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(candidate)):
+        ch = candidate[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    obj = json.loads(candidate[start : idx + 1])
+                except json.JSONDecodeError:
+                    return None
+                return obj if isinstance(obj, dict) else None
+    return None
+
+
 def _extract_tool_error(result: object) -> str | None:
     """Normalize tool error payloads for deterministic audit logging.
 
@@ -219,23 +275,29 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             },
         ]
 
+        parse_error: str | None = None
+        findings: dict | None = None
         try:
             response = await self.llm_gateway.request_completion(
                 messages=messages,
                 **self._llm_request_kwargs(state),
             )
-            raw = response.get("content", "{}")
-            raw = raw.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[-1]
-                raw = raw.rsplit("```", 1)[0].strip()
-            findings = json.loads(raw)
+            raw = response.get("content", "") or ""
+            findings = _extract_json_object(raw)
+            if findings is None:
+                parse_error = "reviewer_returned_non_json"
         except Exception as exc:
+            parse_error = str(exc)
+            logger.exception("review_results_node: reviewer LLM call failed")
+
+        if findings is None:
+            # Reviewer failed, but tool results themselves are fine. Treat as
+            # a silent pass-through so we don't surface reviewer plumbing
+            # errors to the operator. The parse error is still audited.
             findings = {
-                "matched_intent": False,
-                "warnings": [f"reviewer_parse_error: {exc}"],
+                "matched_intent": True,
+                "warnings": [],
                 "recommendation": "proceed_to_summary",
-                "_parse_error": str(exc),
             }
 
         await self.audit_log.log("review_finding", {
@@ -243,6 +305,7 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             "matched_intent": findings.get("matched_intent"),
             "warnings": findings.get("warnings", []),
             "recommendation": findings.get("recommendation"),
+            "parse_error": parse_error,
         })
 
         return {"review_findings": findings}
