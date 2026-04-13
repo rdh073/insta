@@ -211,6 +211,22 @@ async def _restore_sessions(
     logger.info("session_restore.start count=%d", len(ids))
 
     async def _one(account_id: str) -> None:
+        def _maybe_with_failure(payload: dict, source) -> dict:
+            """Attach normalized failure fields from result objects when present."""
+            if source is None:
+                return payload
+            if isinstance(source, dict):
+                last_error = source.get("last_error")
+                last_error_code = source.get("last_error_code")
+            else:
+                last_error = getattr(source, "last_error", None)
+                last_error_code = getattr(source, "last_error_code", None)
+            if last_error is not None:
+                payload["last_error"] = last_error
+            if last_error_code is not None:
+                payload["last_error_code"] = last_error_code
+            return payload
+
         try:
             result = await asyncio.to_thread(relogin_fn, account_id)
             status = "active"
@@ -226,7 +242,13 @@ async def _restore_sessions(
                     status,
                 )
                 if event_bus:
-                    event_bus.publish("account_updated", {"id": account_id, "status": status})
+                    event_bus.publish(
+                        "account_updated",
+                        _maybe_with_failure(
+                            {"id": account_id, "status": status},
+                            result,
+                        ),
+                    )
                 return
 
             logger.info("session_restore.ok account_id=%s", account_id)
@@ -246,7 +268,17 @@ async def _restore_sessions(
                         status = status_lookup_fn(account_id) or "error"
                     except Exception:
                         status = "error"
-                event_bus.publish("account_updated", {"id": account_id, "status": status})
+                payload = {"id": account_id, "status": status}
+                failure = getattr(exc, "_instagram_failure", None)
+                if failure is not None:
+                    payload = _maybe_with_failure(
+                        payload,
+                        {
+                            "last_error": getattr(failure, "user_message", None),
+                            "last_error_code": getattr(failure, "code", None),
+                        },
+                    )
+                event_bus.publish("account_updated", payload)
 
     # Sequential with delay — avoids rate-limiting when restoring many accounts.
     for aid in ids:

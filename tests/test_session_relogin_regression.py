@@ -281,6 +281,27 @@ class _RecordingEventBus:
         self.events.append((event, dict(payload)))
 
 
+class _StubHydrateUseCases:
+    def __init__(
+        self,
+        *,
+        hydrate_result: dict | None,
+        client_exists: bool,
+        status: str,
+        account: dict,
+    ):
+        self._hydrate_result = hydrate_result
+        self.client_repo = SimpleNamespace(exists=lambda _account_id: client_exists)
+        self.status_repo = SimpleNamespace(get=lambda _account_id, _default=None: status)
+        self.account_repo = SimpleNamespace(get=lambda _account_id: dict(account))
+
+    def hydrate_account_profile(self, _account_id: str) -> dict | None:
+        return self._hydrate_result
+
+    def refresh_follower_counts(self, _account_id: str) -> dict | None:
+        return None
+
+
 @pytest.mark.asyncio
 async def test_startup_restore_uses_relogin_result_status_for_publish_and_hydration(monkeypatch):
     done_event = asyncio.Event()
@@ -324,6 +345,119 @@ async def test_startup_restore_uses_relogin_result_status_for_publish_and_hydrat
         ("account_updated", {"id": "acc-active", "status": "active"}),
         ("account_updated", {"id": "acc-2fa", "status": "2fa_required"}),
         ("account_updated", {"id": "acc-challenge", "status": "challenge"}),
+    ]
+    assert done_event.is_set() is True
+
+
+def test_hydrate_and_publish_failure_stream_includes_reason_and_code(monkeypatch):
+    event_bus = _RecordingEventBus()
+    monkeypatch.setattr(accounts_router_module, "account_event_bus", event_bus)
+    usecases = _StubHydrateUseCases(
+        hydrate_result=None,
+        client_exists=False,
+        status="challenge",
+        account={
+            "last_error": "Challenge required. Confirm in Instagram app.",
+            "last_error_code": "checkpoint_required",
+        },
+    )
+
+    accounts_router_module._hydrate_and_publish(usecases, "acc-1")
+
+    assert event_bus.events == [
+        (
+            "account_updated",
+            {
+                "id": "acc-1",
+                "status": "challenge",
+                "last_error": "Challenge required. Confirm in Instagram app.",
+                "last_error_code": "checkpoint_required",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_startup_restore_not_active_publish_includes_reason_and_code(monkeypatch):
+    done_event = asyncio.Event()
+    event_bus = _RecordingEventBus()
+
+    def relogin_fn(_account_id: str):
+        return AccountResponse(
+            id="acc-2fa",
+            username="bob",
+            status="2fa_required",
+            last_error="2FA required. Enter the code manually.",
+            last_error_code="two_factor_required",
+        )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(app_main.asyncio, "sleep", _no_sleep)
+
+    await _restore_sessions(
+        account_repo=_StubRestoreAccountRepo(["acc-2fa"]),
+        relogin_fn=relogin_fn,
+        done_event=done_event,
+        event_bus=event_bus,
+    )
+
+    assert event_bus.events == [
+        (
+            "account_updated",
+            {
+                "id": "acc-2fa",
+                "status": "2fa_required",
+                "last_error": "2FA required. Enter the code manually.",
+                "last_error_code": "two_factor_required",
+            },
+        )
+    ]
+    assert done_event.is_set() is True
+
+
+@pytest.mark.asyncio
+async def test_startup_restore_exception_publish_includes_structured_failure(monkeypatch):
+    done_event = asyncio.Event()
+    event_bus = _RecordingEventBus()
+    failure = InstagramFailure(
+        code="checkpoint_required",
+        family="challenge",
+        retryable=False,
+        requires_user_action=True,
+        user_message="Challenge required. Confirm in Instagram app.",
+        http_hint=403,
+    )
+
+    def relogin_fn(_account_id: str):
+        exc = RuntimeError("checkpoint")
+        exc._instagram_failure = failure  # type: ignore[attr-defined]
+        raise exc
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(app_main.asyncio, "sleep", _no_sleep)
+
+    await _restore_sessions(
+        account_repo=_StubRestoreAccountRepo(["acc-challenge"]),
+        relogin_fn=relogin_fn,
+        done_event=done_event,
+        event_bus=event_bus,
+        status_lookup_fn=lambda _account_id: "challenge",
+    )
+
+    assert event_bus.events == [
+        (
+            "account_updated",
+            {
+                "id": "acc-challenge",
+                "status": "challenge",
+                "last_error": "Challenge required. Confirm in Instagram app.",
+                "last_error_code": "checkpoint_required",
+            },
+        )
     ]
     assert done_event.is_set() is True
 

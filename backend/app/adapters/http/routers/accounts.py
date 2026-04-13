@@ -43,6 +43,25 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 logger = logging.getLogger(__name__)
 
 
+def _account_failure_stream_payload(usecases, account_id: str, status: str) -> dict:
+    """Build account_updated payload with persisted failure detail when present."""
+    payload: dict = {"id": account_id, "status": status}
+    repo = getattr(usecases, "account_repo", None)
+    if repo is None:
+        return payload
+
+    try:
+        account = repo.get(account_id) or {}
+    except Exception:
+        return payload
+
+    if (last_error := account.get("last_error")) is not None:
+        payload["last_error"] = last_error
+    if (last_error_code := account.get("last_error_code")) is not None:
+        payload["last_error_code"] = last_error_code
+    return payload
+
+
 def _hydrate_and_publish(usecases: "AccountAuthUseCases", account_id: str) -> None:
     """Fetch full profile (name, pic, followers, following) and push SSE events.
 
@@ -68,7 +87,8 @@ def _hydrate_and_publish(usecases: "AccountAuthUseCases", account_id: str) -> No
         # immediately so SSE reflects the canonical backend state.
         persisted_status = usecases.status_repo.get(account_id, "error")
         account_event_bus.publish(
-            "account_updated", {"id": account_id, "status": persisted_status}
+            "account_updated",
+            _account_failure_stream_payload(usecases, account_id, persisted_status),
         )
         return  # No point fetching follower counts if the session is dead.
 

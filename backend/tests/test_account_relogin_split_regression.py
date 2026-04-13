@@ -92,7 +92,12 @@ def test_relogin_account_passes_required_kwargs_and_returns_active():
     ]
     status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
     error_handler.handle.assert_not_called()
-    logger.log_event.assert_not_called()
+    logger.log_event.assert_called_once_with(
+        "acc-1",
+        "alice",
+        "relogin_success",
+        status="active",
+    )
 
 
 def test_relogin_account_uses_fresh_credentials_when_last_error_family_is_challenge():
@@ -114,7 +119,12 @@ def test_relogin_account_uses_fresh_credentials_when_last_error_family_is_challe
     assert instagram.calls[0]["mode"] is ReloginMode.FRESH_CREDENTIALS
     status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
     error_handler.handle.assert_not_called()
-    logger.log_event.assert_not_called()
+    logger.log_event.assert_called_once_with(
+        "acc-1",
+        "alice",
+        "relogin_success",
+        status="active",
+    )
 
 
 def test_relogin_account_attaches_structured_failure_and_sets_policy_status():
@@ -178,7 +188,12 @@ def test_relogin_account_enables_verify_session_for_restore_mode_when_policy_ena
     assert instagram.calls[0]["mode"] is ReloginMode.SESSION_RESTORE
     assert instagram.calls[0]["verify_session"] is True
     error_handler.handle.assert_not_called()
-    logger.log_event.assert_not_called()
+    logger.log_event.assert_called_once_with(
+        "acc-1",
+        "alice",
+        "relogin_success",
+        status="active",
+    )
     status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
 
 
@@ -200,7 +215,12 @@ def test_relogin_account_keeps_verify_session_disabled_when_policy_off():
     assert instagram.calls[0]["mode"] is ReloginMode.SESSION_RESTORE
     assert instagram.calls[0]["verify_session"] is False
     error_handler.handle.assert_not_called()
-    logger.log_event.assert_not_called()
+    logger.log_event.assert_called_once_with(
+        "acc-1",
+        "alice",
+        "relogin_success",
+        status="active",
+    )
     status_repo.set.assert_has_calls([call("acc-1", "logging_in"), call("acc-1", "active")])
 
 

@@ -28,10 +28,18 @@ export function formatRelativeTime(isoString: string | undefined): string | null
 
 export const AUDIT_META: Record<string, { label: string; color: string }> = {
   login_success:         { label: 'Login OK',         color: '#9ece6a' },
+  login_success_totp:    { label: 'Login OK (TOTP)',  color: '#9ece6a' },
   login_failed:          { label: 'Login failed',      color: '#f7768e' },
+  login_2fa_required:    { label: '2FA required',      color: '#e0af68' },
+  login_2fa_failed:      { label: '2FA failed',        color: '#f7768e' },
+  login_totp_auto_failed:{ label: 'Auto TOTP failed',  color: '#f7768e' },
   relogin_success:       { label: 'Relogin OK',        color: '#9ece6a' },
   relogin_failed:        { label: 'Relogin failed',    color: '#f7768e' },
   logout:                { label: 'Logout',            color: '#7f8bb3' },
+  totp_verified:         { label: 'TOTP verified',     color: '#9ece6a' },
+  totp_verification_failed: { label: 'TOTP failed',    color: '#f7768e' },
+  totp_enabled:          { label: 'TOTP enabled',      color: '#9ece6a' },
+  totp_disabled:         { label: 'TOTP disabled',     color: '#7f8bb3' },
   proxy_changed:         { label: 'Proxy changed',     color: '#7dcfff' },
   post_success:          { label: 'Post OK',           color: '#9ece6a' },
   post_failed:           { label: 'Post failed',       color: '#f7768e' },

@@ -117,6 +117,16 @@ class ReloginUseCases:
             last_error_family=None,
         )
 
+    def _log_relogin_success(self, account_id: str, username: str, status: str) -> None:
+        """Emit relogin success milestone for active completion."""
+        if status == "active":
+            self.logger.log_event(
+                account_id,
+                username,
+                "relogin_success",
+                status=status,
+            )
+
     def _mark_error(
         self,
         account_id: str,
@@ -184,11 +194,13 @@ class ReloginUseCases:
                     mode=mode,
                     verify_session=self._should_verify_session(mode),
                 )
+                resolved_status = result.get("status") or "active"
                 self.status_repo.set(account_id, "active")
                 self._mark_verified(account_id)
+                self._log_relogin_success(account_id, username, resolved_status)
                 return self._build_account_response(
                     account_id,
-                    status=result.get("status") or "active",
+                    status=resolved_status,
                 )
             except Exception as exc:
                 failure = self.error_handler.handle(
@@ -254,11 +266,13 @@ class ReloginUseCases:
                         mode=mode,
                         verify_session=self._should_verify_session(mode),
                     )
+                    resolved_status = result.get("status") or "active"
                     self.status_repo.set(account_id, "active")
                     self._mark_verified(account_id)
+                    self._log_relogin_success(account_id, username, resolved_status)
                     return self._build_account_response(
                         account_id,
-                        status=result.get("status") or "active",
+                        status=resolved_status,
                     )
                 except Exception as exc:
                     failure = self.error_handler.handle(
