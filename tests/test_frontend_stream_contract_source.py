@@ -31,3 +31,19 @@ def test_engage_slash_command_uses_stream_endpoints_and_resume_mapping():
     assert "editedCaption" in source
     assert "overridePolicy" in source
     assert "twoFaCode" in source
+
+
+def test_frontend_stream_consumers_handle_named_run_error_events():
+    files = [
+        "frontend/src/pages/LogStreamPage.tsx",
+        "frontend/src/features/accounts/hooks/useAccountEvents.ts",
+        "frontend/src/api/posts.ts",
+    ]
+    for path in files:
+        source = _read(path)
+        assert "addEventListener('run_error'" in source or 'addEventListener("run_error"' in source
+
+    # Ensure shared formatting/parsing helpers are used so diagnostics stay consistent.
+    assert "formatStreamRunError" in _read("frontend/src/pages/LogStreamPage.tsx")
+    assert "formatStreamRunError" in _read("frontend/src/features/accounts/hooks/useAccountEvents.ts")
+    assert "parseStreamRunError" in _read("frontend/src/api/posts.ts")

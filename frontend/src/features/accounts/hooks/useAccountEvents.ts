@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../../store/settings';
 import { useAccountStore } from '../../../store/accounts';
 import { buildSseUrl } from '../../../api/sse-token';
 import type { Account } from '../../../types';
+import { formatStreamRunError, parseStreamRunError } from '../../../lib/sse-run-error';
 
 interface AccountUpdatedEvent {
   type: 'account_updated';
@@ -36,7 +37,7 @@ const MAX_RETRIES = 10;
  * After exhausting retries, stops reconnecting and sets `connectionLost`
  * so the caller can display a banner.
  */
-export function useAccountEvents(): { connectionLost: boolean } {
+export function useAccountEvents(): { connectionLost: boolean; streamError: string | null } {
   const backendUrl = useSettingsStore((s) => s.backendUrl);
   const backendApiKey = useSettingsStore((s) => s.backendApiKey);
   const patchAccount = useAccountStore((s) => s.patchAccount);
@@ -44,11 +45,13 @@ export function useAccountEvents(): { connectionLost: boolean } {
   const mountedRef = useRef(true);
   const retryRef = useRef(0);
   const [connectionLost, setConnectionLost] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     retryRef.current = 0;
     setConnectionLost(false);
+    setStreamError(null);
     const apiBase = resolveApiBaseUrl(backendUrl);
 
     function connect() {
@@ -61,12 +64,26 @@ export function useAccountEvents(): { connectionLost: boolean } {
         const es = new EventSource(url);
         esRef.current = es;
 
-        es.onmessage = (evt) => {
-          retryRef.current = 0; // reset backoff on successful message
+        es.onopen = () => {
+          retryRef.current = 0;
           setConnectionLost(false);
+          setStreamError(null);
+        };
+
+        es.onmessage = (evt) => {
           try {
-            const data = JSON.parse(evt.data) as AccountUpdatedEvent;
+            const payload = JSON.parse(evt.data) as unknown;
+            const runError = parseStreamRunError(payload);
+            if (runError) {
+              setStreamError(formatStreamRunError(runError, 'Account event stream'));
+              setConnectionLost(true);
+              return;
+            }
+            const data = payload as AccountUpdatedEvent;
             if (data.type === 'account_updated' && data.id) {
+              retryRef.current = 0; // reset backoff on successful message
+              setConnectionLost(false);
+              setStreamError(null);
               const patch: Record<string, unknown> = {};
               if (data.status !== undefined) patch.status = data.status;
               const normalizedLastError = data.lastError ?? data.last_error ?? data.error;
@@ -89,6 +106,15 @@ export function useAccountEvents(): { connectionLost: boolean } {
             // malformed event — ignore silently
           }
         };
+
+        const runErrorListener: EventListener = (event) => {
+          const messageEvent = event as MessageEvent<string>;
+          const runError = parseStreamRunError(messageEvent.data);
+          if (!runError) return;
+          setStreamError(formatStreamRunError(runError, 'Account event stream'));
+          setConnectionLost(true);
+        };
+        es.addEventListener('run_error', runErrorListener);
 
         es.onerror = () => {
           es.close();
@@ -121,5 +147,5 @@ export function useAccountEvents(): { connectionLost: boolean } {
     };
   }, [backendUrl, backendApiKey, patchAccount]);
 
-  return { connectionLost };
+  return { connectionLost, streamError };
 }

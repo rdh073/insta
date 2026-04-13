@@ -9,10 +9,12 @@
 import { useEffect, useRef } from 'react';
 import { postsApi } from '../../../api/posts';
 import { usePostStore } from '../../../store/posts';
+import { formatStreamRunError } from '../../../lib/sse-run-error';
 
 export function usePostJobStream(forceConnect = false) {
   const jobs = usePostStore((s) => s.jobs);
   const setJobs = usePostStore((s) => s.setJobs);
+  const setStreamError = usePostStore((s) => s.setStreamError);
   const cleanupRef = useRef<(() => void) | null>(null);
   const retryRef = useRef(0);
   const mountedRef = useRef(true);
@@ -30,6 +32,7 @@ export function usePostJobStream(forceConnect = false) {
       cleanupRef.current?.();
       cleanupRef.current = null;
       retryRef.current = 0;
+      setStreamError(null);
       return;
     }
 
@@ -40,6 +43,7 @@ export function usePostJobStream(forceConnect = false) {
       postsApi.streamJobs(
         (updatedJobs) => {
           setJobs(updatedJobs);
+          setStreamError(null);
           retryRef.current = 0;
         },
         (_err) => {
@@ -48,6 +52,9 @@ export function usePostJobStream(forceConnect = false) {
           setTimeout(() => {
             if (mountedRef.current && cleanupRef.current !== undefined) connect();
           }, delay);
+        },
+        (runError) => {
+          setStreamError(formatStreamRunError(runError, 'Post job stream'));
         },
       ).then((cleanup) => {
         if (!mountedRef.current) {
@@ -73,5 +80,5 @@ export function usePostJobStream(forceConnect = false) {
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
-  }, [shouldConnect, setJobs]);
+  }, [setJobs, setStreamError, shouldConnect]);
 }

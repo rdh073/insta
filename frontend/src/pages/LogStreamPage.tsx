@@ -16,6 +16,7 @@ import { useSettingsStore } from '../store/settings';
 import { useLogStreamStore, nextLogId } from '../store/logStream';
 import type { LogRecord } from '../store/logStream';
 import { cn } from '../lib/cn';
+import { formatStreamRunError, parseStreamRunError, toStreamRunError } from '../lib/sse-run-error';
 
 // ─── Level config ─────────────────────────────────────────────────────────────
 
@@ -132,6 +133,21 @@ export function LogStreamPage() {
 
   // ── SSE connection ────────────────────────────────────────────────────────
 
+  const appendRunErrorLine = useCallback(
+    (payload: unknown) => {
+      const runError = toStreamRunError(payload);
+      addLine({
+        id: nextLogId(),
+        ts: new Date().toISOString(),
+        level: 'ERROR',
+        levelno: 40,
+        name: 'stream.logs',
+        msg: formatStreamRunError(runError, 'Log stream'),
+      });
+    },
+    [addLine],
+  );
+
   const connect = useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
@@ -153,12 +169,26 @@ export function LogStreamPage() {
         es.onmessage = (evt) => {
           if (pausedRef.current) return;
           try {
-            const raw = JSON.parse(evt.data as string) as Omit<LogRecord, 'id'>;
+            const payload = JSON.parse(evt.data as string) as unknown;
+            const runError = parseStreamRunError(payload);
+            if (runError) {
+              appendRunErrorLine(runError);
+              return;
+            }
+            const raw = payload as Omit<LogRecord, 'id'>;
             addLine({ ...raw, id: nextLogId() });
           } catch {
             // malformed — ignore
           }
         };
+
+        const runErrorListener: EventListener = (event) => {
+          if (pausedRef.current) return;
+          const messageEvent = event as MessageEvent<string>;
+          setConnected(false);
+          appendRunErrorLine(messageEvent.data);
+        };
+        es.addEventListener('run_error', runErrorListener);
 
         es.onerror = () => {
           es.close();
@@ -177,7 +207,7 @@ export function LogStreamPage() {
         setTimeout(() => { if (mountedRef.current) connect(); }, delay);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backendUrl, backendApiKey]);
+  }, [appendRunErrorLine, backendUrl, backendApiKey, addLine, setConnected]);
 
   useEffect(() => {
     mountedRef.current = true;

@@ -43,7 +43,7 @@ const routeMeta: Array<{
 export function AppLayout() {
   const location = useLocation();
   const setAccounts = useAccountStore((state) => state.setAccounts);
-  const { connectionLost } = useAccountEvents();
+  const { connectionLost, streamError } = useAccountEvents();
   const setJobs = usePostStore((state) => state.setJobs);
   const jobs = usePostStore((state) => state.jobs);
   const backendUrl = useSettingsStore((state) => state.backendUrl);
@@ -217,14 +217,14 @@ export function AppLayout() {
             </div>
           </header>
 
-          {connectionLost && (
+          {(connectionLost || streamError) && (
             <div
               role="alert"
               className="flex shrink-0 items-center gap-2 border-b border-[var(--color-error-border)] bg-[var(--color-error-bg)] px-4 py-2 text-sm text-[var(--color-error-fg)]"
             >
               <AlertTriangle className="h-4 w-4 shrink-0" />
               <span>
-                Live connection lost — account updates may be stale.{' '}
+                {streamError ? `${streamError}. ` : 'Live connection lost — account updates may be stale. '}
                 <button
                   type="button"
                   onClick={() => window.location.reload()}

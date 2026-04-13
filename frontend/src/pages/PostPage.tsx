@@ -159,6 +159,7 @@ function TemplatePickerModal({
 export function PostPage() {
   const accounts = useAccountStore((s) => s.accounts);
   const jobs = usePostStore((s) => s.jobs);
+  const streamError = usePostStore((s) => s.streamError);
   const addJob = usePostStore((s) => s.addJob);
   const [caption, setCaption] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -284,6 +285,15 @@ export function PostPage() {
           <HeaderStat label="Queued Jobs" value={jobs.length} tone="violet" />
         </div>
       </PageHeader>
+
+      {streamError && (
+        <div
+          role="alert"
+          className="rounded-[1rem] border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.08)] px-4 py-3 text-sm text-[#ffbfd0]"
+        >
+          {streamError}
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
         <div className="space-y-6">

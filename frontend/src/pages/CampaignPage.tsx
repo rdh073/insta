@@ -298,6 +298,7 @@ function JobCard({ job, onDelete }: { job: PostJob; onDelete: (id: string) => vo
 
 export function CampaignPage() {
   const jobs      = usePostStore((s) => s.jobs);
+  const streamError = usePostStore((s) => s.streamError);
   const removeJob = usePostStore((s) => s.removeJob);
   const filter    = usePostStore((s) => s.campaignFilter);
   const setFilter = usePostStore((s) => s.setCampaignFilter);
@@ -332,6 +333,15 @@ export function CampaignPage() {
           <HeaderStat label="Failed / Partial" value={failedJobs} tone="rose" />
         </div>
       </PageHeader>
+
+      {streamError && (
+        <div
+          role="alert"
+          className="rounded-[1rem] border border-[rgba(247,118,142,0.24)] bg-[rgba(247,118,142,0.08)] px-4 py-3 text-sm text-[#ffbfd0]"
+        >
+          {streamError}
+        </div>
+      )}
 
       {/* Status filter chips */}
       <div className="flex flex-wrap gap-2">

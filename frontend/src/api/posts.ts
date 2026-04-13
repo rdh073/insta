@@ -3,6 +3,11 @@ import { resolveApiBaseUrl } from '../lib/api-base';
 import { useSettingsStore } from '../store/settings';
 import { buildSseUrl } from './sse-token';
 import type { PostJob } from '../types';
+import {
+  parseStreamRunError,
+  toStreamRunError,
+  type StreamRunErrorEvent,
+} from '../lib/sse-run-error';
 
 export const postsApi = {
   list: () => api.get<PostJob[]>('/posts').then((r) => r.data),
@@ -14,6 +19,7 @@ export const postsApi = {
   streamJobs: async (
     onUpdate: (jobs: PostJob[]) => void,
     onError?: (err: Event) => void,
+    onRunError?: (error: StreamRunErrorEvent) => void,
   ): Promise<() => void> => {
     const { backendUrl } = useSettingsStore.getState();
     const baseUrl = resolveApiBaseUrl(backendUrl);
@@ -22,18 +28,33 @@ export const postsApi = {
 
     source.onmessage = (event) => {
       try {
-        const jobs: PostJob[] = JSON.parse(event.data);
+        const payload = JSON.parse(event.data) as unknown;
+        const runError = parseStreamRunError(payload);
+        if (runError) {
+          onRunError?.(runError);
+          return;
+        }
+        const jobs = payload as PostJob[];
         onUpdate(jobs);
       } catch {
         // skip malformed data
       }
     };
 
+    const runErrorListener: EventListener = (event) => {
+      const messageEvent = event as MessageEvent<string>;
+      onRunError?.(toStreamRunError(messageEvent.data));
+    };
+    source.addEventListener('run_error', runErrorListener);
+
     source.onerror = (event) => {
       onError?.(event);
     };
 
-    return () => source.close();
+    return () => {
+      source.removeEventListener('run_error', runErrorListener);
+      source.close();
+    };
   },
 
   create: (data: {
