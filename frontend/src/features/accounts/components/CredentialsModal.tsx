@@ -3,6 +3,35 @@ import { CheckCircle, Copy, Eye, EyeOff, Loader } from 'lucide-react';
 import { accountsApi } from '../../../api/accounts';
 import { Modal } from '../../../components/ui/Modal';
 
+async function copyToClipboard(value: string): Promise<boolean> {
+  // Modern API — only available in secure contexts (HTTPS/localhost)
+  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // fall through to legacy path
+    }
+  }
+  // Legacy fallback for plain-HTTP deployments
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function CredentialField({ label, value }: { label: string; value: string }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -10,9 +39,11 @@ function CredentialField({ label, value }: { label: string; value: string }) {
 
   async function handleCopy() {
     if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    const ok = await copyToClipboard(value);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
   }
 
   return (
