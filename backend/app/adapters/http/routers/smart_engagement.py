@@ -230,10 +230,50 @@ class ApprovalStatusResponse(BaseModel):
 # Helpers
 # =============================================================================
 
+def _as_record(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_non_empty_string(value: Any) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
 def _format_response(result: dict) -> SmartEngagementResponse:
     """Convert use case result dict to SmartEngagementResponse with UI contract fields."""
+    interrupt_payload = _as_record(result.get("interrupt_payload"))
+
     # Build structured recommendation
-    rec_dict = result.get("recommendation")
+    rec_dict = _as_record(result.get("recommendation"))
+    if not rec_dict and interrupt_payload:
+        draft_action = _as_record(interrupt_payload.get("draft_action"))
+        draft_payload = _as_record(interrupt_payload.get("draft_payload"))
+        rec_dict = {
+            "target": (
+                _as_non_empty_string(interrupt_payload.get("target"))
+                or _as_non_empty_string(draft_action.get("target_id"))
+            ),
+            "action_type": _as_non_empty_string(draft_action.get("action_type")),
+            "content": (
+                _as_non_empty_string(draft_action.get("content"))
+                or _as_non_empty_string(interrupt_payload.get("draft_content"))
+                or _as_non_empty_string(draft_payload.get("content"))
+            ),
+            "reasoning": _as_non_empty_string(interrupt_payload.get("relevance_reason")),
+            "expected_outcome": None,
+        }
+        if not any(value is not None for value in rec_dict.values()):
+            rec_dict = {}
+
     recommendation = None
     if rec_dict:
         recommendation = RecommendationDetail(
@@ -245,7 +285,25 @@ def _format_response(result: dict) -> SmartEngagementResponse:
         )
 
     # Build structured risk
-    risk_dict = result.get("risk_assessment")
+    risk_dict = _as_record(result.get("risk_assessment"))
+    if not risk_dict and interrupt_payload:
+        level = _as_non_empty_string(interrupt_payload.get("risk_level"))
+        reasoning = _as_non_empty_string(interrupt_payload.get("risk_reason"))
+        rule_hits = _as_string_list(interrupt_payload.get("rule_hits"))
+        if level or reasoning or rule_hits:
+            requires_approval_raw = interrupt_payload.get("requires_approval")
+            requires_approval = (
+                requires_approval_raw
+                if isinstance(requires_approval_raw, bool)
+                else True
+            )
+            risk_dict = {
+                "level": level,
+                "rule_hits": rule_hits,
+                "reasoning": reasoning,
+                "requires_approval": requires_approval,
+            }
+
     risk = None
     if risk_dict:
         risk = RiskDetail(
@@ -274,7 +332,7 @@ def _format_response(result: dict) -> SmartEngagementResponse:
         status=result.get("status", "unknown"),
         thread_id=result.get("thread_id"),
         interrupted=result.get("interrupted", False),
-        interrupt_payload=result.get("interrupt_payload"),
+        interrupt_payload=interrupt_payload or None,
         outcome_reason=result.get("outcome_reason"),
         recommendation=recommendation,
         risk=risk,

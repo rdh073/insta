@@ -322,15 +322,17 @@ class SmartEngagementUseCase:
         except Exception as e:
             interrupt_payload = first_interrupt_payload(interrupt_payloads_from_exception(e))
             if interrupt_payload is not None:
-                trail = await self._recover_audit_trail(thread_id)
-                return {
-                    "mode": execution_mode,
-                    "status": "interrupted",
-                    "interrupted": True,
-                    "interrupt_payload": interrupt_payload,
-                    "thread_id": thread_id,
-                    "audit_trail": trail,
-                }
+                state = await self._recover_graph_state(config)
+                trail = state.get("audit_trail", []) if isinstance(state, dict) else []
+                if not trail:
+                    trail = await self._recover_audit_trail(thread_id)
+                return self._format_interrupted_response(
+                    mode=execution_mode,
+                    thread_id=thread_id,
+                    interrupt_payload=interrupt_payload,
+                    state=state if isinstance(state, dict) else {},
+                    audit_trail=trail,
+                )
             logger.exception("Smart engagement run failed thread=%s goal=%r", thread_id, goal)
             trail = await self._recover_audit_trail(thread_id)
             return {
@@ -345,14 +347,13 @@ class SmartEngagementUseCase:
         payload = first_interrupt_payload(result.interrupt_payloads)
         if payload is not None:
             value = result.value if isinstance(result.value, dict) else {}
-            return {
-                "mode": execution_mode,
-                "status": "interrupted",
-                "interrupted": True,
-                "interrupt_payload": payload,
-                "thread_id": thread_id,
-                "audit_trail": value.get("audit_trail", []),
-            }
+            return self._format_interrupted_response(
+                mode=execution_mode,
+                thread_id=thread_id,
+                interrupt_payload=payload,
+                state=value,
+                audit_trail=value.get("audit_trail", []),
+            )
 
         return self._format_response(result.value, execution_mode, thread_id)
 
@@ -420,15 +421,18 @@ class SmartEngagementUseCase:
         except Exception as e:
             interrupt_payload = first_interrupt_payload(interrupt_payloads_from_exception(e))
             if interrupt_payload is not None:
-                trail = await self._recover_audit_trail(thread_id)
-                return {
-                    "mode": "execute",
-                    "status": "interrupted",
-                    "interrupted": True,
-                    "interrupt_payload": interrupt_payload,
-                    "thread_id": thread_id,
-                    "audit_trail": trail,
-                }
+                state = await self._recover_graph_state(config)
+                trail = state.get("audit_trail", []) if isinstance(state, dict) else []
+                if not trail:
+                    trail = await self._recover_audit_trail(thread_id)
+                mode = state.get("mode", "execute") if isinstance(state, dict) else "execute"
+                return self._format_interrupted_response(
+                    mode=mode,
+                    thread_id=thread_id,
+                    interrupt_payload=interrupt_payload,
+                    state=state if isinstance(state, dict) else {},
+                    audit_trail=trail,
+                )
             logger.exception("Smart engagement resume failed thread=%s", thread_id)
             trail = await self._recover_audit_trail(thread_id)
             return {
@@ -443,14 +447,14 @@ class SmartEngagementUseCase:
         payload = first_interrupt_payload(result.interrupt_payloads)
         if payload is not None:
             value = result.value if isinstance(result.value, dict) else {}
-            return {
-                "mode": "execute",
-                "status": "interrupted",
-                "interrupted": True,
-                "interrupt_payload": payload,
-                "thread_id": thread_id,
-                "audit_trail": value.get("audit_trail", []),
-            }
+            mode = value.get("mode", "execute")
+            return self._format_interrupted_response(
+                mode=mode,
+                thread_id=thread_id,
+                interrupt_payload=payload,
+                state=value,
+                audit_trail=value.get("audit_trail", []),
+            )
 
         mode = result.value.get("mode", "execute") if isinstance(result.value, dict) else "execute"
         return self._format_response(result.value, mode, thread_id)
@@ -642,6 +646,108 @@ class SmartEngagementUseCase:
         if isinstance(value, (str, int, float, bool, type(None))):
             return value
         return str(value)
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _as_string(value: Any) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                return stripped
+        return None
+
+    @staticmethod
+    def _as_string_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+    def _recommendation_from_interrupt_payload(
+        self,
+        interrupt_payload: Any,
+    ) -> dict[str, Any] | None:
+        payload = self._as_dict(interrupt_payload)
+        if not payload:
+            return None
+
+        draft_action = self._as_dict(payload.get("draft_action"))
+        draft_payload = self._as_dict(payload.get("draft_payload"))
+        recommendation = {
+            "target": (
+                self._as_string(payload.get("target"))
+                or self._as_string(draft_action.get("target_id"))
+            ),
+            "action_type": self._as_string(draft_action.get("action_type")),
+            "content": (
+                self._as_string(draft_action.get("content"))
+                or self._as_string(payload.get("draft_content"))
+                or self._as_string(draft_payload.get("content"))
+            ),
+            "reasoning": self._as_string(payload.get("relevance_reason")),
+            "expected_outcome": None,
+        }
+        if not any(value is not None for value in recommendation.values()):
+            return None
+        return recommendation
+
+    def _risk_assessment_from_interrupt_payload(
+        self,
+        interrupt_payload: Any,
+    ) -> dict[str, Any] | None:
+        payload = self._as_dict(interrupt_payload)
+        if not payload:
+            return None
+
+        level = self._as_string(payload.get("risk_level"))
+        reasoning = self._as_string(payload.get("risk_reason"))
+        rule_hits = self._as_string_list(payload.get("rule_hits"))
+        if level is None and reasoning is None and len(rule_hits) == 0:
+            return None
+
+        requires_approval_raw = payload.get("requires_approval")
+        requires_approval = (
+            requires_approval_raw
+            if isinstance(requires_approval_raw, bool)
+            else True
+        )
+        return {
+            "level": level,
+            "rule_hits": rule_hits,
+            "reasoning": reasoning,
+            "requires_approval": requires_approval,
+        }
+
+    def _format_interrupted_response(
+        self,
+        *,
+        mode: str,
+        thread_id: str,
+        interrupt_payload: Any,
+        state: SmartEngagementState | dict[str, Any] | None,
+        audit_trail: list | None,
+    ) -> dict[str, Any]:
+        state_dict = state if isinstance(state, dict) else {}
+        response = self._format_response(state_dict, mode, thread_id)
+        response["status"] = "interrupted"
+        response["interrupted"] = True
+        response["interrupt_payload"] = interrupt_payload
+        response["thread_id"] = thread_id
+        response["audit_trail"] = audit_trail or state_dict.get("audit_trail", [])
+
+        if "recommendation" not in response:
+            recommendation = self._recommendation_from_interrupt_payload(interrupt_payload)
+            if recommendation is not None:
+                response["recommendation"] = recommendation
+
+        if "risk_assessment" not in response:
+            risk_assessment = self._risk_assessment_from_interrupt_payload(interrupt_payload)
+            if risk_assessment is not None:
+                response["risk_assessment"] = risk_assessment
+
+        return response
 
     def _format_response(
         self,

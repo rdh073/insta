@@ -288,7 +288,20 @@ async def test_operator_resume_detects_legacy_stream_interrupt():
 
 @pytest.mark.asyncio
 async def test_smart_engagement_run_detects_v2_invoke_interrupt():
-    payload = {"approval_id": "apr_3", "decision_options": ["approved", "rejected"]}
+    payload = {
+        "approval_id": "apr_3",
+        "decision_options": ["approved", "rejected"],
+        "target": "user_123",
+        "draft_action": {
+            "action_type": "follow",
+            "target_id": "user_123",
+            "content": "",
+        },
+        "relevance_reason": "Audience overlap is high",
+        "risk_level": "medium",
+        "risk_reason": "Write action requires approval",
+        "rule_hits": ["write_action_requires_approval"],
+    }
     graph = _FakeSmartGraph(
         results=[
             _FakeGraphOutput(
@@ -310,12 +323,32 @@ async def test_smart_engagement_run_detects_v2_invoke_interrupt():
     assert result["interrupted"] is True
     assert result["interrupt_payload"] == payload
     assert result["thread_id"] == "t-se-run-v2"
+    assert result["recommendation"]["target"] == "user_123"
+    assert result["recommendation"]["action_type"] == "follow"
+    assert result["recommendation"]["reasoning"] == "Audience overlap is high"
+    assert result["risk_assessment"]["level"] == "medium"
+    assert result["risk_assessment"]["reasoning"] == "Write action requires approval"
+    assert result["risk_assessment"]["rule_hits"] == ["write_action_requires_approval"]
+    assert result["risk_assessment"]["requires_approval"] is True
     assert graph.calls[0]["version"] == "v2"
 
 
 @pytest.mark.asyncio
 async def test_smart_engagement_resume_detects_legacy_invoke_interrupt():
-    payload = {"approval_id": "apr_4", "decision_options": ["approved", "rejected"]}
+    payload = {
+        "approval_id": "apr_4",
+        "decision_options": ["approved", "rejected"],
+        "target": "post_444",
+        "draft_action": {
+            "action_type": "comment",
+            "target_id": "post_444",
+            "content": "Great post!",
+        },
+        "relevance_reason": "Recent post matches campaign goal",
+        "risk_level": "medium",
+        "risk_reason": "Comment action is write-sensitive",
+        "rule_hits": ["write_action"],
+    }
     graph = _FakeSmartGraph(
         results=[
             {
@@ -336,6 +369,12 @@ async def test_smart_engagement_resume_detects_legacy_invoke_interrupt():
     assert result["interrupted"] is True
     assert result["interrupt_payload"] == payload
     assert result["thread_id"] == "t-se-resume-legacy"
+    assert result["recommendation"]["target"] == "post_444"
+    assert result["recommendation"]["action_type"] == "comment"
+    assert result["recommendation"]["content"] == "Great post!"
+    assert result["risk_assessment"]["level"] == "medium"
+    assert result["risk_assessment"]["reasoning"] == "Comment action is write-sensitive"
+    assert result["risk_assessment"]["rule_hits"] == ["write_action"]
 
 
 @pytest.mark.asyncio

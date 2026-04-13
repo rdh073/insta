@@ -72,10 +72,75 @@ export interface ResumeRequest {
   content?: string;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function hasRecommendationValue(value: RecommendationDetail): boolean {
+  return Boolean(value.target || value.action_type || value.draft_content || value.reasoning || value.expected_outcome);
+}
+
+function hasRiskValue(value: RiskDetail): boolean {
+  return Boolean(value.level || value.reasoning || value.rule_hits.length > 0);
+}
+
+function normalizeInterruptFallback(response: SmartEngagementResponse): SmartEngagementResponse {
+  const payload = asRecord(response.interrupt_payload);
+  if (!payload) return response;
+
+  const draftAction = asRecord(payload.draft_action);
+  const draftPayload = asRecord(payload.draft_payload);
+
+  const recommendation =
+    response.recommendation ??
+    (() => {
+      const fallback: RecommendationDetail = {
+        target: asString(payload.target) ?? asString(draftAction?.target_id),
+        action_type: asString(draftAction?.action_type),
+        draft_content: asString(draftAction?.content) ?? asString(payload.draft_content) ?? asString(draftPayload?.content),
+        reasoning: asString(payload.relevance_reason),
+        expected_outcome: undefined,
+      };
+      return hasRecommendationValue(fallback) ? fallback : undefined;
+    })();
+
+  const risk =
+    response.risk ??
+    (() => {
+      const requiresApprovalRaw = payload.requires_approval;
+      const fallback: RiskDetail = {
+        level: asString(payload.risk_level),
+        rule_hits: asStringArray(payload.rule_hits),
+        reasoning: asString(payload.risk_reason),
+        requires_approval: typeof requiresApprovalRaw === 'boolean' ? requiresApprovalRaw : true,
+      };
+      return hasRiskValue(fallback) ? fallback : undefined;
+    })();
+
+  if (!recommendation && !risk) return response;
+  return {
+    ...response,
+    recommendation,
+    risk,
+  };
+}
+
 export const smartEngagementApi = {
   async recommend(req: SmartEngagementRequest): Promise<SmartEngagementResponse> {
     const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/recommend', req);
-    return res.data;
+    return normalizeInterruptFallback(res.data);
   },
 
   async resume(req: ResumeRequest): Promise<SmartEngagementResponse> {
@@ -83,6 +148,6 @@ export const smartEngagementApi = {
       ...req,
       decision: DECISION_TO_CANONICAL[req.decision],
     });
-    return res.data;
+    return normalizeInterruptFallback(res.data);
   },
 };

@@ -153,6 +153,16 @@ class _FakeSmartEngagementExec:
                 "approval_id": "apr_test",
                 "thread_id": "fake-thread-exec",
                 "account_id": "acc_1",
+                "target": "target_exec",
+                "draft_action": {
+                    "action_type": "comment",
+                    "target_id": "target_exec",
+                    "content": "Looks great!",
+                },
+                "relevance_reason": "Target recently posted in requested niche",
+                "risk_level": "medium",
+                "risk_reason": "Write action requires explicit approval",
+                "rule_hits": ["write_action_requires_approval"],
                 "options": ["approve", "reject", "edit"],
             },
             "outcome_reason": None,
@@ -378,6 +388,25 @@ def test_recommend_execute_mode_allowed_with_flag(exec_client):
     body = response.json()
     # Fake exec use case returns interrupted=True
     assert body["interrupted"] is True
+
+
+def test_recommend_interrupt_projects_recommendation_and_risk_from_payload(exec_client):
+    """Interrupt response exposes top-level recommendation/risk even if use-case omitted them."""
+    response = exec_client.post("/api/ai/smart-engagement/recommend", json={
+        "execution_mode": "execute",
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["interrupted"] is True
+    assert body["recommendation"]["target"] == "target_exec"
+    assert body["recommendation"]["action_type"] == "comment"
+    assert body["recommendation"]["draft_content"] == "Looks great!"
+    assert body["recommendation"]["reasoning"] == "Target recently posted in requested niche"
+    assert body["risk"]["level"] == "medium"
+    assert body["risk"]["reasoning"] == "Write action requires explicit approval"
+    assert body["risk"]["rule_hits"] == ["write_action_requires_approval"]
+    assert body["risk"]["requires_approval"] is True
 
 
 # ===========================================================================
