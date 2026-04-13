@@ -227,6 +227,17 @@ async def test_read_only_run_emits_tool_result():
 
 
 @pytest.mark.asyncio
+async def test_read_only_run_node_updates_use_data_contract():
+    use_case, _, _ = _make_use_case(_read_only_llm_responses())
+    events = await _collect(use_case.run("show my accounts", thread_id="t-ro-node-contract"))
+
+    node_updates = _find_all(events, "node_update")
+    assert node_updates
+    assert all("data" in event for event in node_updates)
+    assert all("output" not in event for event in node_updates)
+
+
+@pytest.mark.asyncio
 async def test_read_only_run_emits_final_response():
     use_case, _, _ = _make_use_case(_read_only_llm_responses())
     events = await _collect(use_case.run("show my accounts", thread_id="t-ro-6"))

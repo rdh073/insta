@@ -18,6 +18,7 @@ from ai_copilot.application.campaign_monitor.ports import (
 )
 from ai_copilot.application.campaign_monitor.state import make_initial_state
 from ai_copilot.application.graphs.campaign_monitor import build_campaign_monitor_graph
+from ai_copilot.application.use_cases.stream_event_contract import emit_node_update
 
 
 class RunCampaignMonitorUseCase:
@@ -123,11 +124,7 @@ class RunCampaignMonitorUseCase:
                         }
                         return
 
-                    yield {
-                        "type": "node_update",
-                        "node": node_name,
-                        "data": _serializable(updates),
-                    }
+                    yield emit_node_update(node_name, updates)
 
             # Graph completed normally — emit final response
             # Read final state from checkpointer if available
@@ -193,14 +190,3 @@ class RunCampaignMonitorUseCase:
                 "run_id": thread_id,
                 "message": str(exc),
             }
-
-
-def _serializable(obj):
-    """Strip non-JSON-serializable items from node update dicts."""
-    if isinstance(obj, dict):
-        return {k: _serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_serializable(i) for i in obj]
-    if isinstance(obj, (str, int, float, bool, type(None))):
-        return obj
-    return str(obj)

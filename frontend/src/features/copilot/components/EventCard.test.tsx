@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { CopilotEvent } from '../../../api/operator-copilot';
-import { EventCard, normalizePolicyResultEvent } from './EventCard';
+import { EventCard, normalizeFinalResponseEvent, normalizePolicyResultEvent } from './EventCard';
 
 function renderEvent(event: CopilotEvent): string {
   return renderToStaticMarkup(<EventCard event={event} />);
@@ -73,5 +73,84 @@ describe('EventCard policy_result', () => {
 
     expect(html).toContain('2 proposed');
     expect(html).toContain('1 approved');
+  });
+});
+
+describe('EventCard final_response', () => {
+  it('renders content pipeline artifacts including job id and caption', () => {
+    const html = renderEvent({
+      type: 'final_response',
+      text: 'Content pipeline complete.',
+      stop_reason: 'scheduled',
+      job_id: 'job-content-001',
+      caption: 'Launch post caption #brand',
+    });
+
+    expect(html).toContain('status scheduled');
+    expect(html).toContain('job job-content-001');
+    expect(html).toContain('caption');
+    expect(html).toContain('Launch post caption #brand');
+  });
+
+  it('renders risk control policy and recheck metadata', () => {
+    const html = renderEvent({
+      type: 'final_response',
+      text: 'Risk control run complete.',
+      stop_reason: 'completed',
+      final_policy: 'cooldown',
+      recheck_risk_level: 'medium',
+    });
+
+    expect(html).toContain('policy cooldown');
+    expect(html).toContain('recheck risk medium');
+  });
+
+  it('renders campaign monitor follow-up references and summary metadata', () => {
+    const event: CopilotEvent = {
+      type: 'final_response',
+      text: 'Campaign monitor run complete.',
+      stop_reason: 'followup_created',
+      recommended_action: 'boost',
+      followup_job_id: 'followup-001',
+      campaign_summary: { completion_rate: 0.8, failed_jobs: 1 },
+    };
+    const html = renderEvent(event);
+    const normalized = normalizeFinalResponseEvent(event);
+
+    expect(html).toContain('follow-up followup-001');
+    expect(html).toContain('recommended_action');
+    expect(html).toContain('boost');
+    expect(html).toContain('campaign_summary');
+    expect(normalized.campaignSummary).toEqual({ completion_rate: 0.8, failed_jobs: 1 });
+  });
+
+  it('renders account recovery result metadata', () => {
+    const event: CopilotEvent = {
+      type: 'final_response',
+      text: 'Account recovery complete.',
+      stop_reason: 'recovered',
+      recovery_successful: true,
+      result: { method: 'two_fa', attempts: 1 },
+    };
+    const html = renderEvent(event);
+    const normalized = normalizeFinalResponseEvent(event);
+
+    expect(html).toContain('recovery ok');
+    expect(html).toContain('result_metadata');
+    expect(normalized.resultMetadata).toEqual({ method: 'two_fa', attempts: 1 });
+  });
+
+  it('normalizes payload fallback fields for final_response metadata', () => {
+    const normalized = normalizeFinalResponseEvent({
+      type: 'final_response',
+      text: 'Smart engagement run completed.',
+      payload: {
+        status: 'completed',
+        result: { execution: { success: true } },
+      },
+    });
+
+    expect(normalized.stopReason).toBe('completed');
+    expect(normalized.resultMetadata).toEqual({ execution: { success: true } });
   });
 });

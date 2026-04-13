@@ -20,6 +20,12 @@ export interface CopilotResumeRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * Stream event envelope across operator + slash-command workflows.
+ *
+ * Canonical node update contract:
+ * - `{ type: 'node_update', node: string, data: unknown }`
+ */
 export interface CopilotEvent {
   type:
     | 'run_start'

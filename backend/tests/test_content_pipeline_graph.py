@@ -91,6 +91,11 @@ def test_happy_path_approved_scheduled():
     types = [e["type"] for e in events]
     assert "approval_required" in types
 
+    node_updates = [event for event in events if event["type"] == "node_update"]
+    assert node_updates, "expected at least one node_update event"
+    assert all("data" in event for event in node_updates)
+    assert all("output" not in event for event in node_updates)
+
     # Resume approved
     async def resume():
         return await _collect(uc.resume(thread_id="t-happy", decision="approved"))

@@ -24,12 +24,40 @@ export interface NormalizedPolicyResultEvent {
   hasLegacyPayload: boolean;
 }
 
+export interface NormalizedFinalResponseEvent {
+  stopReason: string | null;
+  jobId: string | null;
+  followupJobId: string | null;
+  finalPolicy: string | null;
+  recheckRiskLevel: string | null;
+  recommendedAction: string | null;
+  recoverySuccessful: boolean | null;
+  caption: string | null;
+  resultMetadata: unknown | null;
+  campaignSummary: unknown | null;
+}
+
 function asStringRecord(value: unknown): Record<string, string> {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.entries(value).reduce<Record<string, string>>((acc, [key, entryValue]) => {
     if (typeof entryValue === 'string') acc[key] = entryValue;
     return acc;
   }, {});
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
 }
 
 function asUnknownArray(value: unknown): unknown[] | null {
@@ -69,6 +97,43 @@ export function normalizePolicyResultEvent(event: CopilotEvent): NormalizedPolic
   };
 }
 
+export function normalizeFinalResponseEvent(event: CopilotEvent): NormalizedFinalResponseEvent {
+  const payload = asRecord(event.payload);
+  const stopReason = asString(event.stop_reason) ?? asString(payload?.stop_reason) ?? asString(payload?.status);
+  const jobId = asString(event.job_id) ?? asString(payload?.job_id);
+  const followupJobId = asString(event.followup_job_id) ?? asString(payload?.followup_job_id);
+  const finalPolicy = asString(event.final_policy) ?? asString(payload?.final_policy);
+  const recheckRiskLevel = asString(event.recheck_risk_level) ?? asString(payload?.recheck_risk_level);
+  const recommendedAction = asString(event.recommended_action) ?? asString(payload?.recommended_action);
+  const recoverySuccessful = asBoolean(event.recovery_successful) ?? asBoolean(payload?.recovery_successful);
+  const caption = asString(event.caption) ?? asString(payload?.caption);
+  const resultMetadata =
+    event.result != null
+      ? event.result
+      : payload != null && payload.result != null
+      ? payload.result
+      : null;
+  const campaignSummary =
+    event.campaign_summary != null
+      ? event.campaign_summary
+      : payload != null && payload.campaign_summary != null
+      ? payload.campaign_summary
+      : null;
+
+  return {
+    stopReason,
+    jobId,
+    followupJobId,
+    finalPolicy,
+    recheckRiskLevel,
+    recommendedAction,
+    recoverySuccessful,
+    caption,
+    resultMetadata,
+    campaignSummary,
+  };
+}
+
 function riskLevelBadgeVariant(level: string | null): BadgeVariant {
   if (level == null) return 'gray';
   const normalized = level.toLowerCase();
@@ -84,6 +149,31 @@ function flagBadgeVariant(classification: string): BadgeVariant {
   if (normalized === 'write_sensitive') return 'yellow';
   if (normalized === 'blocked') return 'red';
   return 'gray';
+}
+
+function stopReasonBadgeVariant(stopReason: string | null): BadgeVariant {
+  if (stopReason == null) return 'gray';
+  const normalized = stopReason.toLowerCase();
+  if (
+    normalized.includes('error') ||
+    normalized.includes('failed') ||
+    normalized.includes('rejected') ||
+    normalized.includes('abort')
+  ) {
+    return 'red';
+  }
+  if (normalized.includes('interrupt') || normalized.includes('approval')) return 'yellow';
+  if (
+    normalized === 'done' ||
+    normalized.includes('complete') ||
+    normalized.includes('executed') ||
+    normalized.includes('scheduled') ||
+    normalized.includes('followup') ||
+    normalized.includes('recommendation')
+  ) {
+    return 'green';
+  }
+  return 'blue';
 }
 
 export function EventCard({ event }: { event: CopilotEvent }) {
@@ -197,19 +287,85 @@ export function EventCard({ event }: { event: CopilotEvent }) {
       );
     }
 
-    case 'final_response':
+    case 'final_response': {
+      const finalEvent = normalizeFinalResponseEvent(event);
+      const hasMetadata =
+        finalEvent.stopReason != null ||
+        finalEvent.jobId != null ||
+        finalEvent.followupJobId != null ||
+        finalEvent.finalPolicy != null ||
+        finalEvent.recheckRiskLevel != null ||
+        finalEvent.recoverySuccessful != null;
       return (
         <div className="flex gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(125,207,255,0.18)] bg-[rgba(125,207,255,0.10)]">
             <Bot className="h-4 w-4 text-[#7dcfff]" />
           </div>
-          <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[rgba(125,207,255,0.12)] bg-[rgba(122,162,247,0.07)] px-4 py-3">
+          <div className="min-w-0 flex-1 space-y-2 rounded-2xl rounded-tl-sm border border-[rgba(125,207,255,0.12)] bg-[rgba(122,162,247,0.07)] px-4 py-3">
             <p className="whitespace-pre-wrap text-sm leading-6 text-[#eef4ff]">
               {event.text ? String(event.text) : JSON.stringify(event)}
             </p>
+
+            {hasMetadata && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {finalEvent.stopReason != null && (
+                  <Badge variant={stopReasonBadgeVariant(finalEvent.stopReason)}>
+                    status {finalEvent.stopReason}
+                  </Badge>
+                )}
+                {finalEvent.jobId != null && <Badge variant="green">job {finalEvent.jobId}</Badge>}
+                {finalEvent.followupJobId != null && (
+                  <Badge variant="green">follow-up {finalEvent.followupJobId}</Badge>
+                )}
+                {finalEvent.finalPolicy != null && (
+                  <Badge variant="yellow">policy {finalEvent.finalPolicy}</Badge>
+                )}
+                {finalEvent.recheckRiskLevel != null && (
+                  <Badge variant={riskLevelBadgeVariant(finalEvent.recheckRiskLevel)}>
+                    recheck risk {finalEvent.recheckRiskLevel}
+                  </Badge>
+                )}
+                {finalEvent.recoverySuccessful != null && (
+                  <Badge variant={finalEvent.recoverySuccessful ? 'green' : 'red'}>
+                    recovery {finalEvent.recoverySuccessful ? 'ok' : 'failed'}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {finalEvent.recommendedAction != null && (
+              <div className="rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] px-3 py-2.5">
+                <p className="text-[11px] font-medium text-[#8e9ac0]">recommended_action</p>
+                <p className="mt-1 font-mono text-xs leading-5 text-[#c7d8ff]">
+                  {finalEvent.recommendedAction}
+                </p>
+              </div>
+            )}
+
+            {finalEvent.caption != null && (
+              <div className="rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.03)] px-3 py-2.5">
+                <p className="text-[11px] font-medium text-[#8e9ac0]">caption</p>
+                <p className="mt-1 whitespace-pre-wrap font-mono text-xs leading-5 text-[#c7d8ff]">
+                  {finalEvent.caption}
+                </p>
+              </div>
+            )}
+
+            {finalEvent.campaignSummary != null && (
+              <CollapsibleSection title="campaign_summary">
+                <pre className="code-block text-xs">{JSON.stringify(finalEvent.campaignSummary, null, 2)}</pre>
+              </CollapsibleSection>
+            )}
+
+            {finalEvent.resultMetadata != null && (
+              <CollapsibleSection title="result_metadata">
+                <pre className="code-block text-xs">{JSON.stringify(finalEvent.resultMetadata, null, 2)}</pre>
+              </CollapsibleSection>
+            )}
           </div>
         </div>
       );
+    }
 
     case 'run_finish':
       return (

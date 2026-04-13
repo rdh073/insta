@@ -15,6 +15,7 @@ from ai_copilot.application.content_pipeline.ports import (
 )
 from ai_copilot.application.content_pipeline.state import make_initial_state
 from ai_copilot.application.graphs.content_pipeline import build_content_pipeline_graph
+from ai_copilot.application.use_cases.stream_event_contract import emit_node_update
 
 
 class RunContentPipelineUseCase:
@@ -87,7 +88,7 @@ async def _stream_graph(graph, input_or_command, config, thread_id) -> AsyncIter
                     payload = _extract_interrupt(updates)
                     yield {"type": "approval_required", "thread_id": thread_id, "payload": payload}
                     return
-                yield {"type": "node_update", "node": node_name, "data": _safe(updates)}
+                yield emit_node_update(node_name, updates)
 
         final_state = {}
         try:
@@ -125,13 +126,3 @@ def _extract_interrupt(data) -> dict:
         item = data[0]
         return item.value if hasattr(item, "value") else item
     return data if isinstance(data, dict) else {}
-
-
-def _safe(obj):
-    if isinstance(obj, dict):
-        return {k: _safe(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_safe(i) for i in obj]
-    if isinstance(obj, (str, int, float, bool, type(None))):
-        return obj
-    return str(obj)

@@ -104,6 +104,11 @@ def test_low_risk_no_interrupt():
     assert "run_finish" in types
     assert "approval_required" not in types
 
+    node_updates = [event for event in events if event["type"] == "node_update"]
+    assert node_updates, "expected at least one node_update event"
+    assert all("data" in event for event in node_updates)
+    assert all("output" not in event for event in node_updates)
+
     finish = next(e for e in events if e["type"] == "run_finish")
     assert finish["stop_reason"] in ("completed",)
 

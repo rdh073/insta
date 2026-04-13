@@ -42,6 +42,7 @@ from ai_copilot.application.use_cases.langgraph_runtime_adapter import (
     DEFAULT_LANGGRAPH_VERSION_STRATEGY,
     astream_with_contract,
 )
+from ai_copilot.application.use_cases.stream_event_contract import emit_node_update
 
 # ── Sentinel node name where the graph suspends for approval ──────────────────
 _APPROVAL_NODE = "request_approval_if_needed"
@@ -275,8 +276,8 @@ def _emit_start(run_id: str, thread_id: str) -> dict:
     return {"type": "run_start", "run_id": run_id, "thread_id": thread_id}
 
 
-def _emit_node_update(node_name: str, output: dict) -> dict:
-    return {"type": "node_update", "node": node_name, "output": output}
+def _emit_node_update(node_name: str, output: object) -> dict:
+    return emit_node_update(node_name, output)
 
 
 def _emit_approval_required(thread_id: str, payload: dict) -> dict:

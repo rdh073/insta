@@ -42,6 +42,7 @@ from ai_copilot.application.use_cases.langgraph_runtime_adapter import (
     interrupt_payloads_from_exception,
     normalize_invoke_result,
 )
+from ai_copilot.application.use_cases.stream_event_contract import emit_node_update
 
 
 class SmartEngagementUseCase:
@@ -509,11 +510,7 @@ class SmartEngagementUseCase:
                         return
 
                     node_name = entry.node_name or ""
-                    yield {
-                        "type": "node_update",
-                        "node": node_name,
-                        "data": self._safe(entry.payload),
-                    }
+                    yield emit_node_update(node_name, entry.payload)
 
             final_state = await self._recover_graph_state(config)
             mode = (
@@ -634,18 +631,6 @@ class SmartEngagementUseCase:
         except Exception:
             logger.debug("Could not recover audit trail for thread=%s", thread_id)
             return []
-
-    def _safe(self, value: Any) -> Any:
-        """Convert LangGraph node payloads into JSON-safe values for SSE."""
-        if isinstance(value, dict):
-            return {k: self._safe(v) for k, v in value.items()}
-        if isinstance(value, list):
-            return [self._safe(item) for item in value]
-        if isinstance(value, tuple):
-            return [self._safe(item) for item in value]
-        if isinstance(value, (str, int, float, bool, type(None))):
-            return value
-        return str(value)
 
     @staticmethod
     def _as_dict(value: Any) -> dict[str, Any]:

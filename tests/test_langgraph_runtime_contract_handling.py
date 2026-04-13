@@ -287,6 +287,31 @@ async def test_operator_resume_detects_legacy_stream_interrupt():
 
 
 @pytest.mark.asyncio
+async def test_operator_stream_node_update_uses_data_contract():
+    graph = _FakeOperatorGraph(chunk_sequences=[[
+        {
+            "type": "updates",
+            "ns": (),
+            "data": {
+                "plan_actions": {
+                    "execution_plan": [],
+                    "proposed_tool_calls": [],
+                },
+            },
+        },
+    ]])
+    use_case = _make_operator_use_case()
+    use_case._graph = graph
+
+    events = await _collect(use_case.run("show my accounts", thread_id="t-op-node-contract"))
+
+    node_update = next(event for event in events if event["type"] == "node_update")
+    assert node_update["node"] == "plan_actions"
+    assert node_update["data"] == {"execution_plan": [], "proposed_tool_calls": []}
+    assert "output" not in node_update
+
+
+@pytest.mark.asyncio
 async def test_smart_engagement_run_detects_v2_invoke_interrupt():
     payload = {
         "approval_id": "apr_3",
@@ -411,6 +436,10 @@ async def test_smart_engagement_run_stream_orders_updates_then_terminal_events()
     ]
     assert events[3]["stop_reason"] == "recommendation_only"
     assert events[4]["stop_reason"] == "recommendation_only"
+    assert "data" in events[1]
+    assert "data" in events[2]
+    assert "output" not in events[1]
+    assert "output" not in events[2]
     assert graph.astream_calls[0]["version"] == "v2"
 
 
@@ -481,3 +510,5 @@ async def test_smart_engagement_resume_stream_orders_updates_then_terminal_event
     assert events[0]["resumed"] is True
     assert events[2]["stop_reason"] == "action_executed"
     assert events[3]["stop_reason"] == "action_executed"
+    assert "data" in events[1]
+    assert "output" not in events[1]
