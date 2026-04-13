@@ -4,12 +4,12 @@ import { getPollBackoffDelay, SingleFlightRequestRunner } from './single-flight'
 describe('SingleFlightRequestRunner', () => {
   it('skips overlapping requests when skipIfInFlight is enabled', async () => {
     const runner = new SingleFlightRequestRunner();
-    let releaseFirst: (() => void) | null = null;
+    const ref: { release: (() => void) | null } = { release: null };
 
     const first = runner.run(
       () =>
         new Promise<string>((resolve) => {
-          releaseFirst = () => resolve('first');
+          ref.release = () => resolve('first');
         }),
     );
 
@@ -17,30 +17,32 @@ describe('SingleFlightRequestRunner', () => {
     expect(second).toEqual({ kind: 'skipped' });
     expect(runner.isInFlight()).toBe(true);
 
-    releaseFirst?.();
+    ref.release?.();
     await expect(first).resolves.toEqual({ kind: 'success', value: 'first' });
     expect(runner.isInFlight()).toBe(false);
   });
 
   it('aborts stale request and keeps only latest result when cancelPrevious is enabled', async () => {
     const runner = new SingleFlightRequestRunner();
-    let resolveFirst: ((value: string) => void) | null = null;
-    let firstSignal: AbortSignal | null = null;
+    const ref: {
+      resolve: ((value: string) => void) | null;
+      signal: AbortSignal | null;
+    } = { resolve: null, signal: null };
 
     const first = runner.run(
       (signal) =>
         new Promise<string>((resolve) => {
-          firstSignal = signal;
-          resolveFirst = resolve;
+          ref.signal = signal;
+          ref.resolve = resolve;
         }),
     );
 
     const second = runner.run(async () => 'second', { cancelPrevious: true });
-    resolveFirst?.('first');
+    ref.resolve?.('first');
 
     await expect(first).resolves.toEqual({ kind: 'aborted' });
     await expect(second).resolves.toEqual({ kind: 'success', value: 'second' });
-    expect(firstSignal?.aborted).toBe(true);
+    expect(ref.signal?.aborted).toBe(true);
   });
 });
 

@@ -50,8 +50,8 @@ api.interceptors.response.use(
   (res) => res,
   (err: AxiosError) => {
     const status: number = err.response?.status ?? 0;
-    const data = err.response?.data;
-    const detail = data?.detail;
+    const data = err.response?.data as { detail?: unknown } | undefined;
+    const detail: unknown = data?.detail;
     const transportCode = typeof err.code === 'string' ? err.code : undefined;
     const code: string | undefined =
       detail && typeof detail === 'object' ? (detail as { code?: string }).code : undefined;
@@ -64,8 +64,12 @@ api.interceptors.response.use(
         : transportCode === API_TRANSPORT_CODES.canceled
           ? 'Request was cancelled.'
           : null;
+    const detailMessage =
+      detail && typeof detail === 'object' && 'message' in detail && typeof (detail as { message?: unknown }).message === 'string'
+        ? ((detail as { message: string }).message)
+        : null;
     const message: string =
-      (typeof detail === 'string' ? detail : typeof detail?.message === 'string' ? detail.message : null) ??
+      (typeof detail === 'string' ? detail : detailMessage) ??
       fallbackMessage ??
       err.message ??
       'Unknown error';

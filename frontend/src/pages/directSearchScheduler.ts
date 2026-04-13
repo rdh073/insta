@@ -10,8 +10,11 @@ export class DirectSearchScheduler {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private controller: AbortController | null = null;
   private latestToken = 0;
+  private readonly debounceMs: number;
 
-  constructor(private readonly debounceMs: number) {}
+  constructor(debounceMs: number) {
+    this.debounceMs = debounceMs;
+  }
 
   schedule(
     query: string,
