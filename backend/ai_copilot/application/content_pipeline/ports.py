@@ -3,6 +3,22 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Final, TypedDict
+
+
+ALLOWED_SCHEDULE_RESULT_STATUSES: Final[frozenset[str]] = frozenset({
+    "scheduled",
+    "queued",
+    "pending",
+})
+
+
+class ScheduledPostResult(TypedDict, total=False):
+    """Expected scheduler payload for Content Pipeline success checks."""
+
+    job_id: str
+    status: str
+    scheduled_at: str | None
 
 
 class CaptionGeneratorPort(ABC):
@@ -31,5 +47,12 @@ class PostSchedulerPort(ABC):
         caption: str,
         media_refs: list[str],
         scheduled_at: str | None = None,
-    ) -> dict:
-        """Schedule a post job. Returns {job_id, status, scheduled_at}."""
+    ) -> ScheduledPostResult:
+        """Schedule a post job.
+
+        Returns:
+            Dict with at least:
+            - job_id: non-empty identifier
+            - status: one of ALLOWED_SCHEDULE_RESULT_STATUSES
+            - scheduled_at: optional schedule timestamp
+        """

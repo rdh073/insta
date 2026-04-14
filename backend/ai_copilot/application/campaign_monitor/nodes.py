@@ -27,6 +27,7 @@ from collections import defaultdict
 from langgraph.types import interrupt
 
 from ai_copilot.application.campaign_monitor.ports import (
+    ALLOWED_FOLLOWUP_RESULT_STATUSES,
     FollowupCreatorPort,
     JobMonitorPort,
 )
@@ -51,6 +52,17 @@ class CampaignMonitorNodes:
             "event_data": data,
             "timestamp": time.time(),
         }
+
+    @staticmethod
+    def _normalize_status(value: object) -> str:
+        return str(value or "").strip().lower()
+
+    def _validate_followup_result(self, result: dict) -> tuple[str, str] | None:
+        job_id = str(result.get("job_id", "") or "").strip()
+        status = self._normalize_status(result.get("status"))
+        if not job_id or status not in ALLOWED_FOLLOWUP_RESULT_STATUSES:
+            return None
+        return job_id, status
 
     # =========================================================================
     # Node 1: load_recent_jobs
@@ -399,7 +411,42 @@ class CampaignMonitorNodes:
                 operator_decision=operator_decision,
                 original_job_ids=original_job_ids,
             )
-            followup_job_id = result.get("job_id", "")
+            if not isinstance(result, dict):
+                reason = f"Failed to create followup: invalid followup result type={type(result).__name__}"
+                return {
+                    "outcome_reason": reason,
+                    "stop_reason": "error",
+                    "audit_trail": [self._event("followup_invalid_result", "create_followup_task", {
+                        "reason": reason,
+                    })],
+                }
+
+            validated = self._validate_followup_result(result)
+            if not validated:
+                followup_job_id = str(result.get("job_id", "") or "").strip()
+                status = self._normalize_status(result.get("status"))
+                problems = []
+                if not followup_job_id:
+                    problems.append("missing job_id")
+                if status not in ALLOWED_FOLLOWUP_RESULT_STATUSES:
+                    if status:
+                        problems.append(f"unsupported status '{status}'")
+                    else:
+                        problems.append("missing status")
+
+                reason = f"Failed to create followup: invalid followup result ({', '.join(problems)})"
+                return {
+                    "followup_payload": result,
+                    "outcome_reason": reason,
+                    "stop_reason": "error",
+                    "audit_trail": [self._event("followup_invalid_result", "create_followup_task", {
+                        "job_id_present": bool(followup_job_id),
+                        "status": status or None,
+                        "allowed_statuses": sorted(ALLOWED_FOLLOWUP_RESULT_STATUSES),
+                    })],
+                }
+
+            followup_job_id, status = validated
             outcome_reason = f"Followup task created: job_id={followup_job_id}"
             return {
                 "followup_payload": result,
@@ -409,6 +456,7 @@ class CampaignMonitorNodes:
                 "step_count": state.get("step_count", 0) + 1,
                 "audit_trail": [self._event("followup_created", "create_followup_task", {
                     "job_id": followup_job_id,
+                    "status": status,
                 })],
             }
         except Exception as exc:

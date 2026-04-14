@@ -28,6 +28,7 @@ import time
 from langgraph.types import interrupt
 
 from ai_copilot.application.content_pipeline.ports import (
+    ALLOWED_SCHEDULE_RESULT_STATUSES,
     CaptionGeneratorPort,
     CaptionValidatorPort,
     PostSchedulerPort,
@@ -50,6 +51,17 @@ class ContentPipelineNodes:
 
     def _event(self, event_type: str, node_name: str, data: dict) -> dict:
         return {"event_type": event_type, "node_name": node_name, "event_data": data, "timestamp": time.time()}
+
+    @staticmethod
+    def _normalize_status(value: object) -> str:
+        return str(value or "").strip().lower()
+
+    def _validate_schedule_result(self, result: dict) -> tuple[str, str] | None:
+        job_id = str(result.get("job_id", "") or "").strip()
+        status = self._normalize_status(result.get("status"))
+        if not job_id or status not in ALLOWED_SCHEDULE_RESULT_STATUSES:
+            return None
+        return job_id, status
 
     # =========================================================================
     # Node 1: ingest_campaign_brief
@@ -297,7 +309,42 @@ class ContentPipelineNodes:
                 media_refs=media_refs,
                 scheduled_at=scheduled_at,
             )
-            job_id = result.get("job_id", "")
+            if not isinstance(result, dict):
+                reason = f"Scheduling failed: invalid scheduler result type={type(result).__name__}"
+                return {
+                    "outcome_reason": reason,
+                    "stop_reason": "error",
+                    "audit_trail": [self._event("schedule_invalid_result", "schedule_draft", {
+                        "reason": reason,
+                    })],
+                }
+
+            validated = self._validate_schedule_result(result)
+            if not validated:
+                job_id = str(result.get("job_id", "") or "").strip()
+                status = self._normalize_status(result.get("status"))
+                problems = []
+                if not job_id:
+                    problems.append("missing job_id")
+                if status not in ALLOWED_SCHEDULE_RESULT_STATUSES:
+                    if status:
+                        problems.append(f"unsupported status '{status}'")
+                    else:
+                        problems.append("missing status")
+
+                reason = f"Scheduling failed: invalid scheduler result ({', '.join(problems)})"
+                return {
+                    "schedule_result": result,
+                    "outcome_reason": reason,
+                    "stop_reason": "error",
+                    "audit_trail": [self._event("schedule_invalid_result", "schedule_draft", {
+                        "job_id_present": bool(job_id),
+                        "status": status or None,
+                        "allowed_statuses": sorted(ALLOWED_SCHEDULE_RESULT_STATUSES),
+                    })],
+                }
+
+            job_id, status = validated
             return {
                 "job_id": job_id,
                 "schedule_result": result,
@@ -306,6 +353,7 @@ class ContentPipelineNodes:
                 "step_count": state.get("step_count", 0) + 1,
                 "audit_trail": [self._event("draft_scheduled", "schedule_draft", {
                     "job_id": job_id,
+                    "status": status,
                     "username_count": len(usernames),
                 })],
             }

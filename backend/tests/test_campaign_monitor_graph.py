@@ -56,8 +56,9 @@ class StubJobMonitor:
 class StubFollowupCreator:
     """Minimal duck-typed FollowupCreatorPort stub."""
 
-    def __init__(self):
+    def __init__(self, result=None):
         self.calls = []
+        self._result = result or {"job_id": "followup-001", "status": "scheduled", "scheduled_at": None}
 
     async def create_followup(self, campaign_summary, operator_decision, original_job_ids):
         self.calls.append({
@@ -65,7 +66,7 @@ class StubFollowupCreator:
             "operator_decision": operator_decision,
             "original_job_ids": original_job_ids,
         })
-        return {"job_id": "followup-001", "status": "scheduled", "scheduled_at": None}
+        return dict(self._result)
 
 
 def _sample_jobs():
@@ -97,9 +98,9 @@ def _sample_jobs():
     ]
 
 
-def _make_use_case(jobs=None, health=None, insights=None):
+def _make_use_case(jobs=None, health=None, insights=None, followup_result=None):
     stub_monitor = StubJobMonitor(jobs=jobs, health=health, insights=insights)
-    stub_followup = StubFollowupCreator()
+    stub_followup = StubFollowupCreator(result=followup_result)
     checkpointer = MemorySaver()
     uc = RunCampaignMonitorUseCase(
         job_monitor=stub_monitor,
@@ -291,3 +292,64 @@ def test_stub_ports_satisfy_interface():
         assert result["status"] == "scheduled"
 
     asyncio.run(run())
+
+
+# =============================================================================
+# Test 7: Invalid followup status → explicit error path
+# =============================================================================
+
+
+def test_resume_approve_invalid_followup_status_routes_to_error():
+    uc, stub_followup = _make_use_case(followup_result={
+        "job_id": "followup-002",
+        "status": "stub",
+        "scheduled_at": None,
+    })
+    thread_id = "t-resume-invalid-status"
+
+    async def run_both():
+        await _collect(uc.run(thread_id=thread_id, request_decision=True))
+        return await _collect(uc.resume(
+            thread_id=thread_id,
+            decision="approve",
+            parameters={"usernames": ["user1"], "caption": "Follow-up"},
+        ))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(stub_followup.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "unsupported status" in final_response.get("text", "")
+
+
+# =============================================================================
+# Test 8: Missing followup job_id → explicit error path
+# =============================================================================
+
+
+def test_resume_approve_missing_followup_job_id_routes_to_error():
+    uc, stub_followup = _make_use_case(followup_result={
+        "status": "scheduled",
+        "scheduled_at": None,
+    })
+    thread_id = "t-resume-missing-jobid"
+
+    async def run_both():
+        await _collect(uc.run(thread_id=thread_id, request_decision=True))
+        return await _collect(uc.resume(
+            thread_id=thread_id,
+            decision="approve",
+            parameters={"usernames": ["user1"], "caption": "Follow-up"},
+        ))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(stub_followup.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "missing job_id" in final_response.get("text", "")

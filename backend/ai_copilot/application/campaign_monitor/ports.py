@@ -7,6 +7,22 @@ Adapters provide concrete implementations.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Final, TypedDict
+
+
+ALLOWED_FOLLOWUP_RESULT_STATUSES: Final[frozenset[str]] = frozenset({
+    "scheduled",
+    "queued",
+    "pending",
+})
+
+
+class FollowupCreationResult(TypedDict, total=False):
+    """Expected followup-creation payload for Campaign Monitor success checks."""
+
+    job_id: str
+    status: str
+    scheduled_at: str | None
 
 
 class JobMonitorPort(ABC):
@@ -70,7 +86,7 @@ class FollowupCreatorPort(ABC):
         campaign_summary: dict,
         operator_decision: dict,
         original_job_ids: list[str],
-    ) -> dict:
+    ) -> FollowupCreationResult:
         """Schedule a followup post job based on campaign outcome.
 
         Args:
@@ -79,5 +95,8 @@ class FollowupCreatorPort(ABC):
             original_job_ids: Job IDs this followup is based on.
 
         Returns:
-            Dict with {job_id, scheduled_at, status}.
+            Dict with at least:
+            - job_id: non-empty identifier
+            - status: one of ALLOWED_FOLLOWUP_RESULT_STATUSES
+            - scheduled_at: optional schedule timestamp
         """
