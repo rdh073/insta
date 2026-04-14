@@ -7,11 +7,74 @@ runtime contract, not direct ``state.py`` imports.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Optional
+from typing import Optional, Protocol
 
-from state import ThreadSafeJobStore, job_store
+from app.adapters.persistence.state_gateway import StateGateway, default_state_gateway
 
 from app.application.ports.job_engine import JobSnapshot, JobState
+
+
+class _JobStoreLike(Protocol):
+    def mark_started(self, job_id: str, worker_id: str, started_at: str) -> None:
+        ...
+
+    def mark_heartbeat(self, job_id: str, worker_id: str, heartbeat_at: str) -> None:
+        ...
+
+    def set_job_status(self, job_id: str, status: str) -> None:
+        ...
+
+    def request_pause(self, job_id: str) -> None:
+        ...
+
+    def request_resume(self, job_id: str) -> None:
+        ...
+
+    def request_stop(self, job_id: str) -> None:
+        ...
+
+    def get(self, job_id: str) -> dict:
+        ...
+
+    def tally_results(self, job_id: str) -> dict[str, int]:
+        ...
+
+    def get_runtime_metadata(self, job_id: str) -> dict[str, str]:
+        ...
+
+
+class _GatewayBackedJobStore:
+    """Adapter that maps ThreadSafeJobStore-like methods to StateGateway."""
+
+    def __init__(self, gateway: StateGateway) -> None:
+        self._gateway = gateway
+
+    def mark_started(self, job_id: str, worker_id: str, started_at: str) -> None:
+        self._gateway.mark_job_started(job_id, worker_id, started_at)
+
+    def mark_heartbeat(self, job_id: str, worker_id: str, heartbeat_at: str) -> None:
+        self._gateway.mark_job_heartbeat(job_id, worker_id, heartbeat_at)
+
+    def set_job_status(self, job_id: str, status: str) -> None:
+        self._gateway.set_job_status(job_id, status)
+
+    def request_pause(self, job_id: str) -> None:
+        self._gateway.request_job_pause(job_id)
+
+    def request_resume(self, job_id: str) -> None:
+        self._gateway.request_job_resume(job_id)
+
+    def request_stop(self, job_id: str) -> None:
+        self._gateway.request_job_stop(job_id)
+
+    def get(self, job_id: str) -> dict:
+        return self._gateway.get_job(job_id)
+
+    def tally_results(self, job_id: str) -> dict[str, int]:
+        return self._gateway.tally_job_results(job_id)
+
+    def get_runtime_metadata(self, job_id: str) -> dict[str, str]:
+        return self._gateway.get_job_runtime_metadata(job_id)
 
 
 class ThreadSafeJobRuntimeAdapter:
@@ -21,8 +84,15 @@ class ThreadSafeJobRuntimeAdapter:
     their own store for isolation.
     """
 
-    def __init__(self, store: ThreadSafeJobStore | None = None) -> None:
-        self._store = store or job_store
+    def __init__(
+        self,
+        store: _JobStoreLike | None = None,
+        *,
+        gateway: StateGateway | None = None,
+    ) -> None:
+        self._store: _JobStoreLike = store or _GatewayBackedJobStore(
+            gateway or default_state_gateway
+        )
 
     @staticmethod
     def _utcnow() -> dt.datetime:

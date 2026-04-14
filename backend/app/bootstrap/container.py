@@ -45,6 +45,7 @@ from app.application.use_cases.dashboard_auth import DashboardAuthUseCases
 from app.adapters.persistence import (
     ActivityLogWriter,
     SessionStore,
+    default_state_gateway,
 )
 from app.adapters.persistence.factory import (
     build_persistence_adapters,
@@ -523,7 +524,6 @@ def create_services():
         (success, failure, or exception) — a no-op for the memory backend.
         """
         import logging
-        import state as _state
         from app.application.ports.persistence_models import JobRecord as _JobRecord
 
         _sync_logger = logging.getLogger("instamanager.bootstrap")
@@ -531,7 +531,7 @@ def create_services():
             instagram.run_post_job(job_id)
         finally:
             try:
-                job_dict = _state.get_job(job_id)
+                job_dict = default_state_gateway.get_job(job_id)
                 job_repo.set(job_id, _JobRecord.from_dict(job_dict))
             except Exception as exc:
                 _sync_logger.warning("job_sync.failed job_id=%s reason=%s", job_id, exc)

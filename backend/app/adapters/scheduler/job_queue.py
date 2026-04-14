@@ -20,14 +20,15 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from app.adapters.persistence.state_gateway import StateGateway, default_state_gateway
+from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
+from app.adapters.scheduler.job_runtime_adapter import ThreadSafeJobRuntimeAdapter
+from app.application.ports.job_engine import JobEventPublisherPort, JobRuntimePort
 from app.application.use_cases.post_job import (
     MEDIA_REQUIRED_ERROR_CODE,
     MEDIA_REQUIRED_ERROR_MESSAGE,
     has_runnable_media_paths,
 )
-from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
-from app.adapters.scheduler.job_runtime_adapter import ThreadSafeJobRuntimeAdapter
-from app.application.ports.job_engine import JobEventPublisherPort, JobRuntimePort
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +68,13 @@ class PostJobQueue:
         workers: int = 1,
         runtime: JobRuntimePort | None = None,
         event_publisher: JobEventPublisherPort | None = None,
+        state_gateway: StateGateway | None = None,
     ) -> None:
         self._run_fn = run_fn
         self._mark_scheduled = mark_scheduled_fn
         self._runtime = runtime or ThreadSafeJobRuntimeAdapter()
         self._event_publisher = event_publisher or PostJobEventPublisherAdapter()
+        self._state_gateway = state_gateway or default_state_gateway
         self._queue: queue.Queue[_JobItem | None] = queue.Queue()
         self._workers: list[threading.Thread] = []
         self._timers: set[threading.Timer] = set()
@@ -214,39 +217,29 @@ class PostJobQueue:
 
     # ── worker ────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _clear_stopped_control(job_id: str) -> None:
+    def _clear_stopped_control(self, job_id: str) -> None:
         try:
-            from state import clear_job_control
-
-            clear_job_control(job_id)
+            self._state_gateway.clear_job_control(job_id)
         except Exception:
             pass
 
-    @staticmethod
-    def _read_job_status(job_id: str) -> tuple[bool, str | None]:
+    def _read_job_status(self, job_id: str) -> tuple[bool, str | None]:
         """Return ``(state_available, status_or_none)`` for *job_id*."""
         try:
-            from state import get_job
-        except Exception:
-            return False, None
-
-        try:
-            job = get_job(job_id)
+            job = self._state_gateway.get_job(job_id)
         except KeyError:
             return True, None
+        except Exception:
+            return False, None
 
         raw = job.get("status")
         if raw is None:
             return True, ""
         return True, str(raw).lower()
 
-    @staticmethod
-    def _set_job_status(job_id: str, status: str) -> None:
+    def _set_job_status(self, job_id: str, status: str) -> None:
         try:
-            import state
-
-            state.job_store.set_job_status(job_id, status)
+            self._state_gateway.set_job_status(job_id, status)
         except Exception:
             pass
 
@@ -256,12 +249,9 @@ class PostJobQueue:
         except Exception:
             pass
 
-    @staticmethod
-    def _is_scheduled_without_media(job_id: str) -> bool:
+    def _is_scheduled_without_media(self, job_id: str) -> bool:
         try:
-            from state import get_job
-
-            job = get_job(job_id)
+            job = self._state_gateway.get_job(job_id)
         except Exception:
             return False
 
@@ -272,19 +262,16 @@ class PostJobQueue:
         media_paths = job.get("_media_paths") or []
         return not has_runnable_media_paths(media_paths)
 
-    @staticmethod
-    def _set_media_required_result_errors(job_id: str) -> None:
+    def _set_media_required_result_errors(self, job_id: str) -> None:
         try:
-            import state
-
-            job = state.get_job(job_id)
+            job = self._state_gateway.get_job(job_id)
             for result in job.get("results", []):
                 account_id = result.get("accountId")
                 if not account_id:
                     continue
                 if str(result.get("status") or "").lower() == "success":
                     continue
-                state.job_store.update_result(
+                self._state_gateway.update_job_result(
                     job_id,
                     account_id,
                     status="pending",

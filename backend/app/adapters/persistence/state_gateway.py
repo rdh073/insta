@@ -80,6 +80,35 @@ class StateGateway:
     def set_job_status(self, job_id: str, status: str) -> None:
         state_module.job_store.set_job_status(job_id, status)
 
+    def update_job_result(
+        self,
+        job_id: str,
+        account_id: str,
+        *,
+        status: str,
+        error: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        state_module.job_store.update_result(
+            job_id,
+            account_id,
+            status=status,
+            error=error,
+            error_code=error_code,
+        )
+
+    def mark_job_started(self, job_id: str, worker_id: str, started_at: str) -> None:
+        state_module.job_store.mark_started(job_id, worker_id, started_at)
+
+    def mark_job_heartbeat(self, job_id: str, worker_id: str, heartbeat_at: str) -> None:
+        state_module.job_store.mark_heartbeat(job_id, worker_id, heartbeat_at)
+
+    def tally_job_results(self, job_id: str) -> dict[str, int]:
+        return state_module.job_store.tally_results(job_id)
+
+    def get_job_runtime_metadata(self, job_id: str) -> dict[str, str]:
+        return state_module.job_store.get_runtime_metadata(job_id)
+
     def request_job_stop(self, job_id: str) -> None:
         state_module.request_job_stop(job_id)
 
