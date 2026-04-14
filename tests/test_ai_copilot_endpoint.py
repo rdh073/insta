@@ -89,19 +89,25 @@ def test_no_circular_imports():
 
 
 def test_sse_headers_configured():
-    """Test that SSE response headers are configured.
+    """Test that SSE response headers are configured at runtime."""
+    import asyncio
+    from ai_copilot.api import GraphChatRequest, operator_copilot_run
 
-    This is a source code review test.
-    """
-    import inspect
-    from ai_copilot.api import operator_copilot_run
+    class _FakeUseCase:
+        async def run(self, **_kwargs):
+            yield {"type": "run_start"}
 
-    source = inspect.getsource(operator_copilot_run)
+    response = asyncio.run(
+        operator_copilot_run(
+            GraphChatRequest(message="ping"),
+            use_case=_FakeUseCase(),
+        )
+    )
 
-    # Should mention SSE headers
-    assert "text/event-stream" in source
-    assert "StreamingResponse" in source
-    print("✓ SSE headers configured in endpoint")
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    print("✓ SSE headers configured in runtime response")
 
 
 def test_request_body_contract():
