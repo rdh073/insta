@@ -187,6 +187,7 @@ async def _build_campaign_monitor_usecase():
     from app.bootstrap.container import create_services
     from ai_copilot.adapters.followup_creator_adapter import FollowupCreatorAdapter
     from ai_copilot.adapters.job_monitor_adapter import JobMonitorAdapter
+    from ai_copilot.adapters.post_job_scheduler_contract import StrictPostJobSchedulerPort
     from ai_copilot.application.use_cases.run_campaign_monitor import (
         RunCampaignMonitorUseCase,
     )
@@ -201,7 +202,8 @@ async def _build_campaign_monitor_usecase():
         account_usecases=account_usecases,
         insight_usecases=insight_usecases,
     )
-    followup_creator = FollowupCreatorAdapter(postjob_usecases=postjob_usecases)
+    postjob_scheduler_port = StrictPostJobSchedulerPort(postjob_usecases)
+    followup_creator = FollowupCreatorAdapter(postjob_usecases=postjob_scheduler_port)
     checkpointer = await ConfigurableCheckpointFactory.from_env().create_async()
 
     return RunCampaignMonitorUseCase(
@@ -287,6 +289,7 @@ async def _build_content_pipeline_usecase():
     from ai_copilot.adapters.caption_generator_adapter import CaptionGeneratorAdapter
     from ai_copilot.adapters.caption_validator_adapter import CaptionValidatorAdapter
     from ai_copilot.adapters.post_scheduler_adapter import PostSchedulerAdapter
+    from ai_copilot.adapters.post_job_scheduler_contract import StrictPostJobSchedulerPort
     from ai_copilot.application.use_cases.run_content_pipeline import (
         RunContentPipelineUseCase,
     )
@@ -294,12 +297,12 @@ async def _build_content_pipeline_usecase():
     services = create_services()
     llm_gateway = services.get("llm_gateway_port")
     postjob_usecases = services["postjobs"]
+    postjob_scheduler_port = StrictPostJobSchedulerPort(postjob_usecases)
 
     return RunContentPipelineUseCase(
         caption_generator=CaptionGeneratorAdapter(llm_gateway),
         caption_validator=CaptionValidatorAdapter(),
-        post_scheduler=PostSchedulerAdapter(postjob_usecases),
+        post_scheduler=PostSchedulerAdapter(postjob_usecases=postjob_scheduler_port),
         account_usecases=services["accounts"],
         checkpointer=await ConfigurableCheckpointFactory.from_env().create_async(),
     )
-

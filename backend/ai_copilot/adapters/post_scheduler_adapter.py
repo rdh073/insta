@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 
+from ai_copilot.adapters.post_job_scheduler_contract import PostJobSchedulerPort
 from ai_copilot.application.content_pipeline.ports import PostSchedulerPort
 
 
 class PostSchedulerAdapter(PostSchedulerPort):
-    def __init__(self, postjob_usecases):
+    def __init__(self, postjob_usecases: PostJobSchedulerPort):
         self._postjob = postjob_usecases
 
     async def schedule(
@@ -32,26 +32,9 @@ class PostSchedulerAdapter(PostSchedulerPort):
             raise RuntimeError(f"PostSchedulerAdapter.schedule failed: {exc}") from exc
 
     def _call_schedule(self, usernames, caption, media_refs, scheduled_at):
-        for method_name in (
-            "create_scheduled_post_for_usernames",
-            "schedule_post",
-            "create_post_job",
-        ):
-            method = getattr(self._postjob, method_name, None)
-            if method is None:
-                continue
-            try:
-                result = method(
-                    usernames=usernames,
-                    caption=caption,
-                    media_paths=media_refs,
-                    scheduled_at=scheduled_at,
-                )
-                if isinstance(result, dict) and "job_id" in result:
-                    return result
-                return {"job_id": str(result), "status": "scheduled", "scheduled_at": scheduled_at}
-            except TypeError:
-                continue
-
-        stub_id = str(uuid.uuid4())
-        return {"job_id": stub_id, "status": "stub", "scheduled_at": scheduled_at}
+        _ = media_refs
+        return self._postjob.create_scheduled_post_for_usernames(
+            usernames=usernames,
+            caption=caption,
+            scheduled_at=scheduled_at,
+        )
