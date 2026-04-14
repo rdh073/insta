@@ -6,6 +6,17 @@
 - Source Evidence:
   - `docs/frontend-zustand-audit-2026-04-12.md`
   - `docs/frontend-zustand-remediation-2026-04-12.md`
+  - `docs/AUDIT_WORKFLOW_COMPLETION.md`
+
+## Audit Closure Record (Mandatory)
+
+- Closure Status: Complete (`audit-closure` present in this document)
+- Scope: Frontend Zustand audit findings and post-audit traceability for task `f5aa9`.
+- Evidence: See `Source Evidence` and per-finding evidence references below.
+- Findings: F-001 through F-008 (see categorized sections below).
+- Task Mapping: See `Traceability: Finding -> Task ID -> Status/Owner`.
+- Residual Risk: Owner/status fields remain inferred/TBD until Kanban metadata is confirmed.
+- Next Review Date: 2026-05-14
 
 ## Risk Ranking Summary
 
@@ -119,3 +130,7 @@
 
 - Next Review Date: 2026-05-14
 - Review Owner: QA/Engineering Audit Owner (TBD in Kanban)
+
+## Future Template/Checklist Requirement
+
+- Future audit templates/checklists must include the mandatory closure gate from `docs/audit-closure-checklist-snippet.md`.

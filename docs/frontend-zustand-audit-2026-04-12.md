@@ -306,4 +306,4 @@ Audit goals:
 - Picker always lands on a valid active account when available.
 - Smart Engagement run button state matches valid selected active accounts only.
 - Stories feature is either live and reachable or fully removed.
-
+- Audit completion is blocked until an `audit-closure` document is published with scope, evidence, findings, task mapping, residual risk, and next review date.
