@@ -13,7 +13,7 @@ from fastapi.routing import APIRoute
 from app.main import app
 
 
-REPO_ROOT = Path("/home/xtrzy/Workspace/insta")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_APP = REPO_ROOT / "backend" / "app"
 
 
@@ -131,6 +131,10 @@ class TestPhaseEToolRegistryGuards:
 class TestPhaseEDocumentationGuards:
     """Ensure anti-legacy rules are documented where contributors will see them."""
 
+    # Canonical token for wording guards: use one exact phrase to avoid drift
+    # between hyphen/case variants while keeping docs and tests machine-checkable.
+    LANGGRAPH_ONLY_PHRASE = "LangGraph-Only"
+
     def test_agents_docs_contain_langgraph_only_rule(self):
         docs = [
             REPO_ROOT / "backend" / "AGENTS.md",
@@ -141,7 +145,9 @@ class TestPhaseEDocumentationGuards:
         for doc in docs:
             assert doc.exists(), f"Missing required AGENTS file: {doc}"
             text = doc.read_text()
-            assert "LangGraph-Only" in text, f"Missing LangGraph-Only rule in {doc}"
+            assert self.LANGGRAPH_ONLY_PHRASE in text, (
+                f"Missing {self.LANGGRAPH_ONLY_PHRASE} rule in {doc}"
+            )
             assert "/api/ai/chat" in text, f"Missing legacy endpoint prohibition in {doc}"
 
 
