@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { ChevronDown, ChevronUp, FileText, ImagePlus, MapPin, Search, Send, Tag, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -14,7 +14,63 @@ import { usePostStore } from '../store/posts';
 import { useTemplateStore } from '../store/templates';
 import { HashtagTextarea } from '../components/instagram/HashtagTextarea';
 
+const EMPTY_FILES: File[] = [];
+
+export function reconcileFileObjectUrls(
+  files: readonly File[],
+  previous: ReadonlyMap<File, string>,
+  createObjectURL: (file: File) => string = URL.createObjectURL,
+  revokeObjectURL: (url: string) => void = URL.revokeObjectURL,
+): Map<File, string> {
+  const next = new Map<File, string>();
+
+  for (const file of files) {
+    const existingUrl = previous.get(file);
+    next.set(file, existingUrl ?? createObjectURL(file));
+  }
+
+  for (const [file, objectUrl] of previous.entries()) {
+    if (!next.has(file)) {
+      revokeObjectURL(objectUrl);
+    }
+  }
+
+  return next;
+}
+
+export function revokeFileObjectUrls(
+  fileObjectUrls: ReadonlyMap<File, string>,
+  revokeObjectURL: (url: string) => void = URL.revokeObjectURL,
+): void {
+  for (const objectUrl of fileObjectUrls.values()) {
+    revokeObjectURL(objectUrl);
+  }
+}
+
+function useFileObjectUrls(files: readonly File[]): ReadonlyMap<File, string> {
+  const objectUrlRef = useRef<Map<File, string>>(new Map());
+  const [objectUrls, setObjectUrls] = useState<ReadonlyMap<File, string>>(() => new Map());
+
+  useEffect(() => {
+    const next = reconcileFileObjectUrls(files, objectUrlRef.current);
+    objectUrlRef.current = next;
+    setObjectUrls(next);
+  }, [files]);
+
+  useEffect(
+    () => () => {
+      revokeFileObjectUrls(objectUrlRef.current);
+      objectUrlRef.current = new Map();
+    },
+    [],
+  );
+
+  return objectUrls;
+}
+
 function MediaDropzone({ files, onChange }: { files: File[]; onChange: (nextFiles: File[]) => void }) {
+  const previewUrls = useFileObjectUrls(files);
+
   const onDrop = useCallback(
     (accepted: File[]) => {
       onChange([...files, ...accepted].slice(0, 10));
@@ -54,7 +110,7 @@ function MediaDropzone({ files, onChange }: { files: File[]; onChange: (nextFile
             <div key={`${file.name}-${index}`} className="group relative">
               <div className="h-24 w-24 overflow-hidden rounded-[1.2rem] border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.05)]">
                 {file.type.startsWith('image/') ? (
-                  <img src={URL.createObjectURL(file)} alt={file.name} className="h-full w-full object-cover" />
+                  <img src={previewUrls.get(file)} alt={file.name} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-[#9aa7cf]">Video</div>
                 )}
@@ -175,6 +231,9 @@ export function PostPage() {
   const [locationLng, setLocationLng] = useState('');
   const [usertagsJson, setUsertagsJson] = useState('');
   const [extraDataJson, setExtraDataJson] = useState('');
+  const thumbnailFiles = useMemo<readonly File[]>(() => (thumbnail ? [thumbnail] : EMPTY_FILES), [thumbnail]);
+  const thumbnailPreviewUrls = useFileObjectUrls(thumbnailFiles);
+  const thumbnailPreviewUrl = thumbnail ? thumbnailPreviewUrls.get(thumbnail) : undefined;
 
   const activeAccounts = accounts.filter((account) => account.status === 'active');
 
@@ -351,7 +410,7 @@ export function PostPage() {
                     <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#4a5578]">Thumbnail (optional)</p>
                     {thumbnail ? (
                       <div className="flex items-center gap-3 rounded-xl border border-[rgba(162,179,229,0.14)] bg-[rgba(255,255,255,0.04)] px-3 py-2">
-                        <img src={URL.createObjectURL(thumbnail)} alt="thumbnail" className="h-10 w-10 rounded-lg object-cover" />
+                        <img src={thumbnailPreviewUrl} alt="thumbnail" className="h-10 w-10 rounded-lg object-cover" />
                         <span className="min-w-0 flex-1 truncate text-xs text-[#c0caf5]">{thumbnail.name}</span>
                         <button type="button" onClick={() => setThumbnail(null)} className="shrink-0 cursor-pointer text-[#f7768e] transition-opacity hover:opacity-70">
                           <X className="h-4 w-4" />
