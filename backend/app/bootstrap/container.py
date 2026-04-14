@@ -51,6 +51,7 @@ from app.adapters.persistence.factory import (
     build_persistence_adapters,
     build_llm_config_repository,
     build_oauth_token_store,
+    build_smart_engagement_repositories,
 )
 from app.adapters.instagram import InstagramClientAdapter
 from app.adapters.persistence.post_job_control_adapter import PostJobControlAdapter
@@ -64,7 +65,10 @@ from app.adapters.ai.checkpoint_factory_adapter import ConfigurableCheckpointFac
 
 from app.adapters.totp_adapter import TOTPAdapter
 from ai_copilot.application.use_cases.run_smart_engagement import SmartEngagementUseCase
-from ai_copilot.adapters.approval_adapter import InMemoryApprovalAdapter
+from ai_copilot.adapters.approval_adapter import (
+    DatabaseApprovalAdapter,
+    InMemoryApprovalAdapter,
+)
 from ai_copilot.adapters.engagement_executor_adapter import EngagementExecutorAdapter
 
 
@@ -106,7 +110,10 @@ from app.adapters.instagram.insight_reader import InstagramInsightReaderAdapter
 from app.adapters.instagram.track_catalog import InstagramTrackCatalogAdapter
 from app.adapters.proxy.httpx_checker import HttpxProxyCheckerAdapter
 from app.adapters.proxy.proxy_parser import ProxyParser
-from app.adapters.persistence.factory import build_proxy_repository, build_template_repository
+from app.adapters.persistence.factory import (
+    build_proxy_repository,
+    build_template_repository,
+)
 from app.application.use_cases.templates import TemplatesUseCase
 
 
@@ -398,6 +405,7 @@ def _build_smart_engagement(account_usecases, ig_usecases, ai_services):
     from ai_copilot.adapters.instagram_data_adapter import InstagramDataAdapter
     from ai_copilot.adapters.risk_scoring_adapter import RiskScoringAdapter
     from ai_copilot.adapters.noop_executor_adapter import NoOpExecutorAdapter
+    from ai_copilot.adapters.audit_log_adapter import DatabaseAuditLogAdapter
     from ai_copilot.adapters.file_audit_log_adapter import FileAuditLogAdapter
 
     # Raw adapters
@@ -426,8 +434,13 @@ def _build_smart_engagement(account_usecases, ig_usecases, ai_services):
     engagement_memory = LangGraphStoreMemoryAdapter(engagement_store)
 
     risk = RiskScoringAdapter()
-    approval = InMemoryApprovalAdapter()
-    audit_log = FileAuditLogAdapter()
+    approval_repo, audit_repo = build_smart_engagement_repositories()
+    if approval_repo is not None and audit_repo is not None:
+        approval = DatabaseApprovalAdapter(approval_repo)
+        audit_log = DatabaseAuditLogAdapter(audit_repo)
+    else:
+        approval = InMemoryApprovalAdapter()
+        audit_log = FileAuditLogAdapter()
     checkpoint_factory = ai_services["checkpoint_factory"]
     if checkpoint_factory is None:
         raise RuntimeError(

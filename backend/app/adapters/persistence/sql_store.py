@@ -122,6 +122,35 @@ class ProxyRow(Base):
     url:        Mapped[str]   = mapped_column(Text, nullable=False)
 
 
+class SmartEngagementApprovalRow(Base):
+    """Smart engagement approval persistence row."""
+
+    __tablename__ = "smart_engagement_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    requested_at: Mapped[float] = mapped_column(Float, nullable=False)
+    approved_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    approver_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    action_id: Mapped[str] = mapped_column(Text, nullable=False)
+    action_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    risk_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    audit_payload: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class SmartEngagementAuditEventRow(Base):
+    """Smart engagement audit-event persistence row."""
+
+    __tablename__ = "smart_engagement_audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    node_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    timestamp: Mapped[float] = mapped_column(Float, index=True, nullable=False)
+
+
 class SqlitePersistenceStore:
     """Owns SQLAlchemy engine/session lifecycle for SQL persistence adapters."""
 

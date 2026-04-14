@@ -169,3 +169,57 @@ def test_container_wiring_rejects_missing_checkpoint_factory():
             },
             ai_services={"checkpoint_factory": None},
         )
+
+
+def test_container_wiring_uses_database_adapters_when_sql_backend_enabled(
+    monkeypatch,
+    tmp_path,
+):
+    from ai_copilot.adapters.approval_adapter import DatabaseApprovalAdapter
+    from ai_copilot.adapters.audit_log_adapter import DatabaseAuditLogAdapter
+
+    monkeypatch.setenv("PERSISTENCE_BACKEND", "sqlite")
+    monkeypatch.setenv(
+        "PERSISTENCE_DATABASE_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'smart_engagement_wiring.sqlite3'}",
+    )
+
+    services = _build_smart_engagement(
+        account_usecases=MagicMock(),
+        ig_usecases={
+            "identity": MagicMock(),
+            "relationships": MagicMock(),
+            "media": MagicMock(),
+            "comment": MagicMock(),
+            "direct": MagicMock(),
+        },
+        ai_services={"checkpoint_factory": _AsyncFactory(MemorySaver())},
+    )
+
+    assert isinstance(services["approval_adapter"], DatabaseApprovalAdapter)
+    assert isinstance(services["audit_log_adapter"], DatabaseAuditLogAdapter)
+
+
+def test_container_wiring_keeps_default_adapters_when_sql_backend_disabled(
+    monkeypatch,
+):
+    from ai_copilot.adapters.approval_adapter import InMemoryApprovalAdapter
+    from ai_copilot.adapters.file_audit_log_adapter import FileAuditLogAdapter
+
+    monkeypatch.setenv("PERSISTENCE_BACKEND", "memory")
+    monkeypatch.delenv("PERSISTENCE_DATABASE_URL", raising=False)
+
+    services = _build_smart_engagement(
+        account_usecases=MagicMock(),
+        ig_usecases={
+            "identity": MagicMock(),
+            "relationships": MagicMock(),
+            "media": MagicMock(),
+            "comment": MagicMock(),
+            "direct": MagicMock(),
+        },
+        ai_services={"checkpoint_factory": _AsyncFactory(MemorySaver())},
+    )
+
+    assert isinstance(services["approval_adapter"], InMemoryApprovalAdapter)
+    assert isinstance(services["audit_log_adapter"], FileAuditLogAdapter)

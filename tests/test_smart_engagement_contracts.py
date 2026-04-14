@@ -664,5 +664,161 @@ async def test_approval_adapter_not_found_raises():
         await adapter.get_approval_status("nonexistent_id")
 
 
+@pytest.mark.asyncio
+async def test_database_approval_adapter_persists_and_updates_decision(tmp_path):
+    from ai_copilot.adapters.approval_adapter import DatabaseApprovalAdapter
+    from app.adapters.persistence.smart_engagement_repositories import (
+        SqlSmartEngagementApprovalRepository,
+    )
+    from app.adapters.persistence.sql_store import SqlitePersistenceStore
+
+    store = SqlitePersistenceStore(db_path=tmp_path / "smart_engagement.sqlite3")
+    repo = SqlSmartEngagementApprovalRepository(store)
+    adapter = DatabaseApprovalAdapter(repo)
+
+    action = ProposedAction(
+        action_type="comment",
+        target_id="post_123",
+        content="Great post!",
+        reasoning="educational",
+        expected_outcome="visibility",
+    )
+    risk = RiskAssessment(
+        risk_level="medium",
+        rule_hits=["write_action_requires_approval"],
+        reasoning="write op",
+        requires_approval=True,
+    )
+
+    approval_id = await adapter.submit_for_approval(
+        action=action,
+        risk_assessment=risk,
+        audit_trail=[{"event_type": "approval_requested"}],
+    )
+
+    pending = await adapter.get_approval_status(approval_id)
+    assert pending["approval_id"] == approval_id
+    assert pending["status"] == "pending"
+    assert pending["approved_at"] is None
+    assert pending["action_id"] == "comment:post_123"
+
+    decided = await adapter.record_approval_decision(
+        approval_id=approval_id,
+        approved=True,
+        approver_notes="safe to run",
+    )
+    assert decided["status"] == "approved"
+    assert decided["approver_notes"] == "safe to run"
+    assert decided["approved_at"] is not None
+
+    # New adapter instance should read persisted status from the same repository.
+    reloaded = await DatabaseApprovalAdapter(repo).get_approval_status(approval_id)
+    assert reloaded["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_database_approval_adapter_error_handling():
+    from ai_copilot.adapters.approval_adapter import DatabaseApprovalAdapter
+
+    class _BrokenApprovalRepo:
+        def create(self, record):
+            raise RuntimeError("db insert failed")
+
+        def get(self, approval_id):
+            raise RuntimeError("db read failed")
+
+        def set_decision(self, approval_id, **kwargs):
+            raise RuntimeError("db update failed")
+
+    adapter = DatabaseApprovalAdapter(_BrokenApprovalRepo())
+    action = ProposedAction(action_type="follow", target_id="u1", content=None, reasoning="r", expected_outcome="e")
+    risk = RiskAssessment(risk_level="medium", rule_hits=[], reasoning="r", requires_approval=True)
+
+    with pytest.raises(RuntimeError, match="persist approval request"):
+        await adapter.submit_for_approval(action=action, risk_assessment=risk, audit_trail=[])
+
+    with pytest.raises(RuntimeError, match="load approval status"):
+        await adapter.get_approval_status("apr_missing")
+
+    with pytest.raises(RuntimeError, match="persist approval decision"):
+        await adapter.record_approval_decision("apr_missing", approved=False)
+
+
+@pytest.mark.asyncio
+async def test_database_audit_log_adapter_persists_and_filters_trail(tmp_path):
+    from ai_copilot.adapters.audit_log_adapter import DatabaseAuditLogAdapter
+    from app.adapters.persistence.smart_engagement_repositories import (
+        SqlSmartEngagementAuditLogRepository,
+    )
+    from app.adapters.persistence.sql_store import SqlitePersistenceStore
+
+    store = SqlitePersistenceStore(db_path=tmp_path / "smart_engagement_audit.sqlite3")
+    repo = SqlSmartEngagementAuditLogRepository(store)
+    adapter = DatabaseAuditLogAdapter(repo)
+
+    await adapter.log_event(
+        AuditEvent(
+            event_type="goal_ingested",
+            node_name="ingest_goal",
+            event_data={"thread_id": "thread_A", "account_id": "acc_1"},
+            timestamp=1.0,
+        )
+    )
+    await adapter.log_event(
+        AuditEvent(
+            event_type="goal_ingested",
+            node_name="ingest_goal",
+            event_data={"thread_id": "thread_B", "account_id": "acc_2"},
+            timestamp=1.5,
+        )
+    )
+    await adapter.log_event(
+        AuditEvent(
+            event_type="approval_requested",
+            node_name="request_approval",
+            event_data={"thread_id": "thread_A", "approval_id": "apr_1"},
+            timestamp=2.0,
+        )
+    )
+
+    trail_a = await adapter.get_audit_trail("thread_A")
+    assert [event["event_type"] for event in trail_a] == [
+        "goal_ingested",
+        "approval_requested",
+    ]
+    assert all(event["event_data"]["thread_id"] == "thread_A" for event in trail_a)
+
+    trail_b = await adapter.get_audit_trail("thread_B")
+    assert [event["event_type"] for event in trail_b] == ["goal_ingested"]
+
+
+@pytest.mark.asyncio
+async def test_database_audit_log_adapter_error_handling():
+    from ai_copilot.adapters.audit_log_adapter import DatabaseAuditLogAdapter
+
+    class _BrokenAuditRepo:
+        def append(self, record):
+            raise RuntimeError("write failed")
+
+        def list_by_thread(self, thread_id):
+            raise RuntimeError("read failed")
+
+    adapter = DatabaseAuditLogAdapter(_BrokenAuditRepo())
+
+    # log_event is best-effort and should never raise.
+    await adapter.log_event(
+        AuditEvent(
+            event_type="goal_ingested",
+            node_name="ingest_goal",
+            event_data={"thread_id": "thread_x"},
+            timestamp=time.time(),
+        )
+    )
+
+    # Read failure should degrade gracefully to an empty trail.
+    trail = await adapter.get_audit_trail("thread_x")
+    assert trail == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -17,14 +17,10 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any
-
-from typing import TypedDict
+from typing import Any, Protocol, TypedDict
 
 from ai_copilot.application.smart_engagement.ports import ApprovalPort
 from ai_copilot.application.smart_engagement.state import (
-    ApprovalRequest,
-    ApprovalResult,
     ProposedAction,
     RiskAssessment,
 )
@@ -145,22 +141,55 @@ class InMemoryApprovalAdapter(ApprovalPort):
         self._approvals.clear()
 
 
+class ApprovalRepository(Protocol):
+    """Persistence contract used by DatabaseApprovalAdapter."""
+
+    def create(self, record: dict[str, Any]) -> None:
+        """Persist a new approval record."""
+
+    def get(self, approval_id: str) -> dict[str, Any] | None:
+        """Fetch a persisted approval record by id."""
+
+    def set_decision(
+        self,
+        approval_id: str,
+        *,
+        status: str,
+        approved_at: float,
+        approver_notes: str,
+    ) -> dict[str, Any] | None:
+        """Update approval decision fields and return the updated record."""
+
+
+def _normalize_action_id(action: ProposedAction | dict[str, Any] | None) -> str:
+    if not isinstance(action, dict):
+        return "unknown:unknown"
+    action_type = str(action.get("action_type", "unknown"))
+    target_id = str(action.get("target_id", "unknown"))
+    return f"{action_type}:{target_id}"
+
+
+def _as_approval_record(record: dict[str, Any]) -> ApprovalRecord:
+    """Map repository data to the ApprovalRecord contract."""
+    return ApprovalRecord(
+        approval_id=str(record.get("approval_id", "")),
+        status=str(record.get("status", "pending")),
+        requested_at=float(record.get("requested_at", 0.0)),
+        approved_at=(
+            float(record["approved_at"])
+            if record.get("approved_at") is not None
+            else None
+        ),
+        approver_notes=str(record.get("approver_notes", "")),
+        action_id=str(record.get("action_id", "")),
+    )
+
+
 class DatabaseApprovalAdapter(ApprovalPort):
-    """Database-backed approval adapter (production template).
+    """Database-backed approval adapter."""
 
-    To use:
-    1. Implement database client initialization
-    2. Replace dict operations with database queries
-    3. Add transaction support for consistency
-    """
-
-    def __init__(self, db_client: Any = None):
-        """Initialize with database client.
-
-        Args:
-            db_client: Database connection (e.g., AsyncPg, SQLAlchemy)
-        """
-        self.db = db_client
+    def __init__(self, repository: ApprovalRepository):
+        self._repository = repository
 
     async def submit_for_approval(
         self,
@@ -168,16 +197,34 @@ class DatabaseApprovalAdapter(ApprovalPort):
         risk_assessment: RiskAssessment,
         audit_trail: list[dict],
     ) -> str:
-        """Submit action for approval to database."""
-        raise NotImplementedError(
-            "DatabaseApprovalAdapter requires a concrete approvals repository implementation"
-        )
+        """Submit action for approval and persist to repository."""
+        approval_id = str(uuid.uuid4())
+        record = {
+            "approval_id": approval_id,
+            "status": "pending",
+            "requested_at": time.time(),
+            "approved_at": None,
+            "approver_notes": "",
+            "action_id": _normalize_action_id(action),
+            "action_payload": dict(action or {}),
+            "risk_payload": dict(risk_assessment or {}),
+            "audit_payload": list(audit_trail or []),
+        }
+        try:
+            self._repository.create(record)
+        except Exception as exc:
+            raise RuntimeError("Failed to persist approval request") from exc
+        return approval_id
 
     async def get_approval_status(self, approval_id: str) -> ApprovalRecord:
-        """Get approval status from database."""
-        raise NotImplementedError(
-            "DatabaseApprovalAdapter requires a concrete approvals repository implementation"
-        )
+        """Get approval status from repository."""
+        try:
+            stored = self._repository.get(approval_id)
+        except Exception as exc:
+            raise RuntimeError("Failed to load approval status") from exc
+        if stored is None:
+            raise ValueError(f"Approval not found: {approval_id}")
+        return _as_approval_record(stored)
 
     async def record_approval_decision(
         self,
@@ -185,7 +232,18 @@ class DatabaseApprovalAdapter(ApprovalPort):
         approved: bool,
         approver_notes: str = "",
     ) -> ApprovalRecord:
-        """Record decision in database."""
-        raise NotImplementedError(
-            "DatabaseApprovalAdapter requires a concrete approvals repository implementation"
-        )
+        """Record decision in repository."""
+        status = "approved" if approved else "rejected"
+        approved_at = time.time()
+        try:
+            updated = self._repository.set_decision(
+                approval_id,
+                status=status,
+                approved_at=approved_at,
+                approver_notes=approver_notes,
+            )
+        except Exception as exc:
+            raise RuntimeError("Failed to persist approval decision") from exc
+        if updated is None:
+            raise ValueError(f"Approval not found: {approval_id}")
+        return _as_approval_record(updated)

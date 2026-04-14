@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Protocol
 
 from ai_copilot.application.smart_engagement.ports import AuditLogPort
 
@@ -85,38 +85,64 @@ class InMemoryAuditLogAdapter(AuditLogPort):
         return self._events
 
 
+class AuditLogRepository(Protocol):
+    """Persistence contract used by DatabaseAuditLogAdapter."""
+
+    def append(self, record: dict[str, Any]) -> None:
+        """Persist an audit event record."""
+
+    def list_by_thread(self, thread_id: str) -> list[dict[str, Any]]:
+        """Return persisted events for one thread in chronological order."""
+
+
 class DatabaseAuditLogAdapter(AuditLogPort):
-    """Database-backed audit log adapter (production template)."""
+    """Database-backed audit log adapter."""
 
-    def __init__(self, db_client: Any = None):
-        """Initialize with database client.
-
-        Args:
-            db_client: Database connection (e.g., AsyncPg, SQLAlchemy)
-        """
-        self.db = db_client
+    def __init__(self, repository: AuditLogRepository):
+        self._repository = repository
 
     async def log_event(self, event: AuditEvent) -> None:
-        """Log event to database."""
-        # TODO: Insert into audit_events table
-        # await self.db.execute(
-        #     """INSERT INTO audit_events (thread_id, event_type, node_name, event_data, timestamp)
-        #        VALUES ($1, $2, $3, $4, $5)""",
-        #     event.get("event_data", {}).get("thread_id"),
-        #     event.get("event_type"),
-        #     event.get("node_name"),
-        #     json.dumps(event.get("event_data")),
-        #     event.get("timestamp"),
-        # )
+        """Log event to repository.
 
-        raise NotImplementedError("DatabaseAuditLogAdapter is a template")
+        Audit logging is best-effort: failures are reported but not re-raised.
+        """
+        normalized_event, thread_id = _normalize_event(event)
+        record = {
+            "thread_id": thread_id,
+            "event_type": normalized_event.get("event_type"),
+            "node_name": normalized_event.get("node_name"),
+            "event_data": dict(normalized_event.get("event_data", {})),
+            "timestamp": float(normalized_event.get("timestamp", time.time())),
+        }
+        try:
+            self._repository.append(record)
+        except Exception:
+            logger.exception(
+                "Audit logging failed for thread_id=%s event_type=%s",
+                thread_id,
+                normalized_event.get("event_type"),
+            )
 
     async def get_audit_trail(self, thread_id: str) -> list[AuditEvent]:
-        """Get audit trail from database."""
-        # TODO: Query audit_events table
-        # rows = await self.db.fetch(
-        #     "SELECT * FROM audit_events WHERE thread_id = $1 ORDER BY timestamp",
-        #     thread_id,
-        # )
+        """Get audit trail from repository."""
+        try:
+            rows = self._repository.list_by_thread(thread_id)
+        except Exception:
+            logger.exception("Failed to load audit trail for thread_id=%s", thread_id)
+            return []
 
-        raise NotImplementedError("DatabaseAuditLogAdapter is a template")
+        events: list[AuditEvent] = []
+        for row in rows:
+            row_data = row.get("event_data")
+            event_data = row_data if isinstance(row_data, dict) else {}
+            normalized_data = dict(event_data)
+            normalized_data.setdefault("thread_id", thread_id)
+            events.append(
+                AuditEvent(
+                    event_type=str(row.get("event_type", "")),
+                    node_name=str(row.get("node_name", "")),
+                    event_data=normalized_data,
+                    timestamp=float(row.get("timestamp", 0.0)),
+                )
+            )
+        return events

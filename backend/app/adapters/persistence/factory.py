@@ -28,6 +28,10 @@ from .repositories import (
 )
 from .sql_store import SqlitePersistenceStore
 from .sql_repositories import SqlAccountRepository, SqlStatusRepository, SqlJobRepository, SqlProxyRepository, SqlTemplateRepository
+from .smart_engagement_repositories import (
+    SqlSmartEngagementApprovalRepository,
+    SqlSmartEngagementAuditLogRepository,
+)
 from .uow import InMemoryPersistenceUoW
 from .sql_uow import SqlAlchemyPersistenceUoW
 
@@ -150,6 +154,21 @@ def build_template_repository():
     if sql_store is not None:
         return SqlTemplateRepository(sql_store)
     return InMemoryTemplateRepository()
+
+
+def build_smart_engagement_repositories():
+    """Build smart-engagement SQL repositories when DB persistence is active.
+
+    Returns:
+        tuple(approval_repo, audit_repo) on SQL backends, otherwise (None, None).
+    """
+    sql_store = build_sql_persistence_store()
+    if sql_store is None:
+        return None, None
+    return (
+        SqlSmartEngagementApprovalRepository(sql_store),
+        SqlSmartEngagementAuditLogRepository(sql_store),
+    )
 
 
 def build_oauth_token_store():
