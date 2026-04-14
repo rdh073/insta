@@ -69,6 +69,20 @@ class StubFollowupCreator:
         return dict(self._result)
 
 
+class StubFollowupCreatorRaises(StubFollowupCreator):
+    def __init__(self, exc: Exception | None = None):
+        super().__init__()
+        self._exc = exc or RuntimeError("followup creator boom")
+
+    async def create_followup(self, campaign_summary, operator_decision, original_job_ids):
+        self.calls.append({
+            "campaign_summary": campaign_summary,
+            "operator_decision": operator_decision,
+            "original_job_ids": original_job_ids,
+        })
+        raise self._exc
+
+
 def _sample_jobs():
     return [
         {
@@ -353,3 +367,67 @@ def test_resume_approve_missing_followup_job_id_routes_to_error():
 
     final_response = next((e for e in events if e["type"] == "final_response"), {})
     assert "missing job_id" in final_response.get("text", "")
+
+
+# =============================================================================
+# Test 9: Blank followup job_id → explicit error path
+# =============================================================================
+
+
+def test_resume_approve_blank_followup_job_id_routes_to_error():
+    uc, stub_followup = _make_use_case(followup_result={
+        "job_id": "   ",
+        "status": "scheduled",
+        "scheduled_at": None,
+    })
+    thread_id = "t-resume-blank-jobid"
+
+    async def run_both():
+        await _collect(uc.run(thread_id=thread_id, request_decision=True))
+        return await _collect(uc.resume(
+            thread_id=thread_id,
+            decision="approve",
+            parameters={"usernames": ["user1"], "caption": "Follow-up"},
+        ))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(stub_followup.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "missing job_id" in final_response.get("text", "")
+
+
+# =============================================================================
+# Test 10: Followup creator exception → explicit error path
+# =============================================================================
+
+
+def test_resume_approve_followup_creator_exception_routes_to_error():
+    stub_monitor = StubJobMonitor()
+    stub_followup = StubFollowupCreatorRaises(exc=RuntimeError("followup unavailable"))
+    uc = RunCampaignMonitorUseCase(
+        job_monitor=stub_monitor,
+        followup_creator=stub_followup,
+        checkpointer=MemorySaver(),
+    )
+    thread_id = "t-resume-followup-exc"
+
+    async def run_both():
+        await _collect(uc.run(thread_id=thread_id, request_decision=True))
+        return await _collect(uc.resume(
+            thread_id=thread_id,
+            decision="approve",
+            parameters={"usernames": ["user1"], "caption": "Follow-up"},
+        ))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(stub_followup.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "Failed to create followup: followup unavailable" in final_response.get("text", "")

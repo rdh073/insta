@@ -58,6 +58,16 @@ class StubPostScheduler:
         return result
 
 
+class StubPostSchedulerRaises(StubPostScheduler):
+    def __init__(self, exc: Exception | None = None):
+        super().__init__()
+        self._exc = exc or RuntimeError("scheduler boom")
+
+    async def schedule(self, usernames, caption, media_refs, scheduled_at=None):
+        self.calls.append({"usernames": usernames, "caption": caption, "scheduled_at": scheduled_at})
+        raise self._exc
+
+
 def _make_uc(generator=None, validator=None, scheduler=None, usernames=None):
     gen = generator or StubCaptionGenerator()
     val = validator or StubCaptionValidator()
@@ -287,3 +297,51 @@ def test_resume_approved_missing_job_id_routes_to_error():
 
     final_response = next((e for e in events if e["type"] == "final_response"), {})
     assert "missing job_id" in final_response.get("text", "")
+
+
+# =============================================================================
+# Test 9: Blank job_id → explicit error path
+# =============================================================================
+
+
+def test_resume_approved_blank_job_id_routes_to_error():
+    sched = StubPostScheduler(result={"job_id": "   ", "status": "scheduled", "scheduled_at": None})
+    uc, _, _, _ = _make_uc(scheduler=sched)
+    thread_id = "t-blank-jobid"
+
+    async def run_both():
+        await _collect(uc.run(campaign_brief="Brief", thread_id=thread_id, target_usernames=["u1"]))
+        return await _collect(uc.resume(thread_id=thread_id, decision="approved"))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(sched.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "missing job_id" in final_response.get("text", "")
+
+
+# =============================================================================
+# Test 10: Scheduler exception → explicit error path
+# =============================================================================
+
+
+def test_resume_approved_scheduler_exception_routes_to_error():
+    sched = StubPostSchedulerRaises(exc=RuntimeError("scheduler crashed"))
+    uc, _, _, _ = _make_uc(scheduler=sched)
+    thread_id = "t-scheduler-exc"
+
+    async def run_both():
+        await _collect(uc.run(campaign_brief="Brief", thread_id=thread_id, target_usernames=["u1"]))
+        return await _collect(uc.resume(thread_id=thread_id, decision="approved"))
+
+    events = asyncio.run(run_both())
+    finish = next((e for e in events if e["type"] == "run_finish"), None)
+    assert finish is not None
+    assert finish["stop_reason"] == "error"
+    assert len(sched.calls) == 1
+
+    final_response = next((e for e in events if e["type"] == "final_response"), {})
+    assert "Scheduling failed: scheduler crashed" in final_response.get("text", "")
