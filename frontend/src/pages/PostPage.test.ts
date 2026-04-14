@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { reconcileFileObjectUrls, revokeFileObjectUrls } from './PostPage';
+import { reconcileFileObjectUrls, revokeFileObjectUrls } from '../features/posts/hooks/useFileObjectUrls';
 
 describe('PostPage object URL lifecycle helpers', () => {
   it('reuses existing URLs, creates new URLs, and revokes removed file URLs', () => {

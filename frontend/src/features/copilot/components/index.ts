@@ -6,6 +6,7 @@ export { ProviderSwitcher } from './ProviderSwitcher';
 export { MentionPalette } from './MentionPalette';
 export { CommandPalette } from './CommandPalette';
 export { CopilotEmptyState } from './CopilotEmptyState';
+export { OperatorCopilotWorkspace } from './OperatorCopilotWorkspace';
 export {
   atMentionAtCursor,
   replaceAtMention,
