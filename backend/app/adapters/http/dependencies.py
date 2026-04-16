@@ -61,6 +61,12 @@ def get_account_edit_usecases():
     return services["account_edit"]
 
 
+def get_account_challenge_usecases():
+    """Get challenge use cases (pending/submit/cancel)."""
+    services = get_services()
+    return services["account_challenge"]
+
+
 def get_postjob_usecases():
     """Get post job use cases via dependency injection."""
     services = get_services()

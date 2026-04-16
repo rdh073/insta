@@ -165,6 +165,11 @@ class ToolPolicyRegistry:
         "check_proxy": ToolClassification(
             ToolPolicy.READ_ONLY, False, "tests proxy reachability — no state mutation"
         ),
+        "list_pending_challenges": ToolClassification(
+            ToolPolicy.READ_ONLY,
+            False,
+            "reads accounts blocked on Instagram login challenge (operator submits code manually)",
+        ),
         # ── Read-only: account & profile ─────────────────────────────────────
         "get_account_info": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads account metadata"

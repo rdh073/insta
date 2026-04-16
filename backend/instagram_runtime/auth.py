@@ -168,11 +168,45 @@ def _non_interactive_challenge_code_handler(
     username: str,
     choice=None,
 ) -> str:
-    """Reject interactive challenge code prompts in backend runtime."""
+    """Reject interactive challenge code prompts in backend runtime.
+
+    Legacy fallback: when no ``InstagramChallengeResolverAdapter`` has been
+    seated (see ``app.adapters.instagram.challenge_resolver.set_current_resolver``),
+    instagrapi's default handler would block on stdin. Raising preserves the
+    deterministic non-blocking contract expected by early tests.
+    """
     challenge_kind = getattr(choice, "name", choice) or "unknown"
     raise ChallengeRequired(
         f"Challenge verification required for @{username} via {challenge_kind}."
     )
+
+
+def _challenge_code_handler(username: str, choice=None) -> str:
+    """Route the SDK's challenge prompt to the seated resolver (if any).
+
+    - When a resolver is seated via ``set_current_resolver``, the call blocks
+      until the operator submits a code through the HTTP layer (or cancels /
+      times out). Returns the submitted 6-digit code on success.
+    - When no resolver is seated, falls back to the raising stub so legacy
+      callers (tests, scripts) see the previous non-interactive behaviour.
+    """
+    # Imported lazily so the module stays importable in environments that
+    # don't install the FastAPI-facing adapter layer.
+    from app.adapters.instagram.challenge_resolver import (
+        ChallengeCancelledError,
+        ChallengeTimeoutError,
+        get_current_resolver,
+    )
+
+    resolver = get_current_resolver()
+    if resolver is None:
+        return _non_interactive_challenge_code_handler(username, choice)
+    try:
+        return resolver.handle_challenge_code_request(username, choice)
+    except ChallengeCancelledError as exc:
+        raise ChallengeRequired(str(exc)) from exc
+    except ChallengeTimeoutError as exc:
+        raise ChallengeRequired(str(exc)) from exc
 
 
 def _non_interactive_change_password_handler(username: str) -> str:
@@ -220,7 +254,7 @@ def new_client(
     # Disable instagrapi's implicit interactive challenge flow. The defaults
     # can block on input() in non-interactive server contexts.
     client.handle_exception = _non_interactive_handle_exception
-    client.challenge_code_handler = _non_interactive_challenge_code_handler
+    client.challenge_code_handler = _challenge_code_handler
     client.change_password_handler = _non_interactive_change_password_handler
     return client
 

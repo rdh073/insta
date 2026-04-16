@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from ...ports import ReloginMode
 from ..account_status_policy import (
+    is_challenge_failure,
     should_use_fresh_credentials_relogin,
     status_from_failure,
 )
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
         InstagramClient,
         ActivityLogger,
     )
+    from ...ports.instagram_challenge import InstagramChallengeResolver
     from ...ports.instagram_error_handling import InstagramExceptionHandler
 
 
@@ -40,6 +42,7 @@ class ReloginUseCases:
         error_handler: InstagramExceptionHandler,
         uow=None,
         verify_session_on_restore: bool = False,
+        challenge_resolver: "InstagramChallengeResolver | None" = None,
     ):
         self.account_repo = account_repo
         self.status_repo = status_repo
@@ -48,6 +51,7 @@ class ReloginUseCases:
         self.error_handler = error_handler
         self.uow = uow
         self.verify_session_on_restore = verify_session_on_restore
+        self.challenge_resolver = challenge_resolver
         self._account_locks: dict[str, asyncio.Lock] = {}
 
     @staticmethod
@@ -182,6 +186,8 @@ class ReloginUseCases:
             account, username, password, mode = self._relogin_context(account_id)
             # Mark as logging_in immediately so frontend sees status change
             self.status_repo.set(account_id, "logging_in")
+            if self.challenge_resolver is not None:
+                self.challenge_resolver.register_account(account_id, username)
 
             try:
                 result = self.instagram.relogin_account(
@@ -209,13 +215,22 @@ class ReloginUseCases:
                     account_id=account_id,
                     username=username,
                 )
-                new_status = status_from_failure(failure, keep_transient=True)
+                pending_challenge = (
+                    is_challenge_failure(code=failure.code, family=failure.family)
+                    and self.challenge_resolver is not None
+                    and self.challenge_resolver.has_pending(account_id)
+                )
+                if pending_challenge:
+                    new_status = "challenge_pending"
+                else:
+                    new_status = status_from_failure(failure, keep_transient=True)
                 if new_status is not None:
                     self.status_repo.set(account_id, new_status)
+                error_code = "challenge_pending" if pending_challenge else failure.code
                 self._mark_error(
                     account_id,
                     failure.user_message,
-                    failure.code,
+                    error_code,
                     failure.family,
                 )
                 self.logger.log_event(

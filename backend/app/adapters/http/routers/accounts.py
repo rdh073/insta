@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import time
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Response, UploadFile, File
 
 # Server-side cooldown for bulk profile hydration — prevents the frontend from
 # accidentally triggering a burst of user_info() calls on every reconnect.
@@ -29,6 +29,7 @@ from app.adapters.http.schemas.accounts import (
 )
 from app.adapters.http.dependencies import (
     get_account_auth_usecases,
+    get_account_challenge_usecases,
     get_account_connectivity_usecases,
     get_account_edit_usecases,
     get_account_profile_usecases,
@@ -823,6 +824,84 @@ def set_account_presence(
     except Exception as exc:
         status_code, detail = _format_error_from_failure(exc)
         raise HTTPException(status_code=status_code, detail=detail)
+
+
+class _ChallengeSubmitRequest(BaseModel):
+    code: str
+
+
+def _serialize_challenge_pending(pending) -> dict:
+    return {
+        "account_id": pending.account_id,
+        "username": pending.username,
+        "method": pending.method,
+        "contact_hint": pending.contact_hint,
+        "created_at": pending.created_at,
+    }
+
+
+def _serialize_challenge_resolution(resolution) -> dict:
+    return {
+        "account_id": resolution.account_id,
+        "status": resolution.status,
+        "message": resolution.message,
+        "next_step": resolution.next_step,
+    }
+
+
+@router.get("/challenges/pending")
+def list_pending_challenges(usecases=Depends(get_account_challenge_usecases)):
+    """List every in-flight Instagram login challenge."""
+    return [_serialize_challenge_pending(p) for p in usecases.list_pending()]
+
+
+@router.get("/{account_id}/challenge")
+def get_pending_challenge(
+    account_id: str, usecases=Depends(get_account_challenge_usecases)
+):
+    """Return the pending challenge for ``account_id`` (204 when absent)."""
+    try:
+        pending = usecases.get(account_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=format_error(exc, "Account not found")
+        )
+    if pending is None:
+        return Response(status_code=204)
+    return _serialize_challenge_pending(pending)
+
+
+@router.post("/{account_id}/challenge/submit")
+def submit_challenge_code(
+    account_id: str,
+    body: _ChallengeSubmitRequest,
+    usecases=Depends(get_account_challenge_usecases),
+):
+    """Submit the 6-digit code the operator received for ``account_id``."""
+    try:
+        resolution = usecases.submit_code(account_id, body.code)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=format_error(exc, "Account not found")
+        )
+    payload = _serialize_challenge_resolution(resolution)
+    if resolution.status == "failed":
+        raise HTTPException(status_code=400, detail=payload)
+    return payload
+
+
+@router.delete("/{account_id}/challenge")
+def cancel_challenge(
+    account_id: str, usecases=Depends(get_account_challenge_usecases)
+):
+    """Cancel a pending challenge so the blocked login() call raises."""
+    try:
+        usecases.cancel(account_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=format_error(exc, "Account not found")
+        )
+    return Response(status_code=204)
 
 
 @router.delete("/rate-limited/{account_id}")

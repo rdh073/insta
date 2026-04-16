@@ -300,6 +300,38 @@ def register_account_tools(registry: ToolRegistry, context: "ToolBuilderContext"
         ),
     )
 
+    def list_pending_challenges_handler(_args: dict) -> dict:
+        if context.challenge_usecases is None:
+            return {"pending": [], "count": 0}
+        pending = context.challenge_usecases.list_pending()
+        return {
+            "count": len(pending),
+            "pending": [
+                {
+                    "account_id": p.account_id,
+                    "username": p.username,
+                    "method": p.method,
+                    "contact_hint": p.contact_hint,
+                    "created_at": p.created_at,
+                }
+                for p in pending
+            ],
+        }
+
+    registry.register(
+        "list_pending_challenges",
+        list_pending_challenges_handler,
+        schema(
+            "list_pending_challenges",
+            (
+                "List Instagram accounts that are blocked on a login challenge "
+                "waiting for the operator to enter a 6-digit code. READ-ONLY: "
+                "cannot submit codes — the operator must enter them manually "
+                "via the Accounts page."
+            ),
+        ),
+    )
+
 
 def register_account_content_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
     """Register account-scoped scheduling and discovery read tools."""

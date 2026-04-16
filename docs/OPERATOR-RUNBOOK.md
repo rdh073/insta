@@ -57,6 +57,7 @@ Dokumen ini ditujukan untuk operator yang mengelola banyak akun Instagram melalu
 | **Logging in** | Biru | Sedang proses login |
 | **Error** | Merah | Login gagal atau session expired |
 | **Challenge** | Kuning | Instagram meminta verifikasi tambahan |
+| **Challenge Pending** | Kuning | Menunggu operator memasukkan 6-digit challenge code |
 | **2FA Required** | Kuning | Menunggu kode 2FA |
 
 ### Aksi per Akun
@@ -87,6 +88,37 @@ Dokumen ini ditujukan untuk operator yang mengelola banyak akun Instagram melalu
 6. Klik **Verify & Enable**
 
 > **Catatan:** Setelah 2FA aktif, sistem akan otomatis generate kode saat login ulang jika secret tersimpan.
+
+### Resolving a Challenge (Email/SMS Code)
+
+Saat Instagram meminta kode 6-digit lewat email atau SMS, login masuk ke
+status **Challenge Pending**. Thread login backend akan menunggu kode
+selama `CHALLENGE_WAIT_TIMEOUT_SECONDS` detik (default 600 detik / 10 menit)
+sebelum gagal.
+
+**Alur resolusi:**
+
+1. Operator memicu login. Backend menerima challenge Instagram dan
+   mempublikasikan entry pending.
+2. Frontend (atau operator via curl) memanggil
+   `GET /api/accounts/challenges/pending` — menampilkan daftar akun yang
+   menunggu kode, beserta metode (`EMAIL` / `SMS`) dan `contact_hint`.
+3. Operator membaca kode 6-digit dari inbox/ponsel dan submit via
+   `POST /api/accounts/{account_id}/challenge/submit` dengan body
+   `{"code": "123456"}`. Response berisi `status="resolved"`.
+4. Thread login yang tertunda melanjutkan dan akun menjadi `active`.
+
+**Endpoint tambahan:**
+
+- `GET /api/accounts/{id}/challenge` — 200 dengan payload pending,
+  204 bila tidak ada challenge yang tertunda.
+- `DELETE /api/accounts/{id}/challenge` — batalkan challenge pending
+  sehingga `login()` yang terblokir segera raise dan kembali ke status
+  error.
+
+> **Catatan:** Resolver hidup di memori proses. Restart backend akan
+> membatalkan challenge yang sedang tertunda — operator harus memicu
+> login ulang.
 
 ---
 

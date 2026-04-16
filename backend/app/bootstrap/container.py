@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 
 from app.application.use_cases.account import AccountUseCases
+from app.application.use_cases.account.challenge import ChallengeUseCases
 from app.application.use_cases.account.edit import AccountEditUseCases
 from app.application.use_cases.account.relogin import ReloginUseCases
 from app.application.use_cases.account_auth import AccountAuthUseCases
@@ -55,6 +56,10 @@ from app.adapters.persistence.factory import (
     build_smart_engagement_repositories,
 )
 from app.adapters.instagram import InstagramClientAdapter
+from app.adapters.instagram.challenge_resolver import (
+    InstagramChallengeResolverAdapter,
+    set_current_resolver,
+)
 from app.adapters.persistence.post_job_control_adapter import PostJobControlAdapter
 from app.adapters.scheduler import PostJobQueue
 from app.adapters.scheduler.job_event_publisher_adapter import PostJobEventPublisherAdapter
@@ -163,7 +168,14 @@ def _build_instagram_adapters(client_repo):
     }
 
 
-def _build_account_usecases(repos, ig, infra, *, verify_session_on_restore: bool):
+def _build_account_usecases(
+    repos,
+    ig,
+    infra,
+    *,
+    verify_session_on_restore: bool,
+    challenge_resolver,
+):
     """Build all account-related use case instances."""
     account_repo, client_repo, status_repo, uow = repos
     instagram, totp, identity_reader, account_writer = ig
@@ -177,6 +189,7 @@ def _build_account_usecases(repos, ig, infra, *, verify_session_on_restore: bool
         error_handler=instagram_exception_handler,
         uow=uow,
         verify_session_on_restore=verify_session_on_restore,
+        challenge_resolver=challenge_resolver,
     )
 
     legacy = AccountUseCases(
@@ -207,6 +220,11 @@ def _build_account_usecases(repos, ig, infra, *, verify_session_on_restore: bool
         uow=uow,
         relogin_usecases=relogin,
         verify_session_on_restore=verify_session_on_restore,
+        challenge_resolver=challenge_resolver,
+    )
+    challenge = ChallengeUseCases(
+        resolver=challenge_resolver,
+        account_repo=account_repo,
     )
     profile = AccountProfileUseCases(
         account_repo=account_repo,
@@ -265,6 +283,7 @@ def _build_account_usecases(repos, ig, infra, *, verify_session_on_restore: bool
         "import": imp,
         "connectivity": connectivity,
         "edit": edit,
+        "challenge": challenge,
     }
 
 
@@ -351,6 +370,7 @@ def _build_ai_services(
         account_auth_usecases=account_uc_map["auth"],
         account_proxy_usecases=account_uc_map["proxy"],
         account_edit_usecases=account_uc_map["edit"],
+        account_challenge_usecases=account_uc_map["challenge"],
         proxy_pool_usecases=proxy_pool_usecases,
     )
 
@@ -568,11 +588,17 @@ def create_services():
     )
 
     # ── 4. Account use cases ──────────────────────────────────────────────
+    # Single challenge resolver shared by HTTP router, AuthUseCases, and the
+    # instagrapi Client hook (seated via set_current_resolver below).
+    challenge_resolver = InstagramChallengeResolverAdapter()
+    set_current_resolver(challenge_resolver)
+
     acct = _build_account_usecases(
         repos=(account_repo, client_repo, status_repo, uow),
         ig=(instagram, ig["totp"], ig["identity_reader"], ig["account_writer"]),
         infra=(activity_log, proxy_checker),
         verify_session_on_restore=verify_session_on_restore,
+        challenge_resolver=challenge_resolver,
     )
 
     # ── 5. Post-job + logs use cases ──────────────────────────────────────
@@ -632,6 +658,8 @@ def create_services():
         "account_import": acct["import"],
         "account_connectivity": acct["connectivity"],
         "account_edit": acct["edit"],
+        "account_challenge": acct["challenge"],
+        "challenge_resolver": challenge_resolver,
         "postjobs": postjob_usecases,
         "logs": logs_usecases,
         "identity": identity_usecases,

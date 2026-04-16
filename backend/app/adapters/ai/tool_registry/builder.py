@@ -50,12 +50,14 @@ class ToolBuilderContext:
     account_auth_usecases: Any = None
     account_proxy_usecases: Any = None
     account_edit_usecases: Any = None
+    account_challenge_usecases: Any = None
     proxy_pool_usecases: Any = None
 
     profile_usecases: Any = field(init=False)
     auth_usecases: Any = field(init=False)
     proxy_usecases: Any = field(init=False)
     edit_usecases: Any = field(init=False)
+    challenge_usecases: Any = field(init=False)
 
     def __post_init__(self) -> None:
         # Prefer split use cases when available, fall back to monolith.
@@ -63,6 +65,7 @@ class ToolBuilderContext:
         self.auth_usecases = self.account_auth_usecases or self.account_usecases
         self.proxy_usecases = self.account_proxy_usecases or self.account_usecases
         self.edit_usecases = self.account_edit_usecases
+        self.challenge_usecases = self.account_challenge_usecases
 
     def resolve_account_from_args(self, args: dict) -> tuple[Optional[str], Optional[str]]:
         username = str(args.get("username") or args.get("account_name") or "").strip().lstrip("@")
@@ -106,6 +109,7 @@ def create_tool_registry(
     account_auth_usecases=None,
     account_proxy_usecases=None,
     account_edit_usecases=None,
+    account_challenge_usecases=None,
     proxy_pool_usecases=None,
 ) -> ToolRegistry:
     """Create and populate tool registry from use cases.
@@ -143,6 +147,7 @@ def create_tool_registry(
         account_auth_usecases=account_auth_usecases,
         account_proxy_usecases=account_proxy_usecases,
         account_edit_usecases=account_edit_usecases,
+        account_challenge_usecases=account_challenge_usecases,
         proxy_pool_usecases=proxy_pool_usecases,
     )
 

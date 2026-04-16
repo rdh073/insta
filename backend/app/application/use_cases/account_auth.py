@@ -21,12 +21,14 @@ from ..ports import (
     TOTPManager,
     SessionStore,
 )
+from ..ports.instagram_challenge import InstagramChallengeResolver
 from ..ports.instagram_error_handling import InstagramExceptionHandler
 from ..ports.instagram_identity import InstagramIdentityReader
 from ..ports.persistence_models import AccountRecord
 from ..ports.persistence_uow import PersistenceUnitOfWork
 from ...domain.instagram_failures import InstagramFailure, InstagramAdapterError
 from .account_status_policy import (
+    is_challenge_failure,
     status_from_failure,
     should_use_fresh_credentials_relogin,
 )
@@ -49,6 +51,7 @@ class AccountAuthUseCases:
         uow: PersistenceUnitOfWork | None = None,
         relogin_usecases: ReloginUseCases | None = None,
         verify_session_on_restore: bool = False,
+        challenge_resolver: InstagramChallengeResolver | None = None,
     ):
         self.account_repo = account_repo
         self.client_repo = client_repo
@@ -61,6 +64,7 @@ class AccountAuthUseCases:
         self.identity_reader = identity_reader
         self.uow = uow
         self.verify_session_on_restore = verify_session_on_restore
+        self.challenge_resolver = challenge_resolver
         # Canonical relogin semantics shared with AccountUseCases facade.
         self._relogin = relogin_usecases or ReloginUseCases(
             account_repo=account_repo,
@@ -305,6 +309,8 @@ class AccountAuthUseCases:
         # Phase 2: Instagram network I/O — outside the UoW so the DB lock is not
         # held during the slow login call. Fresh accounts go straight to a full
         # credential login; existing session files attempt a restore first.
+        if self.challenge_resolver is not None:
+            self.challenge_resolver.register_account(account_id, request.username)
         try:
             client = self.instagram.create_authenticated_client(
                 request.username,
@@ -340,6 +346,36 @@ class AccountAuthUseCases:
                     id=account_id,
                     username=request.username,
                     status="2fa_required",
+                )
+
+            # Challenge (email/SMS code) — keep the account record so the
+            # operator can submit the code via /api/accounts/{id}/challenge.
+            if (
+                is_challenge_failure(code=failure.code, family=failure.family)
+                and self.challenge_resolver is not None
+                and self.challenge_resolver.has_pending(account_id)
+            ):
+                self.status_repo.set(account_id, "challenge_pending")
+                self.account_repo.update(
+                    account_id,
+                    last_error=failure.user_message,
+                    last_error_code="challenge_pending",
+                    last_error_family="challenge",
+                )
+                self.logger.log_event(
+                    account_id,
+                    request.username,
+                    "login_challenge_pending",
+                    detail=failure.user_message,
+                    status="challenge_pending",
+                )
+                return AccountResponse(
+                    id=account_id,
+                    username=request.username,
+                    status="challenge_pending",
+                    last_error=failure.user_message,
+                    last_error_code="challenge_pending",
+                    last_error_family="challenge",
                 )
 
             # Other error — clean up the account record and raise
