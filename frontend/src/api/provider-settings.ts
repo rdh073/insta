@@ -21,6 +21,23 @@ export interface SaveProviderSettingsResponse {
   errors?: Record<string, string>;
 }
 
+export interface OllamaModelEntry {
+  id: string;
+  owned_by: string;
+}
+
+export interface OllamaModelsResponse {
+  base_url: string;
+  models: OllamaModelEntry[];
+}
+
+export interface OllamaHealthResponse {
+  ok: boolean;
+  base_url: string;
+  model_count: number;
+  latency_ms: number;
+}
+
 export const providerSettingsApi = {
   get: () =>
     api
@@ -30,5 +47,21 @@ export const providerSettingsApi = {
   save: (settings: Record<string, ProviderSettingPayload>) =>
     api
       .put<SaveProviderSettingsResponse>('/dashboard/provider-settings', { settings })
+      .then((r) => r.data),
+};
+
+export const ollamaApi = {
+  listModels: (baseUrl?: string) =>
+    api
+      .get<OllamaModelsResponse>('/dashboard/providers/ollama/models', {
+        params: baseUrl ? { base_url: baseUrl } : undefined,
+      })
+      .then((r) => r.data),
+
+  health: (baseUrl?: string) =>
+    api
+      .get<OllamaHealthResponse>('/dashboard/providers/ollama/health', {
+        params: baseUrl ? { base_url: baseUrl } : undefined,
+      })
       .then((r) => r.data),
 };

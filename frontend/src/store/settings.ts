@@ -7,6 +7,7 @@ export type AIProvider =
   | 'deepseek'
   | 'antigravity'
   | 'openai_compatible'
+  | 'ollama'
   | 'openai_codex'
   | 'claude_code';
 
@@ -74,6 +75,14 @@ export const PROVIDERS: Record<AIProvider, ProviderConfig> = {
     hint: 'Any OpenAI-compatible server — Ollama, LM Studio, vLLM, LocalAI, Groq, Together, Mistral, etc.',
     defaultBaseUrl: 'http://localhost:11434/v1',
   },
+  ollama: {
+    label: 'Ollama',
+    placeholder: 'http://host:port/v1 (no API key)',
+    defaultModel: 'llama3.2:3b',
+    models: [],
+    hint: 'Self-hosted or remote Ollama — no API key required',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+  },
   openai_codex: {
     label: 'OpenAI Codex',
     placeholder: 'OAuth-managed (no direct API key)',
@@ -138,6 +147,17 @@ const LEGACY_BACKEND_URL = 'http://localhost:8000';
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || '';
 const DEFAULT_BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY?.trim() || '';
 
+const EMPTY_API_KEYS: Record<AIProvider, string> = {
+  openai: '',
+  gemini: '',
+  deepseek: '',
+  antigravity: 'sk-antigravity',
+  openai_compatible: '',
+  ollama: '',
+  openai_codex: '',
+  claude_code: '',
+};
+
 function normalizePersistedSettings(
   persistedState: Partial<SettingsStore> | undefined
 ): Partial<SettingsStore> {
@@ -156,6 +176,10 @@ function normalizePersistedSettings(
     normalized.backendApiKey = DEFAULT_BACKEND_API_KEY;
   }
 
+  // Backfill any provider keys that were added after the persisted snapshot was
+  // written (e.g. 'ollama'). Existing keys are preserved.
+  normalized.apiKeys = { ...EMPTY_API_KEYS, ...(normalized.apiKeys ?? {}) };
+
   return normalized;
 }
 
@@ -173,6 +197,7 @@ export const useSettingsStore = create<SettingsStore>()(
         deepseek: '',
         antigravity: 'sk-antigravity',
         openai_compatible: '',
+        ollama: '',
         openai_codex: '',
         claude_code: '',
       },

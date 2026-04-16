@@ -7,6 +7,7 @@ import type { AIProvider } from '../../../store/settings';
 import { cn } from '../../../lib/cn';
 
 const OAUTH_PROVIDERS: AIProvider[] = ['openai_codex', 'claude_code'];
+const KEYLESS_PROVIDERS: AIProvider[] = ['ollama'];
 
 export function ProviderSwitcher() {
   const provider = useSettingsStore((s) => s.provider);
@@ -32,6 +33,7 @@ export function ProviderSwitcher() {
 
   const configuredProviders = (Object.keys(PROVIDERS) as AIProvider[]).filter((p) => {
     if (OAUTH_PROVIDERS.includes(p)) return true;
+    if (KEYLESS_PROVIDERS.includes(p)) return true;
     return (apiKeys[p] ?? '').trim().length > 0;
   });
 

@@ -127,6 +127,7 @@ export function SettingsWorkspace() {
               provider={draft.draftProvider}
               model={draft.draftModel}
               setModel={draft.setDraftModel}
+              effectiveBaseUrl={draft.effectiveBaseUrl}
             />
           </section>
 

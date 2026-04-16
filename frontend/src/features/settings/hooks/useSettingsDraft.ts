@@ -22,7 +22,7 @@ export interface SettingsDraft {
   isDirty: boolean;
   backendLabel: string;
   isOAuthProvider: boolean;
-  activeAuthMode: 'OAuth' | 'API Key';
+  activeAuthMode: 'OAuth' | 'API Key' | 'Self-hosted';
   effectiveBaseUrl: string;
   // Actions
   handleSave: () => void;
@@ -136,7 +136,12 @@ export function useSettingsDraft(): SettingsDraft {
 
   const backendLabel = describeBackend(draftBackendUrl);
   const isOAuthProvider = draftProvider === 'openai_codex' || draftProvider === 'claude_code';
-  const activeAuthMode: 'OAuth' | 'API Key' = isOAuthProvider ? 'OAuth' : 'API Key';
+  const isSelfHostedProvider = draftProvider === 'ollama';
+  const activeAuthMode: 'OAuth' | 'API Key' | 'Self-hosted' = isOAuthProvider
+    ? 'OAuth'
+    : isSelfHostedProvider
+      ? 'Self-hosted'
+      : 'API Key';
   const effectiveBaseUrl =
     draftBaseUrls[draftProvider] ?? PROVIDERS[draftProvider].defaultBaseUrl ?? '';
 

@@ -5,7 +5,7 @@ import { PROVIDERS, type AIProvider } from '../../../store/settings';
 interface Props {
   backendLabel: string;
   provider: AIProvider;
-  activeAuthMode: 'OAuth' | 'API Key';
+  activeAuthMode: 'OAuth' | 'API Key' | 'Self-hosted';
   effectiveBaseUrl: string;
   model: string;
   isDirty: boolean;
@@ -69,7 +69,7 @@ export function SettingsSummaryRail({
           icon={Key}
           label="Auth mode"
           value={activeAuthMode}
-          tone={activeAuthMode === 'OAuth' ? 'green' : 'amber'}
+          tone={activeAuthMode === 'OAuth' ? 'green' : activeAuthMode === 'Self-hosted' ? 'cyan' : 'amber'}
         />
 
         {effectiveBaseUrl && (

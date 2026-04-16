@@ -1,6 +1,14 @@
-import { Key, ShieldCheck } from 'lucide-react';
+import { Key, ServerCog, ShieldCheck } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { PROVIDERS, type AIProvider } from '../../../store/settings';
+
+type AuthCategory = 'OAuth' | 'API Key' | 'Self-hosted';
+
+function authCategoryFor(id: AIProvider): AuthCategory {
+  if (id === 'openai_codex' || id === 'claude_code') return 'OAuth';
+  if (id === 'ollama') return 'Self-hosted';
+  return 'API Key';
+}
 
 interface ProviderCardProps {
   id: AIProvider;
@@ -10,7 +18,8 @@ interface ProviderCardProps {
 
 function ProviderCard({ id, active, onClick }: ProviderCardProps) {
   const cfg = PROVIDERS[id];
-  const isOAuth = id === 'openai_codex' || id === 'claude_code';
+  const category = authCategoryFor(id);
+  const Icon = category === 'OAuth' ? ShieldCheck : category === 'Self-hosted' ? ServerCog : Key;
 
   return (
     <button
@@ -35,11 +44,7 @@ function ProviderCard({ id, active, onClick }: ProviderCardProps) {
               : 'bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]',
           )}
         >
-          {isOAuth ? (
-            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <Key className="h-4 w-4" aria-hidden="true" />
-          )}
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
           <p
@@ -51,7 +56,12 @@ function ProviderCard({ id, active, onClick }: ProviderCardProps) {
             {cfg.label}
           </p>
           <p className="mt-0.5 truncate text-xs text-[var(--color-text-subtle)]">
-            {isOAuth ? 'OAuth' : 'API Key'} &middot; {cfg.models.length > 0 ? `${cfg.models.length} models` : 'custom model'}
+            {category} &middot;{' '}
+            {id === 'ollama'
+              ? 'dynamic models'
+              : cfg.models.length > 0
+                ? `${cfg.models.length} models`
+                : 'custom model'}
           </p>
         </div>
         {active && (

@@ -1,7 +1,10 @@
-import { ExternalLink, Key, ShieldCheck, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
+import { ExternalLink, Key, ServerCog, ShieldCheck, CheckCircle2, AlertTriangle, X, Activity } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { PROVIDERS, type AIProvider } from '../../../store/settings';
+import { ollamaApi } from '../../../api/provider-settings';
 import type { ProviderOAuth } from '../hooks/useProviderOAuth';
 
 interface Props {
@@ -43,20 +46,40 @@ export function ProviderAccessCard({
   const cfg = PROVIDERS[provider];
   const { connected, expiresAtMs, accountId } = oauth.status;
   const nearExpiry = isNearExpiry(expiresAtMs);
+  const isSelfHostedProvider = provider === 'ollama';
+  const category: 'OAuth' | 'API Key' | 'Self-hosted' = isOAuthProvider
+    ? 'OAuth'
+    : isSelfHostedProvider
+      ? 'Self-hosted'
+      : 'API Key';
+  const HeaderIcon = isOAuthProvider ? ShieldCheck : isSelfHostedProvider ? ServerCog : Key;
+
+  const [testing, setTesting] = useState(false);
+
+  async function handleTestConnection() {
+    setTesting(true);
+    try {
+      const trimmed = effectiveBaseUrl.trim();
+      const result = await ollamaApi.health(trimmed || undefined);
+      toast.success(
+        `Connected — ${result.model_count} models available (${result.latency_ms}ms)`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reach Ollama server');
+    } finally {
+      setTesting(false);
+    }
+  }
 
   return (
     <div className="space-y-4 rounded-[1.25rem] border border-[var(--color-border-fainter)] bg-[var(--color-surface-overlay-soft)] p-4">
       {/* Section header */}
       <div className="flex items-center gap-2">
         <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--color-accent-violet-bg)]">
-          {isOAuthProvider ? (
-            <ShieldCheck className="h-3.5 w-3.5 text-[var(--color-accent-violet)]" aria-hidden="true" />
-          ) : (
-            <Key className="h-3.5 w-3.5 text-[var(--color-accent-violet)]" aria-hidden="true" />
-          )}
+          <HeaderIcon className="h-3.5 w-3.5 text-[var(--color-accent-violet)]" aria-hidden="true" />
         </div>
         <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-          {cfg.label} &mdash; {isOAuthProvider ? 'OAuth' : 'API Key'}
+          {cfg.label} &mdash; {category}
         </p>
       </div>
 
@@ -72,8 +95,24 @@ export function ProviderAccessCard({
         />
       )}
 
-      {/* API key or OAuth flow */}
-      {!isOAuthProvider ? (
+      {/* Self-hosted (Ollama): no API key, just a test connection button */}
+      {isSelfHostedProvider ? (
+        <div className="space-y-2">
+          <Button
+            onClick={handleTestConnection}
+            loading={testing}
+            variant="secondary"
+            size="sm"
+          >
+            <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+            Test connection
+          </Button>
+          <p className="text-xs text-[var(--color-text-subtle)]">
+            {cfg.hint} Requests are proxied through the backend to{' '}
+            <span className="font-mono">{effectiveBaseUrl || cfg.defaultBaseUrl}</span>.
+          </p>
+        </div>
+      ) : !isOAuthProvider ? (
         <>
           <Input
             id={`settings-api-key-${provider}`}
