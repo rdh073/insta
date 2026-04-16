@@ -56,6 +56,11 @@ _USE_CASE_SURFACES: tuple[UseCaseSurface, ...] = (
         class_name="AccountProxyUseCases",
     ),
     UseCaseSurface(
+        alias="edit_usecases",
+        module_path="backend/app/application/use_cases/account/edit.py",
+        class_name="AccountEditUseCases",
+    ),
+    UseCaseSurface(
         alias="postjob_usecases",
         module_path="backend/app/application/use_cases/post_job.py",
         class_name="PostJobUseCases",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, UploadFile, File
 
@@ -29,6 +30,7 @@ from app.adapters.http.schemas.accounts import (
 from app.adapters.http.dependencies import (
     get_account_auth_usecases,
     get_account_connectivity_usecases,
+    get_account_edit_usecases,
     get_account_profile_usecases,
     get_account_proxy_usecases,
     get_account_totp_usecases,
@@ -691,6 +693,136 @@ def get_credentials(account_id: str, repo=Depends(get_account_repo)):
         "password": record.password or "",
         "totpSecret": record.totp_secret or "",
     }
+
+
+class _PrivacyRequest(BaseModel):
+    private: bool
+
+
+class _PresenceRequest(BaseModel):
+    disabled: bool
+
+
+class _ProfileEditRequest(BaseModel):
+    first_name: str | None = None
+    biography: str | None = None
+    external_url: str | None = None
+
+
+def _serialize_account_profile(profile) -> dict:
+    """Serialize AccountProfile DTO into the JSON envelope used by this router."""
+    return {
+        "id": profile.id,
+        "username": profile.username,
+        "isPrivate": profile.is_private,
+        "fullName": profile.full_name,
+        "biography": profile.biography,
+        "externalUrl": profile.external_url,
+        "avatar": profile.profile_pic_url,
+        "presenceDisabled": profile.presence_disabled,
+    }
+
+
+@router.post("/{account_id}/privacy")
+def set_account_privacy(
+    account_id: str,
+    body: _PrivacyRequest,
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Toggle account privacy (private vs public)."""
+    try:
+        if body.private:
+            profile = usecases.set_private(account_id)
+        else:
+            profile = usecases.set_public(account_id)
+        return _serialize_account_profile(profile)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        # ValueError without translated failure → validation/auth (400/404 family).
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post("/{account_id}/profile/avatar")
+async def change_account_avatar(
+    account_id: str,
+    file: UploadFile = File(...),
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Upload a new profile picture for the account."""
+    import tempfile
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
+    payload = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(payload)
+        tmp_path = tmp.name
+    try:
+        try:
+            profile = usecases.change_avatar(account_id, tmp_path)
+        except ValueError as exc:
+            status_code, detail = _format_error_from_failure(exc)
+            if status_code == 500:
+                status_code = 400
+            raise HTTPException(status_code=status_code, detail=detail)
+        except Exception as exc:
+            status_code, detail = _format_error_from_failure(exc)
+            raise HTTPException(status_code=status_code, detail=detail)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    return _serialize_account_profile(profile)
+
+
+@router.patch("/{account_id}/profile")
+def edit_account_profile(
+    account_id: str,
+    body: _ProfileEditRequest,
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Edit profile fields (first_name, biography, external_url)."""
+    try:
+        profile = usecases.edit_profile(
+            account_id,
+            first_name=body.first_name,
+            biography=body.biography,
+            external_url=body.external_url,
+        )
+        return _serialize_account_profile(profile)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post("/{account_id}/presence")
+def set_account_presence(
+    account_id: str,
+    body: _PresenceRequest,
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Toggle the 'show activity status' presence flag."""
+    try:
+        profile = usecases.set_presence_disabled(account_id, body.disabled)
+        return _serialize_account_profile(profile)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.delete("/rate-limited/{account_id}")

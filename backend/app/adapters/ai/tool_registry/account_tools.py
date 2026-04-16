@@ -167,6 +167,139 @@ def register_account_tools(registry: ToolRegistry, context: "ToolBuilderContext"
         ),
     )
 
+    def _serialize_account_profile(profile) -> dict:
+        return {
+            "id": profile.id,
+            "username": profile.username,
+            "isPrivate": profile.is_private,
+            "fullName": profile.full_name,
+            "biography": profile.biography,
+            "externalUrl": profile.external_url,
+            "avatar": profile.profile_pic_url,
+            "presenceDisabled": profile.presence_disabled,
+        }
+
+    def set_account_privacy_handler(args: dict) -> dict:
+        if context.edit_usecases is None:
+            return {"error": "Account edit use cases are not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        private = bool(args.get("private", False))
+        try:
+            profile = (
+                context.edit_usecases.set_private(account_id)
+                if private
+                else context.edit_usecases.set_public(account_id)
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"success": True, **_serialize_account_profile(profile)}
+
+    def edit_account_profile_handler(args: dict) -> dict:
+        if context.edit_usecases is None:
+            return {"error": "Account edit use cases are not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        kwargs = {
+            key: args[key]
+            for key in ("first_name", "biography", "external_url")
+            if key in args and args[key] is not None
+        }
+        if not kwargs:
+            return {
+                "error": "Provide at least one of: first_name, biography, external_url"
+            }
+        try:
+            profile = context.edit_usecases.edit_profile(account_id, **kwargs)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"success": True, **_serialize_account_profile(profile)}
+
+    def set_account_presence_handler(args: dict) -> dict:
+        if context.edit_usecases is None:
+            return {"error": "Account edit use cases are not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        disabled = bool(args.get("disabled", False))
+        try:
+            profile = context.edit_usecases.set_presence_disabled(
+                account_id, disabled
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"success": True, **_serialize_account_profile(profile)}
+
+    registry.register(
+        "set_account_privacy",
+        set_account_privacy_handler,
+        schema(
+            "set_account_privacy",
+            "Switch the authenticated Instagram account between private and public visibility.",
+            properties={
+                "username": {
+                    "type": "string",
+                    "description": "Instagram username (with or without @)",
+                },
+                "private": {
+                    "type": "boolean",
+                    "description": "True = make account private; False = make it public",
+                },
+            },
+            required=["username", "private"],
+        ),
+    )
+
+    registry.register(
+        "edit_account_profile",
+        edit_account_profile_handler,
+        schema(
+            "edit_account_profile",
+            "Edit the authenticated account's profile fields. Only provided fields are sent.",
+            properties={
+                "username": {
+                    "type": "string",
+                    "description": "Instagram username (with or without @)",
+                },
+                "first_name": {
+                    "type": "string",
+                    "description": "Display name (max length enforced by Instagram).",
+                },
+                "biography": {
+                    "type": "string",
+                    "description": "Profile bio text. Max 150 characters.",
+                },
+                "external_url": {
+                    "type": "string",
+                    "description": "Absolute http(s) link in bio. Empty string clears the link.",
+                },
+            },
+            required=["username"],
+        ),
+    )
+
+    registry.register(
+        "set_account_presence",
+        set_account_presence_handler,
+        schema(
+            "set_account_presence",
+            "Toggle the 'show activity status' (last-active) presence flag for the account.",
+            properties={
+                "username": {
+                    "type": "string",
+                    "description": "Instagram username (with or without @)",
+                },
+                "disabled": {
+                    "type": "boolean",
+                    "description": "True hides last-active timestamps from other users; False shows them.",
+                },
+            },
+            required=["username", "disabled"],
+        ),
+    )
+
 
 def register_account_content_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
     """Register account-scoped scheduling and discovery read tools."""

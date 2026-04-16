@@ -138,6 +138,21 @@ class ToolPolicyRegistry:
         "set_account_proxy": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "modifies account proxy configuration"
         ),
+        "set_account_privacy": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "toggles account privacy (public ↔ private), changes audience for all posts",
+        ),
+        "edit_account_profile": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "edits the authenticated account's profile fields (name, biography, external URL)",
+        ),
+        "set_account_presence": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "toggles the 'show activity status' presence flag for the account",
+        ),
         "import_proxies": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "imports proxy records into the proxy pool"
         ),

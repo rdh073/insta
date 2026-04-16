@@ -55,6 +55,12 @@ def get_account_connectivity_usecases():
     return services["account_connectivity"]
 
 
+def get_account_edit_usecases():
+    """Get account edit use cases (privacy/avatar/profile/presence)."""
+    services = get_services()
+    return services["account_edit"]
+
+
 def get_postjob_usecases():
     """Get post job use cases via dependency injection."""
     services = get_services()

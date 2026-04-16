@@ -92,6 +92,10 @@
     {
       "gap_key": "capability_gap:relationship_use_cases.batch_unfollow",
       "justification": "Mass-unfollow action is intentionally not exposed due abuse/rate-limit risk."
+    },
+    {
+      "gap_key": "capability_gap:edit_usecases.change_avatar",
+      "justification": "Avatar replacement has high blast radius (impersonation, brand impact, irreversible without backup) and is reserved for the operator HTTP route — intentionally not exposed to autonomous tooling."
     }
   ]
 }
