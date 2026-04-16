@@ -41,6 +41,9 @@ class AccountResponse:
     last_error: Optional[str] = None
     last_error_code: Optional[str] = None
     last_error_family: Optional[str] = None
+    # Server-side logout outcome for logout/bulk-logout flows.
+    # One of "success" | "failed" | "not_present"; None for non-logout responses.
+    server_logout: Optional[str] = None
 
 
 @dataclass

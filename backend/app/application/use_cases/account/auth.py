@@ -357,7 +357,13 @@ class AuthUseCases:
 
     def logout_account(self, account_id: str, detail: str = "") -> AccountResponse:
         """Logout an account.
-        
+
+        Invalidates the Instagram server-side mobile session by calling
+        instagrapi Client.logout() before tearing down local state. Even
+        when the server call fails, local cleanup (session file, status,
+        account record) always runs so the operator never sees a stuck
+        account.
+
         Raises:
             ValueError: Account not found.
         """
@@ -370,10 +376,16 @@ class AuthUseCases:
             account = self.account_repo.get(account_id) or {}
             username = account.get("username", "")
 
-            # Remove local runtime and persisted session state
-            self.client_repo.remove(account_id)
-            self.session_store.delete_session(username)
+            # Pop the live client first so the server-side logout call can
+            # run against the live session. remove() returns the client if
+            # it existed, or None when no runtime client was attached.
+            client = self.client_repo.remove(account_id)
+            server_logout = self._invalidate_server_session(
+                client, account_id=account_id, username=username
+            )
 
+            # Local cleanup always runs, regardless of server_logout outcome.
+            self.session_store.delete_session(username)
             self.logger.log_event(account_id, username, "logout", detail=detail, status="removed")
             self.status_repo.clear(account_id)
             self.account_repo.remove(account_id)
@@ -382,7 +394,48 @@ class AuthUseCases:
                 id=account_id,
                 username=username,
                 status="removed",
+                server_logout=server_logout,
             )
+
+    def _invalidate_server_session(
+        self, client, *, account_id: str, username: str
+    ) -> str:
+        """Call client.logout() to invalidate the server-side session.
+
+        Returns one of "success", "failed", or "not_present". Any exception
+        raised by the vendor client is routed through error_handler so we
+        preserve the translated failure semantics, then callers continue
+        with local cleanup.
+        """
+        if client is None:
+            return "not_present"
+
+        try:
+            client.logout()
+        except Exception as exc:
+            failure = self.error_handler.handle(
+                exc,
+                operation="logout",
+                account_id=account_id,
+                username=username,
+            )
+            self.logger.log_event(
+                account_id,
+                username,
+                "logout",
+                detail=f"server_logout_failed: {failure.code}",
+                status="removed",
+            )
+            return "failed"
+
+        self.logger.log_event(
+            account_id,
+            username,
+            "logout",
+            detail="server_logout_ok",
+            status="removed",
+        )
+        return "success"
 
     def bulk_logout_accounts(self, account_ids: list[str]) -> list[AccountResponse]:
         """Logout multiple accounts."""

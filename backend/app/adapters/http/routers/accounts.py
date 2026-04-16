@@ -352,6 +352,7 @@ def logout(account_id: str, usecases=Depends(get_account_auth_usecases)):
             "id": result.id,
             "username": result.username,
             "status": result.status,
+            "server_logout": result.server_logout,
         }
     except ValueError as e:
         raise HTTPException(
@@ -527,6 +528,7 @@ def bulk_logout(body: BulkAccountIds, usecases=Depends(get_account_auth_usecases
                 "id": acc.id,
                 "username": acc.username,
                 "status": acc.status,
+                "server_logout": acc.server_logout,
             }
             for acc in results
         ]

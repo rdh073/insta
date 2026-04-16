@@ -414,7 +414,14 @@ class AccountAuthUseCases:
             raise InstagramAdapterError(failure) from exc
 
     def logout_account(self, account_id: str, detail: str = "") -> AccountResponse:
-        """Logout an account."""
+        """Logout an account.
+
+        Invalidates the Instagram server-side mobile session by invoking
+        the live client's logout() before local teardown. Local cleanup
+        (session file, status, account record) always runs, even if the
+        server-side call fails, so the operator never sees a stuck
+        account.
+        """
         with self._uow_scope():
             if not self.account_repo.exists(account_id):
                 raise ValueError("Account not found")
@@ -422,11 +429,15 @@ class AccountAuthUseCases:
             account = self.account_repo.get(account_id) or {}
             username = account.get("username", "")
 
-            # Remove local runtime and persisted session state without waiting on
-            # a remote Instagram logout request.
-            self.client_repo.remove(account_id)
-            self.session_store.delete_session(username)
+            # Pop the live client first so the server-side logout call can
+            # run against it. remove() returns the client if one was
+            # attached, or None when no runtime client exists.
+            client = self.client_repo.remove(account_id)
+            server_logout = self._invalidate_server_session(
+                client, account_id=account_id, username=username
+            )
 
+            self.session_store.delete_session(username)
             self.logger.log_event(
                 account_id, username, "logout", detail=detail, status="removed"
             )
@@ -437,7 +448,48 @@ class AccountAuthUseCases:
                 id=account_id,
                 username=username,
                 status="removed",
+                server_logout=server_logout,
             )
+
+    def _invalidate_server_session(
+        self, client, *, account_id: str, username: str
+    ) -> str:
+        """Call client.logout() to invalidate the server-side session.
+
+        Returns one of "success", "failed", or "not_present". Exceptions
+        raised by the vendor client are routed through error_handler to
+        preserve translated failure semantics; the caller continues with
+        local cleanup regardless.
+        """
+        if client is None:
+            return "not_present"
+
+        try:
+            client.logout()
+        except Exception as exc:
+            failure = self.error_handler.handle(
+                exc,
+                operation="logout",
+                account_id=account_id,
+                username=username,
+            )
+            self.logger.log_event(
+                account_id,
+                username,
+                "logout",
+                detail=f"server_logout_failed: {failure.code}",
+                status="removed",
+            )
+            return "failed"
+
+        self.logger.log_event(
+            account_id,
+            username,
+            "logout",
+            detail="server_logout_ok",
+            status="removed",
+        )
+        return "success"
 
     def relogin_account(self, account_id: str) -> AccountResponse:
         """Relogin an account via canonical split-path relogin semantics."""
