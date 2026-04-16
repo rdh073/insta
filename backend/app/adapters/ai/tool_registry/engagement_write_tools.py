@@ -693,6 +693,213 @@ def register_direct_thread_write_tools(registry: ToolRegistry, context: "ToolBui
     )
 
 
+def _direct_ack_to_dict(ack) -> dict:
+    return {
+        "thread_ids": list(ack.thread_ids),
+        "kind": ack.kind,
+        "message_id": ack.message_id,
+        "sent_at": ack.sent_at.isoformat() if ack.sent_at else None,
+    }
+
+
+def register_direct_attachment_write_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
+    """Register DM attachment/share tools (photo, video, voice, media, story)."""
+
+    def _thread_ids(args: dict) -> list[str] | None:
+        raw = args.get("thread_ids")
+        if not isinstance(raw, list):
+            return None
+        out: list[str] = []
+        for item in raw:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                out.append(text)
+        return out or None
+
+    def dm_send_photo_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_ids = _thread_ids(args)
+        if not thread_ids:
+            return {"error": "thread_ids is required and must be non-empty"}
+        image_path = str(args.get("image_path", "")).strip()
+        if not image_path:
+            return {"error": "image_path is required"}
+        try:
+            ack = context.direct_use_cases.send_photo(account_id, thread_ids, image_path)
+            return {"success": True, **_direct_ack_to_dict(ack)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def dm_send_video_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_ids = _thread_ids(args)
+        if not thread_ids:
+            return {"error": "thread_ids is required and must be non-empty"}
+        video_path = str(args.get("video_path", "")).strip()
+        if not video_path:
+            return {"error": "video_path is required"}
+        try:
+            ack = context.direct_use_cases.send_video(account_id, thread_ids, video_path)
+            return {"success": True, **_direct_ack_to_dict(ack)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def dm_send_voice_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_ids = _thread_ids(args)
+        if not thread_ids:
+            return {"error": "thread_ids is required and must be non-empty"}
+        audio_path = str(args.get("audio_path", "")).strip()
+        if not audio_path:
+            return {"error": "audio_path is required"}
+        try:
+            ack = context.direct_use_cases.send_voice(account_id, thread_ids, audio_path)
+            return {"success": True, **_direct_ack_to_dict(ack)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def dm_share_media_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_ids = _thread_ids(args)
+        if not thread_ids:
+            return {"error": "thread_ids is required and must be non-empty"}
+        media_id = str(args.get("media_id", "")).strip()
+        if not media_id:
+            return {"error": "media_id is required"}
+        try:
+            ack = context.direct_use_cases.share_media(account_id, thread_ids, media_id)
+            return {"success": True, **_direct_ack_to_dict(ack)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    def dm_share_story_handler(args: dict) -> dict:
+        if context.direct_use_cases is None:
+            return {"error": "Direct use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        thread_ids = _thread_ids(args)
+        if not thread_ids:
+            return {"error": "thread_ids is required and must be non-empty"}
+        story_pk = args.get("story_pk")
+        try:
+            story_pk_int = int(story_pk)
+        except (TypeError, ValueError):
+            return {"error": "story_pk must be an integer"}
+        try:
+            ack = context.direct_use_cases.share_story(account_id, thread_ids, story_pk_int)
+            return {"success": True, **_direct_ack_to_dict(ack)}
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
+    _thread_ids_schema = {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Direct thread IDs (max 32) to fan out to",
+    }
+
+    registry.register(
+        "dm_send_photo",
+        dm_send_photo_handler,
+        schema(
+            "dm_send_photo",
+            "Send a photo attachment into one or more DM threads. Operator must upload "
+            "the photo first (via the media upload/templates system) and pass the resulting "
+            "server-side path as image_path. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_ids": _thread_ids_schema,
+                "image_path": {"type": "string", "description": "Server-side path to a .jpg/.jpeg/.png file"},
+            },
+            required=["username", "thread_ids", "image_path"],
+        ),
+    )
+
+    registry.register(
+        "dm_send_video",
+        dm_send_video_handler,
+        schema(
+            "dm_send_video",
+            "Send a video attachment into one or more DM threads. Operator must upload "
+            "the video first and pass the resulting server-side path as video_path. "
+            "Max video size 100MB. Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_ids": _thread_ids_schema,
+                "video_path": {"type": "string", "description": "Server-side path to a .mp4 file"},
+            },
+            required=["username", "thread_ids", "video_path"],
+        ),
+    )
+
+    registry.register(
+        "dm_send_voice",
+        dm_send_voice_handler,
+        schema(
+            "dm_send_voice",
+            "Send a voice-note attachment into one or more DM threads. Operator must upload "
+            "the audio clip first and pass the resulting server-side path as audio_path. "
+            "Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_ids": _thread_ids_schema,
+                "audio_path": {"type": "string", "description": "Server-side path to a .m4a/.mp3/.ogg file"},
+            },
+            required=["username", "thread_ids", "audio_path"],
+        ),
+    )
+
+    registry.register(
+        "dm_share_media",
+        dm_share_media_handler,
+        schema(
+            "dm_share_media",
+            "Share an existing Instagram post into one or more DM threads by media_id. "
+            "Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_ids": _thread_ids_schema,
+                "media_id": {"type": "string", "description": "Instagram media ID (e.g. '1234_5678')"},
+            },
+            required=["username", "thread_ids", "media_id"],
+        ),
+    )
+
+    registry.register(
+        "dm_share_story",
+        dm_share_story_handler,
+        schema(
+            "dm_share_story",
+            "Share an existing Instagram story into one or more DM threads by story_pk. "
+            "Requires operator approval before execution.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "thread_ids": _thread_ids_schema,
+                "story_pk": {"type": "integer", "description": "Numeric Instagram story PK"},
+            },
+            required=["username", "thread_ids", "story_pk"],
+        ),
+    )
+
+
 def register_relationship_primary_write_tools(registry: ToolRegistry, context: "ToolBuilderContext") -> None:
     """Register primary relationship write tools."""
 

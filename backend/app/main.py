@@ -431,6 +431,7 @@ def create_app() -> FastAPI:
     from app.adapters.http.routers.posts import router as posts_router
     from app.adapters.http.routers.ai import router as ai_router
     from app.adapters.http.routers.instagram import router as instagram_router
+    from app.adapters.http.routers.direct import router as direct_router
     from app.adapters.http.routers.smart_engagement import router as smart_engagement_router
     from app.adapters.http.routers.llm_config import router as llm_config_router
     from app.adapters.http.routers.proxies import router as proxies_router
@@ -444,6 +445,7 @@ def create_app() -> FastAPI:
     app.include_router(logs_router)
     app.include_router(posts_router)
     app.include_router(instagram_router)
+    app.include_router(direct_router)
     # Register ai_copilot first so /api/ai/chat/graph resolves to operator copilot
     # instead of the legacy graph-chat adapter route.
     app.include_router(ai_copilot_router)

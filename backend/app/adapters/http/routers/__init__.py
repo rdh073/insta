@@ -5,6 +5,7 @@ from .posts import router as posts_router
 from .logs import router as logs_router
 from .dashboard import router as dashboard_router
 from .ai import router as ai_router
+from .direct import router as direct_router
 from .instagram import router as instagram_router
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "logs_router",
     "dashboard_router",
     "ai_router",
+    "direct_router",
     "instagram_router",
 ]

@@ -6,12 +6,14 @@ Normalizes send results and thread creation operations.
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from app.application.dto.instagram_direct_dto import (
     DirectParticipantSummary,
     DirectThreadSummary,
     DirectMessageSummary,
+    DirectMessageAck,
     DirectActionReceipt,
 )
 from app.application.ports.repositories import ClientRepository
@@ -236,6 +238,170 @@ class InstagramDirectWriterAdapter:
                 success=False,
                 reason=failure.user_message,
             )
+
+    # ------------------------------------------------------------------------
+    # Attachment send/share
+    # ------------------------------------------------------------------------
+
+    _PHOTO_EXTS = frozenset({".jpg", ".jpeg", ".png"})
+    _VIDEO_EXTS = frozenset({".mp4"})
+    _VOICE_EXTS = frozenset({".m4a", ".mp3", ".ogg"})
+
+    @staticmethod
+    def _validate_extension(path: str, allowed: frozenset[str], kind: str) -> None:
+        suffix = Path(path).suffix.lower()
+        if suffix not in allowed:
+            raise ValueError(
+                f"Unsupported {kind} extension {suffix!r}; allowed: "
+                f"{sorted(allowed)}"
+            )
+
+    @staticmethod
+    def _coerce_thread_ids(thread_ids: list[str]) -> list[int]:
+        return [int(tid) for tid in thread_ids]
+
+    @staticmethod
+    def _extract_message_id(response: Any) -> Optional[str]:
+        if response is None:
+            return None
+        for attr in ("id", "item_id", "pk"):
+            value = getattr(response, attr, None)
+            if value:
+                return str(value)
+        if isinstance(response, dict):
+            for key in ("id", "item_id", "pk", "message_id"):
+                value = response.get(key)
+                if value:
+                    return str(value)
+        return None
+
+    def send_photo(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        image_path: str,
+    ) -> DirectMessageAck:
+        """Send a photo attachment into one or more DM threads."""
+        self._validate_extension(image_path, self._PHOTO_EXTS, "photo")
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_send_photo(
+                path=image_path,
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="photo",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_send_photo", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def send_video(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        video_path: str,
+    ) -> DirectMessageAck:
+        """Send a video attachment into one or more DM threads."""
+        self._validate_extension(video_path, self._VIDEO_EXTS, "video")
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_send_video(
+                path=video_path,
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="video",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_send_video", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def send_voice(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        audio_path: str,
+    ) -> DirectMessageAck:
+        """Send a voice-note attachment into one or more DM threads."""
+        self._validate_extension(audio_path, self._VOICE_EXTS, "voice")
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_send_voice(
+                path=audio_path,
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="voice",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_send_voice", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def share_media(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        media_id: str,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram post into one or more DM threads."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_media_share(
+                media_id=media_id,
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="media_share",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_media_share", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def share_story(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        story_pk: int,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram story into one or more DM threads."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_story_share(
+                story_pk=int(story_pk),
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="story_share",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_story_share", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
     @staticmethod
     def _map_find_or_create_thread_response(thread: Any) -> DirectThreadSummary:

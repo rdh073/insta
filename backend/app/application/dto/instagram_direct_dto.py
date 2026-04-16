@@ -93,3 +93,17 @@ class DirectActionReceipt:
     action_id: str
     success: bool
     reason: str = ""
+
+
+@dataclass(frozen=True)
+class DirectMessageAck:
+    """Acknowledgement for a direct-message attachment send/share operation.
+
+    Covers photo/video/voice uploads and media/story shares fanned out
+    to one or more threads. ``message_id`` is the vendor-returned identifier
+    when instagrapi supplies one; absent otherwise.
+    """
+    thread_ids: list[str]
+    kind: str
+    message_id: Optional[str] = None
+    sent_at: Optional[datetime] = None

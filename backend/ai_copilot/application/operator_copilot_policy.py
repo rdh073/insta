@@ -336,6 +336,31 @@ class ToolPolicyRegistry:
         "mark_direct_thread_seen": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "marks a direct-message thread as seen"
         ),
+        "dm_send_photo": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "sends a photo attachment into one or more direct-message threads",
+        ),
+        "dm_send_video": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "sends a video attachment into one or more direct-message threads",
+        ),
+        "dm_send_voice": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "sends a voice note into one or more direct-message threads",
+        ),
+        "dm_share_media": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "shares an existing post into one or more direct-message threads",
+        ),
+        "dm_share_story": ToolClassification(
+            ToolPolicy.WRITE_SENSITIVE,
+            True,
+            "shares an existing story into one or more direct-message threads",
+        ),
         # ── Write-sensitive: stories ──────────────────────────────────────────
         "delete_story": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "deletes a story"

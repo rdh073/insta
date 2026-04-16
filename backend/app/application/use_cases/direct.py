@@ -21,10 +21,13 @@ Policy owned here (not in router or adapter):
 
 from __future__ import annotations
 
+import os
+
 from app.application.dto.instagram_direct_dto import (
     DirectThreadSummary,
     DirectThreadDetail,
     DirectMessageSummary,
+    DirectMessageAck,
     DirectSearchUserSummary,
     DirectActionReceipt,
 )
@@ -482,3 +485,100 @@ class DirectUseCases:
             raise ValueError(
                 f"direct_thread_id must not be empty, got {direct_thread_id!r}"
             )
+
+    # -------------------------------------------------------------------------
+    # Attachment operations (photo / video / voice / media-share / story-share)
+    # -------------------------------------------------------------------------
+
+    _MAX_THREAD_IDS = 32
+    _MAX_VIDEO_BYTES = 100 * 1024 * 1024  # Instagram DM video limit: 100 MB.
+
+    def _validate_thread_ids(self, thread_ids: list[str]) -> list[str]:
+        if not isinstance(thread_ids, list) or not thread_ids:
+            raise ValueError("thread_ids must be a non-empty list")
+        if len(thread_ids) > self._MAX_THREAD_IDS:
+            raise ValueError(
+                f"thread_ids must contain at most {self._MAX_THREAD_IDS} ids, "
+                f"got {len(thread_ids)}"
+            )
+        normalized: list[str] = []
+        for tid in thread_ids:
+            if not isinstance(tid, str) or not tid.strip():
+                raise ValueError(f"each thread id must be a non-empty string, got {tid!r}")
+            normalized.append(tid.strip())
+        return normalized
+
+    @staticmethod
+    def _validate_file(path: str, *, max_bytes: int | None = None) -> None:
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("file path must be a non-empty string")
+        if not os.path.isfile(path):
+            raise ValueError(f"file not found: {path!r}")
+        if max_bytes is not None:
+            size = os.path.getsize(path)
+            if size > max_bytes:
+                raise ValueError(
+                    f"file exceeds maximum size of {max_bytes} bytes (actual {size})"
+                )
+
+    def send_photo(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        image_path: str,
+    ) -> DirectMessageAck:
+        """Send a photo attachment to one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        self._validate_file(image_path)
+        return self.direct_writer.send_photo(account_id, normalized_ids, image_path)
+
+    def send_video(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        video_path: str,
+    ) -> DirectMessageAck:
+        """Send a video attachment to one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        self._validate_file(video_path, max_bytes=self._MAX_VIDEO_BYTES)
+        return self.direct_writer.send_video(account_id, normalized_ids, video_path)
+
+    def send_voice(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        audio_path: str,
+    ) -> DirectMessageAck:
+        """Send a voice-note attachment to one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        self._validate_file(audio_path)
+        return self.direct_writer.send_voice(account_id, normalized_ids, audio_path)
+
+    def share_media(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        media_id: str,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram post into one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("media_id must be a non-empty string")
+        return self.direct_writer.share_media(account_id, normalized_ids, media_id.strip())
+
+    def share_story(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        story_pk: int,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram story into one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        if not isinstance(story_pk, int) or isinstance(story_pk, bool) or story_pk <= 0:
+            raise ValueError(f"story_pk must be a positive integer, got {story_pk!r}")
+        return self.direct_writer.share_story(account_id, normalized_ids, story_pk)

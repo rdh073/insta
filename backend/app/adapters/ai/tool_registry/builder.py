@@ -20,6 +20,7 @@ from .content_read_tools import (
 from .core import ToolRegistry
 from .engagement_write_tools import (
     register_comment_write_tools,
+    register_direct_attachment_write_tools,
     register_direct_thread_write_tools,
     register_highlight_write_tools,
     register_media_write_tools,
@@ -171,6 +172,7 @@ def create_tool_registry(
     register_send_direct_message_tool(registry, context)
     register_direct_thread_read_tools(registry, context)
     register_direct_thread_write_tools(registry, context)
+    register_direct_attachment_write_tools(registry, context)
 
     register_insight_read_tools(registry, context)
 

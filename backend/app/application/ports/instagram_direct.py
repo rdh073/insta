@@ -14,6 +14,7 @@ from app.application.dto.instagram_direct_dto import (
     DirectThreadSummary,
     DirectThreadDetail,
     DirectMessageSummary,
+    DirectMessageAck,
     DirectSearchUserSummary,
     DirectActionReceipt,
 )
@@ -266,4 +267,49 @@ class InstagramDirectWriter(Protocol):
         Raises:
             Exception: If the operation fails.
         """
+        ...
+
+    def send_photo(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        image_path: str,
+    ) -> DirectMessageAck:
+        """Send a photo attachment to one or more threads."""
+        ...
+
+    def send_video(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        video_path: str,
+    ) -> DirectMessageAck:
+        """Send a video attachment to one or more threads."""
+        ...
+
+    def send_voice(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        audio_path: str,
+    ) -> DirectMessageAck:
+        """Send a voice-note attachment to one or more threads."""
+        ...
+
+    def share_media(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        media_id: str,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram post into one or more threads."""
+        ...
+
+    def share_story(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        story_pk: int,
+    ) -> DirectMessageAck:
+        """Share an existing Instagram story into one or more threads."""
         ...
