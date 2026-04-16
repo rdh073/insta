@@ -129,14 +129,20 @@ class AIGateway:
         effective_api_key = api_key or (os.getenv(env_key, "") if env_key else "")
 
         if not effective_api_key:
-            if env_key:
+            # Ollama ignores the Bearer token but the OpenAI SDK still requires
+            # a non-empty string — inject a dummy so operators can run fully
+            # unauthenticated against a self-hosted Ollama server.
+            if (provider or "").strip().lower() == "ollama" or env_key == "OLLAMA_API_KEY":
+                effective_api_key = "ollama"
+            elif env_key:
                 raise ValueError(
                     f"No API key for {provider}. Set {env_key} env var or provide via apiKey."
                 )
-            # No env_key (e.g. openai_compatible) — use a placeholder so the
-            # OpenAI client library accepts the request. Servers like Ollama
-            # and LM Studio accept any non-empty string.
-            effective_api_key = "no-key"
+            else:
+                # No env_key (e.g. openai_compatible) — use a placeholder so the
+                # OpenAI client library accepts the request. Servers like Ollama
+                # and LM Studio accept any non-empty string.
+                effective_api_key = "no-key"
 
         # Determine effective base URL
         effective_base_url = provider_base_url or config["base_url"]

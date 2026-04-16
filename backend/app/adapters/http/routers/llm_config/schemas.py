@@ -110,6 +110,23 @@ class ProviderOAuthAuthorizeRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class OllamaModel(BaseModel):
+    id: str
+    owned_by: str = Field(default="library")
+
+
+class OllamaModelsResponse(BaseModel):
+    base_url: str
+    models: list[OllamaModel]
+
+
+class OllamaHealthResponse(BaseModel):
+    ok: bool
+    base_url: str
+    model_count: int
+    latency_ms: int
+
+
 class OAuthExchangeRequest(BaseModel):
     """Frontend sends code + state captured from the OAuth redirect.
 

@@ -48,6 +48,16 @@ PROVIDER_SPECS: dict[str, ProviderSpec] = {
         base_url="http://127.0.0.1:8045/v1",
         transport="openai_compatible",
     ),
+    # Self-hosted Ollama OpenAI-compatible endpoint. Auth is optional — Ollama
+    # ignores the Bearer token but the OpenAI SDK requires a non-empty string,
+    # so openai_gateway injects a dummy "ollama" when OLLAMA_API_KEY is unset.
+    "ollama": ProviderSpec(
+        name="ollama",
+        env_key="OLLAMA_API_KEY",
+        default_model=os.getenv("OLLAMA_DEFAULT_MODEL", "llama3.2:3b"),
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+        transport="openai_compatible",
+    ),
     # Generic OpenAI-compatible endpoint — base URL and API key are user-supplied
     # at request time (providerBaseUrl / apiKey fields). Works with Ollama,
     # LM Studio, vLLM, LocalAI, Groq, Together, Mistral, etc.

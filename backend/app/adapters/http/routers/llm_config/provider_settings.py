@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import time
+from urllib.parse import urlparse
 
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.adapters.ai.llm_failure_catalog import LLMFailure, LLMFailureFamily
 from app.adapters.ai.provider_catalog import PROVIDER_SPECS
 
 from .auth import get_llm_config_usecases, require_admin_auth_if_enabled
-from .schemas import ProviderSettingsRequest
+from .schemas import (
+    OllamaHealthResponse,
+    OllamaModel,
+    OllamaModelsResponse,
+    ProviderSettingsRequest,
+)
 
 router = APIRouter()
+
+_OLLAMA_PROVIDER = "ollama"
+_OLLAMA_PROBE_TIMEOUT_SECONDS = 6.0
 
 
 @router.get(
@@ -81,3 +94,159 @@ async def put_provider_settings(
     if errors:
         response["errors"] = errors
     return response
+
+
+def _resolve_ollama_base_url(requested: str | None) -> str:
+    """Resolve the Ollama base URL: request override first, then provider spec."""
+    candidate = (requested or "").strip()
+    if not candidate:
+        spec = PROVIDER_SPECS.get(_OLLAMA_PROVIDER)
+        candidate = (spec.base_url if spec else "") or ""
+    candidate = candidate.rstrip("/")
+    parsed = urlparse(candidate)
+    if not parsed.scheme or not parsed.netloc:
+        raise LLMFailure(
+            family=LLMFailureFamily.INVALID_REQUEST,
+            message=(
+                "Ollama base_url is missing or malformed. "
+                "Provide ?base_url=<scheme>://<host>:<port>/v1 or set OLLAMA_BASE_URL."
+            ),
+            provider=_OLLAMA_PROVIDER,
+        )
+    return candidate
+
+
+def _failure_detail(exc: LLMFailure) -> dict:
+    return {
+        "code": {
+            LLMFailureFamily.AUTH: "LLM_AUTH_FAILED",
+            LLMFailureFamily.RATE_LIMIT: "LLM_RATE_LIMITED",
+            LLMFailureFamily.PROVIDER_UNAVAILABLE: "LLM_PROVIDER_UNAVAILABLE",
+            LLMFailureFamily.INVALID_REQUEST: "LLM_INVALID_REQUEST",
+            LLMFailureFamily.TRANSPORT_MISMATCH: "LLM_PROVIDER_TRANSPORT_UNAVAILABLE",
+        }.get(exc.family, "LLM_INVALID_REQUEST"),
+        "family": exc.family.value,
+        "provider": exc.provider,
+        "message": exc.message,
+    }
+
+
+async def _probe_ollama_models(base_url: str) -> tuple[list[dict], int]:
+    """Call <base_url>/models and return (raw_model_entries, latency_ms).
+
+    Raises LLMFailure with the appropriate family on timeout/connection/HTTP failure.
+    """
+    url = f"{base_url}/models"
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=_OLLAMA_PROBE_TIMEOUT_SECONDS) as client:
+            response = await client.get(url)
+    except httpx.TimeoutException as exc:
+        raise LLMFailure(
+            family=LLMFailureFamily.PROVIDER_UNAVAILABLE,
+            message=f"Ollama server at {base_url} did not respond within "
+            f"{int(_OLLAMA_PROBE_TIMEOUT_SECONDS)}s.",
+            provider=_OLLAMA_PROVIDER,
+            cause=exc,
+        )
+    except httpx.HTTPError as exc:
+        raise LLMFailure(
+            family=LLMFailureFamily.PROVIDER_UNAVAILABLE,
+            message=f"Could not reach Ollama server at {base_url}.",
+            provider=_OLLAMA_PROVIDER,
+            cause=exc,
+        )
+
+    if response.status_code >= 400:
+        raise LLMFailure(
+            family=LLMFailureFamily.PROVIDER_UNAVAILABLE,
+            message=f"Ollama server at {base_url} returned HTTP {response.status_code}.",
+            provider=_OLLAMA_PROVIDER,
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise LLMFailure(
+            family=LLMFailureFamily.PROVIDER_UNAVAILABLE,
+            message=f"Ollama server at {base_url} returned a non-JSON body.",
+            provider=_OLLAMA_PROVIDER,
+            cause=exc,
+        )
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        raise LLMFailure(
+            family=LLMFailureFamily.PROVIDER_UNAVAILABLE,
+            message=f"Ollama server at {base_url} returned an unexpected /models shape.",
+            provider=_OLLAMA_PROVIDER,
+        )
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return data, latency_ms
+
+
+def _status_for_failure(exc: LLMFailure) -> int:
+    if exc.family == LLMFailureFamily.INVALID_REQUEST:
+        return 400
+    cause = exc.cause
+    if isinstance(cause, httpx.TimeoutException):
+        return 504
+    return 502
+
+
+@router.get(
+    "/providers/ollama/models",
+    response_model=OllamaModelsResponse,
+    summary="List models installed on a self-hosted Ollama server",
+)
+async def list_ollama_models(
+    base_url: str | None = Query(
+        default=None,
+        description="OpenAI-compatible root, e.g. http://host:port/v1. "
+        "Falls back to provider_catalog OLLAMA base_url when omitted.",
+    ),
+) -> OllamaModelsResponse:
+    try:
+        resolved = _resolve_ollama_base_url(base_url)
+        raw_models, _ = await _probe_ollama_models(resolved)
+    except LLMFailure as exc:
+        raise HTTPException(
+            status_code=_status_for_failure(exc),
+            detail=_failure_detail(exc),
+        )
+
+    models = [
+        OllamaModel(
+            id=str(entry.get("id", "")),
+            owned_by=str(entry.get("owned_by", "library") or "library"),
+        )
+        for entry in raw_models
+        if isinstance(entry, dict) and entry.get("id")
+    ]
+    models.sort(key=lambda m: m.id)
+    return OllamaModelsResponse(base_url=resolved, models=models)
+
+
+@router.get(
+    "/providers/ollama/health",
+    response_model=OllamaHealthResponse,
+    summary="Probe a self-hosted Ollama server for availability",
+)
+async def ollama_health(
+    base_url: str | None = Query(default=None),
+) -> OllamaHealthResponse:
+    try:
+        resolved = _resolve_ollama_base_url(base_url)
+        raw_models, latency_ms = await _probe_ollama_models(resolved)
+    except LLMFailure as exc:
+        raise HTTPException(
+            status_code=_status_for_failure(exc),
+            detail=_failure_detail(exc),
+        )
+    return OllamaHealthResponse(
+        ok=True,
+        base_url=resolved,
+        model_count=len(raw_models),
+        latency_ms=latency_ms,
+    )
