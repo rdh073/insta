@@ -1,10 +1,17 @@
 import { api, API_TIMEOUT_MS } from './client';
-import type { Account, BulkAccountResult, ProxyCheckResult } from '../types';
+import type { Account, BulkAccountResult, ProxyCheckResult, ServerLogoutStatus } from '../types';
 
 export interface RateLimitEntry {
   account_id: string;
   retry_after: number;
   reason: string;
+}
+
+export interface LogoutResult {
+  id: string;
+  username?: string;
+  status: string;
+  server_logout?: ServerLogoutStatus | null;
 }
 
 export const accountsApi = {
@@ -32,7 +39,7 @@ export const accountsApi = {
   disableTotp: (account_id: string) =>
     api.delete<{ status: string; message: string }>(`/accounts/${account_id}/totp`).then((r) => r.data),
 
-  logout: (id: string) => api.delete(`/accounts/${id}`).then((r) => r.data),
+  logout: (id: string) => api.delete<LogoutResult>(`/accounts/${id}`).then((r) => r.data),
 
   importFile: (text: string) =>
     api.post<Account[]>('/accounts/import', { text }).then((r) => r.data),

@@ -208,9 +208,24 @@ export function AccountsPage() {
     if (!selectedIds.length) return;
     setBulkLoading(true);
     try {
-      await accountsApi.bulkLogout(selectedIds);
+      const results = await accountsApi.bulkLogout(selectedIds);
       selectedIds.forEach((id) => removeAccount(id));
-      toast.success(`${selectedIds.length} account${selectedIds.length !== 1 ? 's' : ''} removed`);
+      const total = selectedIds.length;
+      const plural = total !== 1 ? 's' : '';
+      const ok = results.filter((r) => r.server_logout === 'success').length;
+      const failed = results.filter((r) => r.server_logout === 'failed').length;
+      const skipped = results.filter((r) => r.server_logout === 'not_present').length;
+      const hasServerInfo = ok + failed + skipped > 0;
+      if (hasServerInfo) {
+        const message = `Logged out ${total} account${plural}. Server session invalidation: ${ok} ok, ${failed} failed, ${skipped} skipped.`;
+        if (failed > 0) {
+          toast(message, { duration: 6000 });
+        } else {
+          toast.success(message);
+        }
+      } else {
+        toast.success(`${total} account${plural} removed`);
+      }
       exitSelectMode();
     } catch (error) {
       toast.error((error as Error).message);

@@ -108,9 +108,24 @@ export function AccountDetail({
     if (loggingOut) return;
     setLoggingOut(true);
     try {
-      await accountsApi.logout(account.id);
+      const result = await accountsApi.logout(account.id);
       removeAccount(account.id);
-      toast.success(`${account.username} logged out`);
+      switch (result?.server_logout) {
+        case 'success':
+          toast.success('Instagram session invalidated on server.');
+          break;
+        case 'failed':
+          toast.error(
+            'Local session cleared. Server logout failed — the account may still appear as an active device on Instagram.',
+            { duration: 6000 }
+          );
+          break;
+        case 'not_present':
+          toast('No active client — local records removed.');
+          break;
+        default:
+          toast.success(`${account.username} logged out`);
+      }
     } catch (error) {
       toast.error((error as Error).message);
     } finally {

@@ -69,12 +69,15 @@ export interface ActivityLogEntry {
   status: string;
 }
 
+export type ServerLogoutStatus = 'success' | 'failed' | 'not_present';
+
 export interface BulkAccountResult {
   id: string;
   username?: string;
   status: string;
   error?: string;
   proxy?: string;
+  server_logout?: ServerLogoutStatus | null;
 }
 
 export interface ProxyCheckResult {
