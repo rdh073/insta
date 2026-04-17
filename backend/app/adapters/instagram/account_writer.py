@@ -34,12 +34,12 @@ class InstagramAccountWriterAdapter:
     # ── Privacy ───────────────────────────────────────────────────────────────
     def set_private(self, account_id: str) -> AccountProfile:
         return self._privacy_toggle(
-            account_id, target_private=True, operation="set_account_private"
+            account_id, target_private=True, operation="account_set_private"
         )
 
     def set_public(self, account_id: str) -> AccountProfile:
         return self._privacy_toggle(
-            account_id, target_private=False, operation="set_account_public"
+            account_id, target_private=False, operation="account_set_public"
         )
 
     def _privacy_toggle(
@@ -48,9 +48,9 @@ class InstagramAccountWriterAdapter:
         client = get_guarded_client(self.client_repo, account_id)
         try:
             if target_private:
-                client.set_account_private()
+                client.account_set_private()
             else:
-                client.set_account_public()
+                client.account_set_public()
             account = client.account_info()
         except Exception as exc:
             failure = translate_instagram_error(
@@ -67,11 +67,11 @@ class InstagramAccountWriterAdapter:
     def change_avatar(self, account_id: str, image_path: str) -> AccountProfile:
         client = get_guarded_client(self.client_repo, account_id)
         try:
-            client.change_profile_picture(image_path)
+            client.account_change_picture(image_path)
             account = client.account_info()
         except Exception as exc:
             failure = translate_instagram_error(
-                exc, operation="change_profile_picture", account_id=account_id
+                exc, operation="account_change_picture", account_id=account_id
             )
             raise attach_instagram_failure(
                 ValueError(failure.user_message), failure

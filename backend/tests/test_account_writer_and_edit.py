@@ -16,10 +16,33 @@ Covers:
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from instagrapi.exceptions import PrivateError
+
+
+class _InstagrapiAccountContract:
+    """Narrow vendor-contract spec pinned to instagrapi==2.3.0.
+
+    Source: site-packages/instagrapi/mixins/account.py
+      - account_info:          line 54
+      - account_set_private:   line 138
+      - account_set_public:    line 153
+      - account_change_picture: line 262
+
+    The conftest stubs instagrapi.Client as an empty class, so MagicMock can't
+    spec against the real class. This local contract encodes only the methods
+    the adapter touches — calls to any other name fail with AttributeError,
+    catching the exact class of drift bug this test was added to prevent
+    (calling a name the vendor doesn't actually expose).
+    """
+
+    def account_info(self): ...  # noqa: D401,E704
+    def account_set_private(self): ...  # noqa: D401,E704
+    def account_set_public(self): ...  # noqa: D401,E704
+    def account_change_picture(self, path): ...  # noqa: D401,E704
 
 from app.adapters.instagram.account_writer import InstagramAccountWriterAdapter
 from app.adapters.instagram.account_security_reader import (
@@ -118,42 +141,47 @@ class _StubAccountRepo:
 # ── Adapter happy-path tests ─────────────────────────────────────────────────
 
 
-def test_adapter_set_private_invokes_vendor_set_account_private_once():
-    client = _RecordingClient(account_overrides={"is_private": True})
+def _spec_client(*, account_overrides: dict | None = None) -> MagicMock:
+    """Strict vendor-client double.
+
+    ``spec=_InstagrapiAccountContract`` makes unknown attribute access raise
+    AttributeError, so tests fail loudly when the adapter calls a method the
+    vendor doesn't actually expose (vendor-rename regression guard).
+    """
+    client = MagicMock(spec=_InstagrapiAccountContract)
+    client.account_info.return_value = _vendor_account(**(account_overrides or {}))
+    return client
+
+
+def test_adapter_set_private_invokes_vendor_account_set_private_once():
+    client = _spec_client(account_overrides={"is_private": True})
     adapter = InstagramAccountWriterAdapter(_StubClientRepo(client))
 
     profile = adapter.set_private("acc-1")
 
-    set_calls = [c for c in client.calls if c[0] == "set_account_private"]
-    info_calls = [c for c in client.calls if c[0] == "account_info"]
-    assert len(set_calls) == 1
-    assert set_calls[0] == ("set_account_private", (), {})
-    assert len(info_calls) == 1
+    client.account_set_private.assert_called_once_with()
+    client.account_info.assert_called_once_with()
     assert isinstance(profile, AccountProfile)
     assert profile.is_private is True
 
 
-def test_adapter_set_public_invokes_vendor_set_account_public_once():
-    client = _RecordingClient(account_overrides={"is_private": False})
+def test_adapter_set_public_invokes_vendor_account_set_public_once():
+    client = _spec_client(account_overrides={"is_private": False})
     adapter = InstagramAccountWriterAdapter(_StubClientRepo(client))
 
     profile = adapter.set_public("acc-1")
 
-    set_calls = [c for c in client.calls if c[0] == "set_account_public"]
-    assert len(set_calls) == 1
-    assert set_calls[0] == ("set_account_public", (), {})
+    client.account_set_public.assert_called_once_with()
     assert profile.is_private is False
 
 
-def test_adapter_change_avatar_invokes_change_profile_picture_once():
-    client = _RecordingClient()
+def test_adapter_change_avatar_invokes_account_change_picture_once():
+    client = _spec_client()
     adapter = InstagramAccountWriterAdapter(_StubClientRepo(client))
 
     adapter.change_avatar("acc-1", "/tmp/pic.jpg")
 
-    change_calls = [c for c in client.calls if c[0] == "change_profile_picture"]
-    assert len(change_calls) == 1
-    assert change_calls[0] == ("change_profile_picture", ("/tmp/pic.jpg",), {})
+    client.account_change_picture.assert_called_once_with("/tmp/pic.jpg")
 
 
 def test_adapter_edit_profile_passes_only_provided_fields():
@@ -186,12 +214,12 @@ def test_adapter_set_presence_disabled_invokes_set_presence_status_once():
 
 class _RaisingClient:
     """Vendor-client stub that raises on the configured method, otherwise
-    forwards to a recording stub. The first set_account_private call raises."""
+    forwards to a recording stub. The first account_set_private call raises."""
 
     def __init__(self, error: Exception):
         self._error = error
 
-    def set_account_private(self):
+    def account_set_private(self):
         raise self._error
 
     def __getattr__(self, name: str):
@@ -231,7 +259,7 @@ def test_router_surfaces_translated_http_hint_not_500_for_private_error():
             )
 
             failure = translate_instagram_error(
-                err, operation="set_account_private", account_id=account_id
+                err, operation="account_set_private", account_id=account_id
             )
             raise attach_instagram_failure(ValueError(failure.user_message), failure)
 
