@@ -117,6 +117,15 @@ export function migratePersistedAccountsState(persistedState: unknown): {
   return { accounts, activeId: validActiveId, pendingConfirmations };
 }
 
+/**
+ * Managed-account count selector — used by pages that render a "Tracked"
+ * or "Connected" metric so the value always reflects the live account list
+ * in the store. Kept as a standalone selector (not `accounts.length` inline)
+ * so it can be reused and unit-tested without rendering a component.
+ */
+export const selectTrackedAccountCount = (state: Pick<AccountStore, 'accounts'>): number =>
+  state.accounts.length;
+
 export const useAccountStore = create<AccountStore>()(
   persist(
     (set) => ({

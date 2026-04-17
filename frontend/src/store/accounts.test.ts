@@ -4,6 +4,7 @@ import {
   migratePersistedAccountsState,
   normalizeAccount,
   normalizeAccountPatch,
+  selectTrackedAccountCount,
   useAccountStore,
 } from './accounts';
 
@@ -60,5 +61,53 @@ describe('accounts store migration and normalization', () => {
     expect(updated.status).toBe('error');
     expect(updated.lastError).toBe('failed');
     expect(updated.lastErrorCode).toBe('bad_password');
+  });
+});
+
+describe('selectTrackedAccountCount', () => {
+  beforeEach(() => {
+    useAccountStore.setState({ accounts: [], activeId: null });
+  });
+
+  it('returns zero when the store has no accounts', () => {
+    expect(selectTrackedAccountCount({ accounts: [] })).toBe(0);
+  });
+
+  it('counts every managed account regardless of status or proxy assignment', () => {
+    const accounts: Account[] = [
+      { id: 'a', username: 'alpha', status: 'active', proxy: 'http://proxy:8080' },
+      { id: 'b', username: 'bravo', status: 'error' },
+      { id: 'c', username: 'charlie', status: 'challenge' },
+    ];
+    expect(selectTrackedAccountCount({ accounts })).toBe(3);
+  });
+
+  it('matches the managed-account count exposed by the Accounts page for the same store data', () => {
+    const accounts: Account[] = [
+      { ...BASE_ACCOUNT },
+      { id: 'acct-2', username: 'bravo', status: 'idle' },
+      { id: 'acct-3', username: 'charlie', status: '2fa_required' },
+    ];
+    useAccountStore.setState({ accounts });
+
+    const storeState = useAccountStore.getState();
+    // Accounts page renders `accounts.length` for its "Connected" stat; the
+    // Proxy page must use the same denominator via this selector.
+    expect(selectTrackedAccountCount(storeState)).toBe(storeState.accounts.length);
+    expect(selectTrackedAccountCount(storeState)).toBe(3);
+  });
+
+  it('reacts to setAccounts mutations so the Proxy page metric stays in sync', () => {
+    expect(selectTrackedAccountCount(useAccountStore.getState())).toBe(0);
+
+    useAccountStore.getState().setAccounts([
+      BASE_ACCOUNT,
+      { id: 'acct-2', username: 'bravo', status: 'idle' },
+      { id: 'acct-3', username: 'charlie', status: 'active' },
+    ]);
+    expect(selectTrackedAccountCount(useAccountStore.getState())).toBe(3);
+
+    useAccountStore.getState().removeAccount('acct-2');
+    expect(selectTrackedAccountCount(useAccountStore.getState())).toBe(2);
   });
 });

@@ -16,7 +16,7 @@ import { Card } from '../../../components/ui/Card';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { HeaderStat } from '../../../components/ui/PageHeader';
-import { useAccountStore } from '../../../store/accounts';
+import { selectTrackedAccountCount, useAccountStore } from '../../../store/accounts';
 import type { Account, ProxyCheckResult } from '../../../types';
 import { ProxyTestChip } from './ProxyTestChip';
 
@@ -66,6 +66,7 @@ function AccountProxyCard({
 
 export function AccountRoutingTab() {
   const accounts = useAccountStore((s) => s.accounts);
+  const trackedCount = useAccountStore(selectTrackedAccountCount);
   const setAccounts = useAccountStore((s) => s.setAccounts);
   const upsertAccount = useAccountStore((s) => s.upsertAccount);
   const patchAccount = useAccountStore((s) => s.patchAccount);
@@ -186,7 +187,7 @@ export function AccountRoutingTab() {
   return (
     <>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <HeaderStat label="Tracked" value={accounts.length} tone="cyan" />
+        <HeaderStat label="Tracked" value={trackedCount} tone="cyan" />
         <HeaderStat label="Proxy Assigned" value={accountsWithProxy} tone="green" />
         <HeaderStat label="Direct" value={directAccounts} tone="violet" />
         <HeaderStat label="Selected" value={selectedIds.length} tone="amber" />
