@@ -1,6 +1,6 @@
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { Suspense, startTransition, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { AlertTriangle, Waves, Zap } from 'lucide-react';
+import { AlertTriangle, Loader2, Waves, Zap } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { accountsApi } from '../../api/accounts';
 import { postsApi } from '../../api/posts';
@@ -239,7 +239,18 @@ export function AppLayout() {
           )}
 
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <Outlet />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center p-6">
+                  <div className="glass-panel glass-panel-strong flex items-center gap-3 rounded-[1.75rem] px-5 py-4 text-sm text-[var(--color-text-primary)]">
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--color-info-fg)]" />
+                    Loading…
+                  </div>
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
