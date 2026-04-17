@@ -1,5 +1,12 @@
 import { api } from './client';
 
+// Smart engagement runs a 9-stage LangGraph pipeline with up to 3 LLM
+// round-trips (classify_goal, draft_action, score_risk) plus Instagram
+// fetches (user_info, user_medias, hashtag_medias). At typical cloud LLM
+// latency (~5-10s/call) this exceeds the 20s axios default comfortably.
+// 90s leaves headroom for slower providers (Ollama remote, reasoning models).
+const SMART_ENGAGEMENT_TIMEOUT_MS = 90_000;
+
 export interface SmartEngagementRequest {
   execution_mode: 'recommendation' | 'execute';
   goal: string;
@@ -139,15 +146,21 @@ function normalizeInterruptFallback(response: SmartEngagementResponse): SmartEng
 
 export const smartEngagementApi = {
   async recommend(req: SmartEngagementRequest): Promise<SmartEngagementResponse> {
-    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/recommend', req);
+    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/recommend', req, {
+      timeout: SMART_ENGAGEMENT_TIMEOUT_MS,
+    });
     return normalizeInterruptFallback(res.data);
   },
 
   async resume(req: ResumeRequest): Promise<SmartEngagementResponse> {
-    const res = await api.post<SmartEngagementResponse>('/ai/smart-engagement/resume', {
-      ...req,
-      decision: DECISION_TO_CANONICAL[req.decision],
-    });
+    const res = await api.post<SmartEngagementResponse>(
+      '/ai/smart-engagement/resume',
+      {
+        ...req,
+        decision: DECISION_TO_CANONICAL[req.decision],
+      },
+      { timeout: SMART_ENGAGEMENT_TIMEOUT_MS },
+    );
     return normalizeInterruptFallback(res.data);
   },
 };
