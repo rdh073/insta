@@ -6,3 +6,5 @@ export { commentsApi } from './comments';
 export { insightsApi } from './insights';
 export { identityApi } from './identity';
 export { discoveryApi } from './discovery';
+export { relationshipsApi } from './relationships';
+export type { NotificationKind } from './relationships';

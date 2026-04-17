@@ -1,4 +1,4 @@
-export type RelationshipTab = 'follow' | 'unfollow' | 'cross-follow';
+export type RelationshipTab = 'follow' | 'unfollow' | 'cross-follow' | 'controls';
 
 export interface JobResult {
   account: string;

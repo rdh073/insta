@@ -1,6 +1,6 @@
 """Instagram relationship writer adapter.
 
-Maps follow/unfollow mutations through instagrapi into the
+Maps follow/unfollow/mute/notification mutations through instagrapi into the
 InstagramRelationshipWriter port.
 """
 
@@ -14,21 +14,20 @@ from app.adapters.instagram.error_utils import (
 
 
 class InstagramRelationshipWriterAdapter:
-    """Adapter for Instagram follow/unfollow mutations."""
+    """Adapter for Instagram follow/unfollow + mute + notification mutations."""
 
     def __init__(self, client_repo: ClientRepository):
         self.client_repo = client_repo
 
-    def follow_user(self, account_id: str, user_id: int) -> bool:
-        """Follow a user via instagrapi."""
+    def _call(self, account_id: str, operation: str, fn):
+        """Run an instagrapi call with rate-limit-aware error translation."""
         client = get_guarded_client(self.client_repo, account_id)
-
         try:
-            return client.user_follow(user_id)
+            return fn(client)
         except Exception as e:
             failure = translate_instagram_error(
                 e,
-                operation="user_follow",
+                operation=operation,
                 account_id=account_id,
             )
             if failure.http_hint == 429:
@@ -36,75 +35,112 @@ class InstagramRelationshipWriterAdapter:
                     InstagramRateLimitError(failure.user_message), failure
                 ) from e
             raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def follow_user(self, account_id: str, user_id: int) -> bool:
+        return self._call(account_id, "user_follow", lambda c: c.user_follow(user_id))
 
     def unfollow_user(self, account_id: str, user_id: int) -> bool:
-        """Unfollow a user via instagrapi."""
-        client = get_guarded_client(self.client_repo, account_id)
-
-        try:
-            return client.user_unfollow(user_id)
-        except Exception as e:
-            failure = translate_instagram_error(
-                e,
-                operation="user_unfollow",
-                account_id=account_id,
-            )
-            if failure.http_hint == 429:
-                raise attach_instagram_failure(
-                    InstagramRateLimitError(failure.user_message), failure
-                ) from e
-            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+        return self._call(account_id, "user_unfollow", lambda c: c.user_unfollow(user_id))
 
     def remove_follower(self, account_id: str, user_id: int) -> bool:
-        """Remove a follower via instagrapi."""
-        client = get_guarded_client(self.client_repo, account_id)
-
-        try:
-            return client.user_remove_follower(user_id)
-        except Exception as e:
-            failure = translate_instagram_error(
-                e,
-                operation="user_remove_follower",
-                account_id=account_id,
-            )
-            if failure.http_hint == 429:
-                raise attach_instagram_failure(
-                    InstagramRateLimitError(failure.user_message), failure
-                ) from e
-            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+        return self._call(
+            account_id, "user_remove_follower", lambda c: c.user_remove_follower(user_id)
+        )
 
     def close_friend_add(self, account_id: str, user_id: int) -> bool:
-        """Add a user to Close Friends list via instagrapi."""
-        client = get_guarded_client(self.client_repo, account_id)
-
-        try:
-            return client.close_friend_add(user_id)
-        except Exception as e:
-            failure = translate_instagram_error(
-                e,
-                operation="close_friend_add",
-                account_id=account_id,
-            )
-            if failure.http_hint == 429:
-                raise attach_instagram_failure(
-                    InstagramRateLimitError(failure.user_message), failure
-                ) from e
-            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+        return self._call(
+            account_id, "close_friend_add", lambda c: c.close_friend_add(user_id)
+        )
 
     def close_friend_remove(self, account_id: str, user_id: int) -> bool:
-        """Remove a user from Close Friends list via instagrapi."""
-        client = get_guarded_client(self.client_repo, account_id)
+        return self._call(
+            account_id, "close_friend_remove", lambda c: c.close_friend_remove(user_id)
+        )
 
-        try:
-            return client.close_friend_remove(user_id)
-        except Exception as e:
-            failure = translate_instagram_error(
-                e,
-                operation="close_friend_remove",
-                account_id=account_id,
+    def mute_posts(self, account_id: str, user_id: int) -> bool:
+        return self._call(
+            account_id,
+            "mute_posts_from_follow",
+            lambda c: c.mute_posts_from_follow(user_id),
+        )
+
+    def unmute_posts(self, account_id: str, user_id: int) -> bool:
+        return self._call(
+            account_id,
+            "unmute_posts_from_follow",
+            lambda c: c.unmute_posts_from_follow(user_id),
+        )
+
+    def mute_stories(self, account_id: str, user_id: int) -> bool:
+        return self._call(
+            account_id,
+            "mute_stories_from_follow",
+            lambda c: c.mute_stories_from_follow(user_id),
+        )
+
+    def unmute_stories(self, account_id: str, user_id: int) -> bool:
+        return self._call(
+            account_id,
+            "unmute_stories_from_follow",
+            lambda c: c.unmute_stories_from_follow(user_id),
+        )
+
+    def set_posts_notifications(
+        self, account_id: str, user_id: int, enabled: bool
+    ) -> bool:
+        if enabled:
+            return self._call(
+                account_id,
+                "enable_posts_notifications",
+                lambda c: c.enable_posts_notifications(user_id),
             )
-            if failure.http_hint == 429:
-                raise attach_instagram_failure(
-                    InstagramRateLimitError(failure.user_message), failure
-                ) from e
-            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+        return self._call(
+            account_id,
+            "disable_posts_notifications",
+            lambda c: c.disable_posts_notifications(user_id),
+        )
+
+    def set_videos_notifications(
+        self, account_id: str, user_id: int, enabled: bool
+    ) -> bool:
+        if enabled:
+            return self._call(
+                account_id,
+                "enable_videos_notifications",
+                lambda c: c.enable_videos_notifications(user_id),
+            )
+        return self._call(
+            account_id,
+            "disable_videos_notifications",
+            lambda c: c.disable_videos_notifications(user_id),
+        )
+
+    def set_reels_notifications(
+        self, account_id: str, user_id: int, enabled: bool
+    ) -> bool:
+        if enabled:
+            return self._call(
+                account_id,
+                "enable_reels_notifications",
+                lambda c: c.enable_reels_notifications(user_id),
+            )
+        return self._call(
+            account_id,
+            "disable_reels_notifications",
+            lambda c: c.disable_reels_notifications(user_id),
+        )
+
+    def set_stories_notifications(
+        self, account_id: str, user_id: int, enabled: bool
+    ) -> bool:
+        if enabled:
+            return self._call(
+                account_id,
+                "enable_stories_notifications",
+                lambda c: c.enable_stories_notifications(user_id),
+            )
+        return self._call(
+            account_id,
+            "disable_stories_notifications",
+            lambda c: c.disable_stories_notifications(user_id),
+        )

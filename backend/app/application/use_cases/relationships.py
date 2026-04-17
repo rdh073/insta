@@ -124,6 +124,61 @@ class RelationshipUseCases:
         user_id = self._resolve_user_id(account_id, target_username)
         return self.relationship_writer.close_friend_remove(account_id, user_id)
 
+    def mute_posts(self, account_id: str, target_username: str) -> bool:
+        """Mute feed posts from a followed user by username."""
+        if self.relationship_writer is None:
+            raise ValueError("relationship writer not configured")
+        user_id = self._resolve_user_id(account_id, target_username)
+        return self.relationship_writer.mute_posts(account_id, user_id)
+
+    def unmute_posts(self, account_id: str, target_username: str) -> bool:
+        """Unmute feed posts from a followed user by username."""
+        if self.relationship_writer is None:
+            raise ValueError("relationship writer not configured")
+        user_id = self._resolve_user_id(account_id, target_username)
+        return self.relationship_writer.unmute_posts(account_id, user_id)
+
+    def mute_stories(self, account_id: str, target_username: str) -> bool:
+        """Mute stories from a followed user by username."""
+        if self.relationship_writer is None:
+            raise ValueError("relationship writer not configured")
+        user_id = self._resolve_user_id(account_id, target_username)
+        return self.relationship_writer.mute_stories(account_id, user_id)
+
+    def unmute_stories(self, account_id: str, target_username: str) -> bool:
+        """Unmute stories from a followed user by username."""
+        if self.relationship_writer is None:
+            raise ValueError("relationship writer not configured")
+        user_id = self._resolve_user_id(account_id, target_username)
+        return self.relationship_writer.unmute_stories(account_id, user_id)
+
+    _NOTIFICATION_METHODS = {
+        "posts": "set_posts_notifications",
+        "videos": "set_videos_notifications",
+        "reels": "set_reels_notifications",
+        "stories": "set_stories_notifications",
+    }
+
+    def set_user_notifications(
+        self,
+        account_id: str,
+        target_username: str,
+        kind: str,
+        enabled: bool,
+    ) -> bool:
+        """Toggle per-user push notifications for posts/videos/reels/stories."""
+        if self.relationship_writer is None:
+            raise ValueError("relationship writer not configured")
+        method_name = self._NOTIFICATION_METHODS.get(kind)
+        if method_name is None:
+            raise ValueError(
+                f"unknown notification kind '{kind}'; expected one of "
+                f"{sorted(self._NOTIFICATION_METHODS)}"
+            )
+        user_id = self._resolve_user_id(account_id, target_username)
+        method = getattr(self.relationship_writer, method_name)
+        return method(account_id, user_id, bool(enabled))
+
     async def batch_follow(
         self,
         account_ids: list[str],

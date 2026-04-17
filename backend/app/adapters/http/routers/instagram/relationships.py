@@ -167,6 +167,119 @@ def close_friend_remove(
 
 
 # ---------------------------------------------------------------------------
+# Mute + Notification toggles (single-user)
+# ---------------------------------------------------------------------------
+
+
+class _TargetPayload(BaseModel):
+    """Body for per-user notification toggle endpoints."""
+
+    target_username: str
+    enabled: bool
+
+    @field_validator("target_username")
+    @classmethod
+    def _require_username(cls, v: str) -> str:
+        cleaned = (v or "").strip().lstrip("@")
+        if not cleaned:
+            raise ValueError("target_username is required")
+        return cleaned
+
+
+_NOTIFICATION_KINDS = ("posts", "videos", "reels", "stories")
+
+
+@router.post("/relationships/{account_id}/mute-posts")
+def mute_posts(
+    account_id: str,
+    target_username: str = Query(..., description="Username whose posts to mute"),
+    usecases=Depends(get_relationship_usecases),
+):
+    """Mute feed posts from a followed user."""
+    try:
+        success = usecases.mute_posts(account_id, target_username)
+        return {"success": success, "action": "mute_posts", "target": target_username}
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Mute posts failed")
+
+
+@router.post("/relationships/{account_id}/unmute-posts")
+def unmute_posts(
+    account_id: str,
+    target_username: str = Query(..., description="Username whose posts to unmute"),
+    usecases=Depends(get_relationship_usecases),
+):
+    """Unmute feed posts from a followed user."""
+    try:
+        success = usecases.unmute_posts(account_id, target_username)
+        return {"success": success, "action": "unmute_posts", "target": target_username}
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unmute posts failed")
+
+
+@router.post("/relationships/{account_id}/mute-stories")
+def mute_stories(
+    account_id: str,
+    target_username: str = Query(..., description="Username whose stories to mute"),
+    usecases=Depends(get_relationship_usecases),
+):
+    """Mute stories from a followed user."""
+    try:
+        success = usecases.mute_stories(account_id, target_username)
+        return {"success": success, "action": "mute_stories", "target": target_username}
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Mute stories failed")
+
+
+@router.post("/relationships/{account_id}/unmute-stories")
+def unmute_stories(
+    account_id: str,
+    target_username: str = Query(..., description="Username whose stories to unmute"),
+    usecases=Depends(get_relationship_usecases),
+):
+    """Unmute stories from a followed user."""
+    try:
+        success = usecases.unmute_stories(account_id, target_username)
+        return {
+            "success": success,
+            "action": "unmute_stories",
+            "target": target_username,
+        }
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unmute stories failed")
+
+
+@router.post("/relationships/{account_id}/notifications/{kind}")
+def set_user_notifications(
+    account_id: str,
+    kind: str,
+    payload: _TargetPayload,
+    usecases=Depends(get_relationship_usecases),
+):
+    """Toggle per-user push notifications for posts/videos/reels/stories."""
+    if kind not in _NOTIFICATION_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"kind must be one of {list(_NOTIFICATION_KINDS)}",
+        )
+    try:
+        success = usecases.set_user_notifications(
+            account_id,
+            payload.target_username,
+            kind,
+            payload.enabled,
+        )
+        return {
+            "success": success,
+            "action": f"{'enable' if payload.enabled else 'disable'}_{kind}_notifications",
+            "target": payload.target_username,
+            "enabled": payload.enabled,
+        }
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Toggle notifications failed")
+
+
+# ---------------------------------------------------------------------------
 # Batch Relationships (SSE)
 # ---------------------------------------------------------------------------
 

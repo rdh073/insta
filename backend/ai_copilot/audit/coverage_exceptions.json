@@ -128,6 +128,26 @@
     {
       "gap_key": "capability_gap:media_use_cases.unsave_media",
       "justification": "Bookmark removal is HTTP-only for v1; AI copilot tool exposure deferred per task spec out-of-scope."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.mute_posts",
+      "justification": "Per-user feed mute is operator-curated through the Relationships UI; AI copilot tool exposure deferred per 2026-04-17 mute/notification task scope."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.unmute_posts",
+      "justification": "Per-user feed unmute mirrors the mute control and stays operator-scoped; AI copilot tool exposure deferred per 2026-04-17 mute/notification task scope."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.mute_stories",
+      "justification": "Per-user story mute is operator-curated through the Relationships UI; AI copilot tool exposure deferred per 2026-04-17 mute/notification task scope."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.unmute_stories",
+      "justification": "Per-user story unmute mirrors the mute control and stays operator-scoped; AI copilot tool exposure deferred per 2026-04-17 mute/notification task scope."
+    },
+    {
+      "gap_key": "capability_gap:relationship_use_cases.set_user_notifications",
+      "justification": "Per-user push notification toggles are operator-curated in the Relationships UI; AI copilot tool exposure deferred per 2026-04-17 mute/notification task scope."
     }
   ]
 }

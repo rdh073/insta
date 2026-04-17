@@ -1,16 +1,18 @@
 import { useMemo } from 'react';
-import { ArrowLeftRight, UserMinus, UserPlus, Users } from 'lucide-react';
+import { ArrowLeftRight, UserCog, UserMinus, UserPlus, Users } from 'lucide-react';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
 import { useAccountStore } from '../store/accounts';
 import { useRelationshipsStore } from '../store/relationships';
 import { ActionTab } from '../features/relationships/components/ActionTab';
 import { CrossFollowTab } from '../features/relationships/components/CrossFollowTab';
+import { UserControlsTab } from '../features/relationships/components/UserControlsTab';
 import type { RelationshipTab } from '../features/relationships/types';
 
 const tabs = [
   { id: 'follow' as RelationshipTab, label: 'Follow', icon: UserPlus },
   { id: 'unfollow' as RelationshipTab, label: 'Unfollow', icon: UserMinus },
   { id: 'cross-follow' as RelationshipTab, label: 'Cross-Follow', icon: ArrowLeftRight },
+  { id: 'controls' as RelationshipTab, label: 'User Controls', icon: UserCog },
 ] as const;
 
 export function RelationshipsPage() {
@@ -55,6 +57,7 @@ export function RelationshipsPage() {
       {tab === 'follow' && <ActionTab action="follow" />}
       {tab === 'unfollow' && <ActionTab action="unfollow" />}
       {tab === 'cross-follow' && <CrossFollowTab />}
+      {tab === 'controls' && <UserControlsTab />}
     </div>
   );
 }
