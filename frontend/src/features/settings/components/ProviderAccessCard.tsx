@@ -121,7 +121,7 @@ export function ProviderAccessCard({
             autoComplete="off"
             label={`${cfg.label} API Key`}
             type="password"
-            value={apiKey}
+            value={apiKey ?? ''}
             onChange={(e) => onApiKeyChange(e.target.value)}
             placeholder={cfg.placeholder}
             hint={cfg.hint}
