@@ -582,3 +582,87 @@ class DirectUseCases:
         if not isinstance(story_pk, int) or isinstance(story_pk, bool) or story_pk <= 0:
             raise ValueError(f"story_pk must be a positive integer, got {story_pk!r}")
         return self.direct_writer.share_story(account_id, normalized_ids, story_pk)
+
+    # -------------------------------------------------------------------------
+    # Thread management (mute/unmute/hide/mark-unread/profile-share)
+    # -------------------------------------------------------------------------
+
+    def mute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mute notifications for a thread."""
+        self._require_authenticated(account_id)
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.mute_thread(account_id, str(tid))
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )
+
+    def unmute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Unmute notifications for a thread."""
+        self._require_authenticated(account_id)
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.unmute_thread(account_id, str(tid))
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )
+
+    def hide_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+        move_to_spam: bool = False,
+    ) -> DirectActionReceipt:
+        """Hide (delete) a thread from the inbox."""
+        self._require_authenticated(account_id)
+        if not isinstance(move_to_spam, bool):
+            raise ValueError(
+                f"move_to_spam must be a boolean, got {move_to_spam!r}"
+            )
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.hide_thread(
+                account_id, str(tid), move_to_spam=move_to_spam
+            )
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )
+
+    def mark_thread_unread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mark a thread as unread for follow-up."""
+        self._require_authenticated(account_id)
+        try:
+            tid = DirectThreadID(direct_thread_id)
+            return self.direct_writer.mark_thread_unread(account_id, str(tid))
+        except InvalidIdentifier:
+            raise ValueError(
+                f"direct_thread_id must not be empty, got {direct_thread_id!r}"
+            )
+
+    def share_profile(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        user_id: int,
+    ) -> DirectMessageAck:
+        """Share a user profile to one or more threads."""
+        self._require_authenticated(account_id)
+        normalized_ids = self._validate_thread_ids(thread_ids)
+        if not isinstance(user_id, int) or isinstance(user_id, bool) or user_id <= 0:
+            raise ValueError(f"user_id must be a positive integer, got {user_id!r}")
+        return self.direct_writer.share_profile(account_id, normalized_ids, user_id)

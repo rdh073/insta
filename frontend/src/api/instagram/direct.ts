@@ -320,4 +320,51 @@ export const directApi = {
         direct_thread_id: threadId,
       })
       .then((r) => r.data),
+
+  muteThread: (accountId: string, threadId: string) =>
+    api
+      .post<DirectActionReceipt>(`/direct/${threadId}/mute`, {
+        account_id: accountId,
+      })
+      .then((r) => r.data),
+
+  unmuteThread: (accountId: string, threadId: string) =>
+    api
+      .post<DirectActionReceipt>(`/direct/${threadId}/unmute`, {
+        account_id: accountId,
+      })
+      .then((r) => r.data),
+
+  hideThread: (accountId: string, threadId: string, moveToSpam = false) =>
+    api
+      .post<DirectActionReceipt>(`/direct/${threadId}/hide`, {
+        account_id: accountId,
+        move_to_spam: moveToSpam,
+      })
+      .then((r) => r.data),
+
+  markThreadUnread: (accountId: string, threadId: string) =>
+    api
+      .post<DirectActionReceipt>(`/direct/${threadId}/mark-unread`, {
+        account_id: accountId,
+      })
+      .then((r) => r.data),
+
+  shareProfileToThreads: (
+    accountId: string,
+    threadIds: string[],
+    userId: number,
+  ) =>
+    api
+      .post<{
+        threadIds: string[];
+        kind: string;
+        messageId: string | null;
+        sentAt: string | null;
+      }>(`/direct/share-profile`, {
+        account_id: accountId,
+        thread_ids: threadIds,
+        user_id: userId,
+      })
+      .then((r) => r.data),
 };

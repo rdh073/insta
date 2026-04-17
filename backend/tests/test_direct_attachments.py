@@ -111,7 +111,10 @@ def _install_langgraph_stubs() -> None:
 
 _install_langgraph_stubs()
 
-from app.application.dto.instagram_direct_dto import DirectMessageAck
+from app.application.dto.instagram_direct_dto import (
+    DirectActionReceipt,
+    DirectMessageAck,
+)
 from app.application.use_cases.direct import DirectUseCases
 from app.adapters.instagram.direct_writer import InstagramDirectWriterAdapter
 
@@ -473,3 +476,327 @@ class TestPolicyClassification:
             "dm_share_story",
         ):
             assert expected in names, expected
+
+
+# ---------------------------------------------------------------------------
+# Thread-management adapter tests (mute / unmute / hide / mark-unread /
+# profile-share). These mirror the attachment tests above: mocked instagrapi
+# client, verify exact vendor method name and argument shape, verify returned
+# DTO shape, verify vendor-error path maps to DirectActionReceipt(success=False)
+# or translated ValueError (for share_profile).
+# ---------------------------------------------------------------------------
+
+
+def _make_thread_mgmt_adapter_with_mock_client():
+    client = MagicMock()
+    # Boolean-ish vendor return types; DirectActionReceipt ignores the value.
+    client.direct_thread_mute.return_value = True
+    client.direct_thread_unmute.return_value = True
+    client.direct_thread_hide.return_value = True
+    client.direct_thread_mark_unread.return_value = True
+    client.direct_profile_share.return_value = MagicMock(id="vendor-profile-share-1")
+
+    repo = Mock()
+    repo.get.return_value = client
+    return InstagramDirectWriterAdapter(repo), client
+
+
+class TestAdapterThreadManagement:
+    def test_mute_thread_routes_to_vendor(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        receipt = adapter.mute_thread("acc-1", "340282366841710300123")
+
+        client.direct_thread_mute.assert_called_once_with(340282366841710300123)
+        assert isinstance(receipt, DirectActionReceipt)
+        assert receipt.success is True
+        assert receipt.action_id == "340282366841710300123"
+
+    def test_unmute_thread_routes_to_vendor(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        receipt = adapter.unmute_thread("acc-1", "111")
+
+        client.direct_thread_unmute.assert_called_once_with(111)
+        assert isinstance(receipt, DirectActionReceipt)
+        assert receipt.success is True
+        assert receipt.action_id == "111"
+
+    def test_hide_thread_routes_to_vendor_default_spam_flag(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        receipt = adapter.hide_thread("acc-1", "222")
+
+        client.direct_thread_hide.assert_called_once_with(222, move_to_spam=False)
+        assert isinstance(receipt, DirectActionReceipt)
+        assert receipt.success is True
+        assert receipt.reason == "Thread hidden"
+
+    def test_hide_thread_routes_to_vendor_with_spam_flag(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        receipt = adapter.hide_thread("acc-1", "222", move_to_spam=True)
+
+        client.direct_thread_hide.assert_called_once_with(222, move_to_spam=True)
+        assert receipt.success is True
+        assert receipt.reason == "Thread moved to spam"
+
+    def test_mark_thread_unread_routes_to_vendor(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        receipt = adapter.mark_thread_unread("acc-1", "333")
+
+        client.direct_thread_mark_unread.assert_called_once_with(333)
+        assert isinstance(receipt, DirectActionReceipt)
+        assert receipt.success is True
+
+    def test_share_profile_routes_to_vendor(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+
+        ack = adapter.share_profile("acc-1", ["111", "222"], 987654321)
+
+        client.direct_profile_share.assert_called_once_with(
+            user_id="987654321", thread_ids=[111, 222]
+        )
+        assert isinstance(ack, DirectMessageAck)
+        assert ack.kind == "profile_share"
+        assert ack.thread_ids == ["111", "222"]
+        assert ack.message_id == "vendor-profile-share-1"
+
+
+class TestAdapterThreadManagementFailures:
+    """Vendor errors must translate cleanly; first four return a failed
+    DirectActionReceipt, share_profile raises translated ValueError."""
+
+    @pytest.mark.parametrize(
+        "method_name,vendor_method",
+        [
+            ("mute_thread", "direct_thread_mute"),
+            ("unmute_thread", "direct_thread_unmute"),
+            ("mark_thread_unread", "direct_thread_mark_unread"),
+        ],
+    )
+    def test_receipt_methods_capture_failure(self, method_name, vendor_method):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+        getattr(client, vendor_method).side_effect = Exception("boom")
+
+        receipt = getattr(adapter, method_name)("acc-1", "111")
+
+        assert isinstance(receipt, DirectActionReceipt)
+        assert receipt.success is False
+        assert receipt.action_id == "111"
+        assert receipt.reason  # non-empty translated message
+
+    def test_hide_thread_captures_failure(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+        client.direct_thread_hide.side_effect = Exception("boom")
+
+        receipt = adapter.hide_thread("acc-1", "111")
+
+        assert receipt.success is False
+        assert receipt.action_id == "111"
+
+    def test_share_profile_translates_vendor_exception(self):
+        adapter, client = _make_thread_mgmt_adapter_with_mock_client()
+        client.direct_profile_share.side_effect = Exception("rate limited")
+
+        with pytest.raises(ValueError):
+            adapter.share_profile("acc-1", ["111"], 42)
+
+
+class TestUseCaseThreadManagement:
+    def test_mute_thread_delegates_to_writer(self):
+        uc, writer = _build_use_cases()
+        writer.mute_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason="ok"
+        )
+
+        receipt = uc.mute_thread("acc-1", "111")
+
+        writer.mute_thread.assert_called_once_with("acc-1", "111")
+        assert receipt.success is True
+
+    def test_mute_thread_rejects_empty_thread_id(self):
+        uc, writer = _build_use_cases()
+        with pytest.raises(ValueError, match="direct_thread_id"):
+            uc.mute_thread("acc-1", "   ")
+        writer.mute_thread.assert_not_called()
+
+    def test_unmute_thread_delegates_to_writer(self):
+        uc, writer = _build_use_cases()
+        writer.unmute_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason=""
+        )
+
+        uc.unmute_thread("acc-1", "111")
+
+        writer.unmute_thread.assert_called_once_with("acc-1", "111")
+
+    def test_hide_thread_passes_spam_flag(self):
+        uc, writer = _build_use_cases()
+        writer.hide_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason=""
+        )
+
+        uc.hide_thread("acc-1", "111", move_to_spam=True)
+
+        writer.hide_thread.assert_called_once_with(
+            "acc-1", "111", move_to_spam=True
+        )
+
+    def test_hide_thread_rejects_non_bool_spam_flag(self):
+        uc, writer = _build_use_cases()
+        with pytest.raises(ValueError, match="move_to_spam"):
+            uc.hide_thread("acc-1", "111", move_to_spam="yes")  # type: ignore[arg-type]
+        writer.hide_thread.assert_not_called()
+
+    def test_mark_thread_unread_delegates_to_writer(self):
+        uc, writer = _build_use_cases()
+        writer.mark_thread_unread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason=""
+        )
+
+        uc.mark_thread_unread("acc-1", "111")
+
+        writer.mark_thread_unread.assert_called_once_with("acc-1", "111")
+
+    def test_share_profile_validates_and_delegates(self):
+        uc, writer = _build_use_cases()
+        writer.share_profile.return_value = DirectMessageAck(
+            thread_ids=["111"], kind="profile_share"
+        )
+
+        uc.share_profile("acc-1", ["111"], 42)
+
+        writer.share_profile.assert_called_once_with("acc-1", ["111"], 42)
+
+    def test_share_profile_rejects_non_positive_user_id(self):
+        uc, writer = _build_use_cases()
+        with pytest.raises(ValueError, match="user_id"):
+            uc.share_profile("acc-1", ["111"], 0)
+        writer.share_profile.assert_not_called()
+
+    def test_share_profile_rejects_too_many_thread_ids(self):
+        uc, writer = _build_use_cases()
+        with pytest.raises(ValueError, match="at most 32"):
+            uc.share_profile("acc-1", [str(i) for i in range(33)], 42)
+        writer.share_profile.assert_not_called()
+
+
+class TestRouterThreadManagement:
+    def _make_fake_uc(self) -> Mock:
+        usecases = Mock()
+        usecases.mute_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason="Thread muted"
+        )
+        usecases.unmute_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason="Thread unmuted"
+        )
+        usecases.hide_thread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason="Thread hidden"
+        )
+        usecases.mark_thread_unread.return_value = DirectActionReceipt(
+            action_id="111", success=True, reason="Thread marked as unread"
+        )
+        usecases.share_profile.return_value = DirectMessageAck(
+            thread_ids=["111", "222"],
+            kind="profile_share",
+            message_id="mid-pf-1",
+            sent_at=None,
+        )
+        return usecases
+
+    def test_mute_endpoint(self):
+        from fastapi.testclient import TestClient
+
+        fake_uc = self._make_fake_uc()
+        app = _make_router_test_app(fake_uc)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/direct/111/mute",
+                json={"account_id": "acc-1"},
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "actionId": "111",
+            "success": True,
+            "reason": "Thread muted",
+        }
+        fake_uc.mute_thread.assert_called_once_with("acc-1", "111")
+
+    def test_unmute_endpoint(self):
+        from fastapi.testclient import TestClient
+
+        fake_uc = self._make_fake_uc()
+        app = _make_router_test_app(fake_uc)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/direct/111/unmute",
+                json={"account_id": "acc-1"},
+            )
+
+        assert response.status_code == 200, response.text
+        fake_uc.unmute_thread.assert_called_once_with("acc-1", "111")
+
+    def test_hide_endpoint_defaults_and_spam(self):
+        from fastapi.testclient import TestClient
+
+        fake_uc = self._make_fake_uc()
+        app = _make_router_test_app(fake_uc)
+        with TestClient(app) as client:
+            # Default: move_to_spam = False
+            response = client.post(
+                "/api/direct/111/hide",
+                json={"account_id": "acc-1"},
+            )
+            assert response.status_code == 200, response.text
+            fake_uc.hide_thread.assert_called_once_with(
+                "acc-1", "111", move_to_spam=False
+            )
+
+            fake_uc.hide_thread.reset_mock()
+            response = client.post(
+                "/api/direct/111/hide",
+                json={"account_id": "acc-1", "move_to_spam": True},
+            )
+            assert response.status_code == 200, response.text
+            fake_uc.hide_thread.assert_called_once_with(
+                "acc-1", "111", move_to_spam=True
+            )
+
+    def test_mark_unread_endpoint(self):
+        from fastapi.testclient import TestClient
+
+        fake_uc = self._make_fake_uc()
+        app = _make_router_test_app(fake_uc)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/direct/111/mark-unread",
+                json={"account_id": "acc-1"},
+            )
+        assert response.status_code == 200, response.text
+        fake_uc.mark_thread_unread.assert_called_once_with("acc-1", "111")
+
+    def test_share_profile_endpoint(self):
+        from fastapi.testclient import TestClient
+
+        fake_uc = self._make_fake_uc()
+        app = _make_router_test_app(fake_uc)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/direct/share-profile",
+                json={
+                    "account_id": "acc-1",
+                    "thread_ids": ["111", "222"],
+                    "user_id": 987654321,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["kind"] == "profile_share"
+        assert body["threadIds"] == ["111", "222"]
+        fake_uc.share_profile.assert_called_once_with(
+            "acc-1", ["111", "222"], 987654321
+        )

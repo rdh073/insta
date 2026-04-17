@@ -403,6 +403,136 @@ class InstagramDirectWriterAdapter:
             )
             raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
+    # ------------------------------------------------------------------------
+    # Thread management (mute / unmute / hide / mark-unread / profile-share)
+    # ------------------------------------------------------------------------
+
+    def mute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mute notifications for a thread via instagrapi ``direct_thread_mute``."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            client.direct_thread_mute(int(direct_thread_id))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Thread muted",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="mute_thread", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def unmute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Unmute a thread via instagrapi ``direct_thread_unmute``."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            client.direct_thread_unmute(int(direct_thread_id))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Thread unmuted",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="unmute_thread", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def hide_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+        move_to_spam: bool = False,
+    ) -> DirectActionReceipt:
+        """Hide a thread from the inbox via instagrapi ``direct_thread_hide``."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            client.direct_thread_hide(int(direct_thread_id), move_to_spam=bool(move_to_spam))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Thread moved to spam" if move_to_spam else "Thread hidden",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="hide_thread", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def mark_thread_unread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mark a thread as unread via instagrapi ``direct_thread_mark_unread``."""
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            client.direct_thread_mark_unread(int(direct_thread_id))
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=True,
+                reason="Thread marked as unread",
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="mark_thread_unread", account_id=account_id
+            )
+            return DirectActionReceipt(
+                action_id=direct_thread_id,
+                success=False,
+                reason=failure.user_message,
+            )
+
+    def share_profile(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        user_id: int,
+    ) -> DirectMessageAck:
+        """Share a user profile to one or more DM threads via ``direct_profile_share``.
+
+        instagrapi expects ``user_id`` as a string identifier for the profile
+        being shared and ``thread_ids`` as a list of ints for the recipients.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            response = client.direct_profile_share(
+                user_id=str(int(user_id)),
+                thread_ids=self._coerce_thread_ids(thread_ids),
+            )
+            return DirectMessageAck(
+                thread_ids=list(thread_ids),
+                kind="profile_share",
+                message_id=self._extract_message_id(response),
+                sent_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="direct_profile_share", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
     @staticmethod
     def _map_find_or_create_thread_response(thread: Any) -> DirectThreadSummary:
         """Map find/create response into a stable thread summary.

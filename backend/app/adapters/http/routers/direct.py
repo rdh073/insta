@@ -68,6 +68,31 @@ class _ShareStoryEnvelope(BaseModel):
     story_pk: int = Field(..., description="Instagram story PK to share")
 
 
+class _ThreadActionEnvelope(BaseModel):
+    account_id: str = Field(..., description="Application account ID")
+
+
+class _HideThreadEnvelope(_ThreadActionEnvelope):
+    move_to_spam: bool = Field(
+        default=False,
+        description="If true, move thread to the hidden/spam folder instead of just hiding",
+    )
+
+
+class _ShareProfileEnvelope(BaseModel):
+    account_id: str = Field(..., description="Application account ID")
+    thread_ids: list[str] = Field(..., description="Direct thread IDs (<=32)")
+    user_id: int = Field(..., description="Instagram user id (pk) of the profile to share")
+
+
+def _receipt_to_dict(receipt) -> dict:
+    return {
+        "actionId": receipt.action_id,
+        "success": receipt.success,
+        "reason": receipt.reason,
+    }
+
+
 @router.post("/{account_id}/send/photo")
 async def send_photo(
     account_id: str,
@@ -145,3 +170,79 @@ def share_story(
         return _ack_to_dict(ack)
     except Exception as exc:
         _raise_instagram_error(exc, context="Share DM story failed")
+
+
+# ---------------------------------------------------------------------------
+# Thread management (mute / unmute / hide / mark-unread / profile-share)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{thread_id}/mute")
+def mute_thread(
+    thread_id: str,
+    body: _ThreadActionEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Mute notifications for a thread."""
+    try:
+        receipt = usecases.mute_thread(body.account_id, thread_id)
+        return _receipt_to_dict(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Mute thread failed")
+
+
+@router.post("/{thread_id}/unmute")
+def unmute_thread(
+    thread_id: str,
+    body: _ThreadActionEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Unmute notifications for a thread."""
+    try:
+        receipt = usecases.unmute_thread(body.account_id, thread_id)
+        return _receipt_to_dict(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unmute thread failed")
+
+
+@router.post("/{thread_id}/hide")
+def hide_thread(
+    thread_id: str,
+    body: _HideThreadEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Hide a thread from the inbox (Instagram's "delete thread" behaviour)."""
+    try:
+        receipt = usecases.hide_thread(
+            body.account_id, thread_id, move_to_spam=body.move_to_spam
+        )
+        return _receipt_to_dict(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Hide thread failed")
+
+
+@router.post("/{thread_id}/mark-unread")
+def mark_thread_unread(
+    thread_id: str,
+    body: _ThreadActionEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Mark a thread as unread so it surfaces for follow-up."""
+    try:
+        receipt = usecases.mark_thread_unread(body.account_id, thread_id)
+        return _receipt_to_dict(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Mark thread unread failed")
+
+
+@router.post("/share-profile")
+def share_profile(
+    body: _ShareProfileEnvelope,
+    usecases=Depends(get_direct_usecases),
+):
+    """Share a user profile to one or more DM threads."""
+    try:
+        ack = usecases.share_profile(body.account_id, body.thread_ids, body.user_id)
+        return _ack_to_dict(ack)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Share profile failed")

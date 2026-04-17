@@ -313,3 +313,87 @@ class InstagramDirectWriter(Protocol):
     ) -> DirectMessageAck:
         """Share an existing Instagram story into one or more threads."""
         ...
+
+    def mute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mute notifications for a thread.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The Instagram direct thread ID.
+
+        Returns:
+            DirectActionReceipt with result.
+        """
+        ...
+
+    def unmute_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Unmute notifications for a thread.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The Instagram direct thread ID.
+
+        Returns:
+            DirectActionReceipt with result.
+        """
+        ...
+
+    def hide_thread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+        move_to_spam: bool = False,
+    ) -> DirectActionReceipt:
+        """Hide a thread from the inbox (Instagram's "delete thread" behaviour).
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The Instagram direct thread ID.
+            move_to_spam: If True, move thread to hidden/spam folder.
+
+        Returns:
+            DirectActionReceipt with result.
+        """
+        ...
+
+    def mark_thread_unread(
+        self,
+        account_id: str,
+        direct_thread_id: str,
+    ) -> DirectActionReceipt:
+        """Mark a thread as unread so it resurfaces for follow-up.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            direct_thread_id: The Instagram direct thread ID.
+
+        Returns:
+            DirectActionReceipt with result.
+        """
+        ...
+
+    def share_profile(
+        self,
+        account_id: str,
+        thread_ids: list[str],
+        user_id: int,
+    ) -> DirectMessageAck:
+        """Share a user profile into one or more threads.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            thread_ids: Direct thread IDs to broadcast the share into.
+            user_id: Instagram user ID (pk) of the profile being shared.
+
+        Returns:
+            DirectMessageAck with vendor message id (when supplied).
+        """
+        ...

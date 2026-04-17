@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCheck, Clock, Loader, MessageCircle, Search, Send, Trash2, User } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  CheckCheck,
+  Clock,
+  EyeOff,
+  Loader,
+  MailPlus,
+  MessageCircle,
+  Search,
+  Send,
+  Trash2,
+  User,
+} from 'lucide-react';
 import { directApi, getSyntheticSearchUserId } from '../api/instagram/direct';
 import { AccountPicker, useAccountPicker } from '../components/instagram/AccountPicker';
 import type { DirectThreadSummary, DirectMessageSummary } from '../types/instagram/direct';
@@ -15,10 +28,14 @@ import { DIRECT_SEARCH_DEBOUNCE_MS, DirectSearchScheduler } from './directSearch
 function ThreadRow({
   thread,
   selected,
+  muted,
+  unread,
   onClick,
 }: {
   thread: DirectThreadSummary;
   selected: boolean;
+  muted: boolean;
+  unread: boolean;
   onClick: () => void;
 }) {
   const names = thread.participants.map((p) => `@${p.username}`).join(', ');
@@ -39,7 +56,28 @@ function ThreadRow({
           <User className="h-3.5 w-3.5 text-[#6a7aa0]" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium text-[#c0caf5]">{names}</p>
+          <div className="flex items-center gap-1">
+            {unread && (
+              <span
+                aria-label="Unread"
+                title="Unread"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#7dcfff]"
+              />
+            )}
+            <p
+              className={cn(
+                'truncate text-xs',
+                unread ? 'font-semibold text-[#c0caf5]' : 'font-medium text-[#c0caf5]',
+              )}
+            >
+              {names}
+            </p>
+            {muted && (
+              <span title="Muted" aria-label="Muted" className="inline-flex shrink-0">
+                <BellOff className="h-3 w-3 text-[#6a7aa0]" aria-hidden="true" />
+              </span>
+            )}
+          </div>
           <p className="truncate text-[11px] text-[#4a5578]">{preview}</p>
         </div>
         {thread.isPending && (
@@ -47,6 +85,74 @@ function ThreadRow({
         )}
       </div>
     </button>
+  );
+}
+
+// ─── Thread header actions (mute / hide / mark-unread) ───────────────────────
+
+function ThreadHeaderActions({
+  thread,
+  muted,
+  pendingAction,
+  onToggleMute,
+  onHide,
+  onMarkUnread,
+}: {
+  thread: DirectThreadSummary;
+  muted: boolean;
+  pendingAction: string | null;
+  onToggleMute: () => void;
+  onHide: () => void;
+  onMarkUnread: () => void;
+}) {
+  const threadId = thread.directThreadId;
+  const busy = (kind: 'mute' | 'hide' | 'unread') =>
+    pendingAction === `${kind}:${threadId}`;
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        disabled={busy('mute')}
+        onClick={onToggleMute}
+        title={muted ? 'Unmute thread' : 'Mute thread'}
+        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[#6a7aa0] transition-colors hover:bg-[rgba(125,207,255,0.08)] hover:text-[#7dcfff] disabled:opacity-40"
+      >
+        {busy('mute') ? (
+          <Loader className="h-3.5 w-3.5 animate-spin" />
+        ) : muted ? (
+          <BellOff className="h-3.5 w-3.5" />
+        ) : (
+          <Bell className="h-3.5 w-3.5" />
+        )}
+      </button>
+      <button
+        type="button"
+        disabled={busy('unread')}
+        onClick={onMarkUnread}
+        title="Mark as unread"
+        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[#6a7aa0] transition-colors hover:bg-[rgba(125,207,255,0.08)] hover:text-[#7dcfff] disabled:opacity-40"
+      >
+        {busy('unread') ? (
+          <Loader className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <MailPlus className="h-3.5 w-3.5" />
+        )}
+      </button>
+      <button
+        type="button"
+        disabled={busy('hide')}
+        onClick={onHide}
+        title="Hide thread"
+        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[#6a7aa0] transition-colors hover:bg-[rgba(247,118,142,0.12)] hover:text-[#f7768e] disabled:opacity-40"
+      >
+        {busy('hide') ? (
+          <Loader className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <EyeOff className="h-3.5 w-3.5" />
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -107,29 +213,35 @@ function MessageBubble({
 export function DirectPage() {
   const { accountId, setAccountId } = useAccountPicker();
 
-  const inboxTab       = useDirectStore((s) => s.inboxTab);
-  const threads        = useDirectStore((s) => s.threads);
-  const pendingThreads = useDirectStore((s) => s.pendingThreads);
-  const selectedThread = useDirectStore((s) => s.selectedThread);
-  const messages       = useDirectStore((s) => s.messages);
-  const searchQuery    = useDirectStore((s) => s.searchQuery);
+  const inboxTab        = useDirectStore((s) => s.inboxTab);
+  const threads         = useDirectStore((s) => s.threads);
+  const pendingThreads  = useDirectStore((s) => s.pendingThreads);
+  const selectedThread  = useDirectStore((s) => s.selectedThread);
+  const messages        = useDirectStore((s) => s.messages);
+  const searchQuery     = useDirectStore((s) => s.searchQuery);
+  const mutedThreadIds  = useDirectStore((s) => s.mutedThreadIds);
+  const unreadThreadIds = useDirectStore((s) => s.unreadThreadIds);
 
-  const setInboxTab        = useDirectStore((s) => s.setInboxTab);
-  const setThreads         = useDirectStore((s) => s.setThreads);
-  const setPendingThreads  = useDirectStore((s) => s.setPendingThreads);
+  const setInboxTab         = useDirectStore((s) => s.setInboxTab);
+  const setThreads          = useDirectStore((s) => s.setThreads);
+  const setPendingThreads   = useDirectStore((s) => s.setPendingThreads);
   const removePendingThread = useDirectStore((s) => s.removePendingThread);
-  const setSelectedThread  = useDirectStore((s) => s.setSelectedThread);
-  const setMessages        = useDirectStore((s) => s.setMessages);
-  const appendMessage      = useDirectStore((s) => s.appendMessage);
-  const removeMessage      = useDirectStore((s) => s.removeMessage);
-  const setSearchQuery     = useDirectStore((s) => s.setSearchQuery);
-  const clearSession       = useDirectStore((s) => s.clearSession);
+  const removeThread        = useDirectStore((s) => s.removeThread);
+  const setSelectedThread   = useDirectStore((s) => s.setSelectedThread);
+  const setMessages         = useDirectStore((s) => s.setMessages);
+  const appendMessage       = useDirectStore((s) => s.appendMessage);
+  const removeMessage       = useDirectStore((s) => s.removeMessage);
+  const setSearchQuery      = useDirectStore((s) => s.setSearchQuery);
+  const setThreadMuted      = useDirectStore((s) => s.setThreadMuted);
+  const setThreadUnread     = useDirectStore((s) => s.setThreadUnread);
+  const clearSession        = useDirectStore((s) => s.clearSession);
 
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [sending, setSending] = useState(false);
   const [approving, setApproving] = useState<string | null>(null);
+  const [threadActionPending, setThreadActionPending] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const searchSchedulerRef = useRef(new DirectSearchScheduler(DIRECT_SEARCH_DEBOUNCE_MS));
 
@@ -226,6 +338,8 @@ export function DirectPage() {
       setSelectedThread(resolved);
       const result = await directApi.getThread(accountId, resolved.directThreadId, 30);
       setMessages(result.messages);
+      // Opening a thread clears our local unread indicator.
+      setThreadUnread(resolved.directThreadId, false);
       // Mark as seen silently — failure is non-critical
       directApi.markSeen(accountId, resolved.directThreadId).catch(() => undefined);
     } catch (e) {
@@ -256,6 +370,72 @@ export function DirectPage() {
       removeMessage(messageId);
     } catch (e) {
       toast.error((e as Error).message);
+    }
+  }
+
+  async function handleToggleMute(thread: DirectThreadSummary) {
+    const threadId = thread.directThreadId;
+    const isMuted = mutedThreadIds.has(threadId);
+    const nextMuted = !isMuted;
+    setThreadActionPending(`mute:${threadId}`);
+    setThreadMuted(threadId, nextMuted);
+    try {
+      const receipt = nextMuted
+        ? await directApi.muteThread(accountId, threadId)
+        : await directApi.unmuteThread(accountId, threadId);
+      if (!receipt.success) {
+        setThreadMuted(threadId, isMuted);
+        toast.error(receipt.reason || (nextMuted ? 'Mute failed' : 'Unmute failed'));
+      } else {
+        toast.success(nextMuted ? 'Thread muted' : 'Thread unmuted');
+      }
+    } catch (e) {
+      setThreadMuted(threadId, isMuted);
+      toast.error((e as Error).message);
+    } finally {
+      setThreadActionPending(null);
+    }
+  }
+
+  async function handleHideThread(thread: DirectThreadSummary) {
+    const threadId = thread.directThreadId;
+    setThreadActionPending(`hide:${threadId}`);
+    // Optimistic removal from the list; restore on failure.
+    removeThread(threadId);
+    try {
+      const receipt = await directApi.hideThread(accountId, threadId);
+      if (!receipt.success) {
+        toast.error(receipt.reason || 'Hide failed');
+        // Reload to restore truth from server.
+        void loadInbox();
+      } else {
+        toast.success('Thread hidden');
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+      void loadInbox();
+    } finally {
+      setThreadActionPending(null);
+    }
+  }
+
+  async function handleMarkThreadUnread(thread: DirectThreadSummary) {
+    const threadId = thread.directThreadId;
+    setThreadActionPending(`unread:${threadId}`);
+    setThreadUnread(threadId, true);
+    try {
+      const receipt = await directApi.markThreadUnread(accountId, threadId);
+      if (!receipt.success) {
+        setThreadUnread(threadId, false);
+        toast.error(receipt.reason || 'Mark-unread failed');
+      } else {
+        toast.success('Marked unread');
+      }
+    } catch (e) {
+      setThreadUnread(threadId, false);
+      toast.error((e as Error).message);
+    } finally {
+      setThreadActionPending(null);
     }
   }
 
@@ -348,6 +528,8 @@ export function DirectPage() {
                 key={t.directThreadId}
                 thread={t}
                 selected={selectedThread?.directThreadId === t.directThreadId}
+                muted={mutedThreadIds.has(t.directThreadId)}
+                unread={unreadThreadIds.has(t.directThreadId)}
                 onClick={() => void selectThread(t)}
               />
             ))}
@@ -358,6 +540,8 @@ export function DirectPage() {
                 <ThreadRow
                   thread={t}
                   selected={selectedThread?.directThreadId === t.directThreadId}
+                  muted={mutedThreadIds.has(t.directThreadId)}
+                  unread={unreadThreadIds.has(t.directThreadId)}
                   onClick={() => void selectThread(t)}
                 />
                 <button
@@ -400,6 +584,14 @@ export function DirectPage() {
                     <Clock className="h-3 w-3" /> Pending
                   </span>
                 )}
+                <ThreadHeaderActions
+                  thread={selectedThread}
+                  muted={mutedThreadIds.has(selectedThread.directThreadId)}
+                  pendingAction={threadActionPending}
+                  onToggleMute={() => void handleToggleMute(selectedThread)}
+                  onHide={() => void handleHideThread(selectedThread)}
+                  onMarkUnread={() => void handleMarkThreadUnread(selectedThread)}
+                />
               </div>
               <p className="font-mono text-[10px] text-[#374060]">{selectedThread.directThreadId}</p>
             </div>
