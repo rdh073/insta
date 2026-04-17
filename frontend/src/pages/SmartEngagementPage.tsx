@@ -3,11 +3,17 @@ import toast from 'react-hot-toast';
 import {
   Activity,
   AlertTriangle,
+  AtSign,
   Check,
   CheckCircle,
   ChevronDown,
   Edit3,
   FileText,
+  Flame,
+  Handshake,
+  Hash,
+  Heart,
+  MessageCircle,
   RefreshCw,
   Search,
   Shield,
@@ -16,6 +22,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { smartEngagementApi } from '../api/smart-engagement';
 import type { ResumeRequest, SmartEngagementRequest, SmartEngagementResponse } from '../api/smart-engagement';
 import { Button } from '../components/ui/Button';
@@ -31,13 +38,13 @@ import type { Account } from '../types';
 
 // ─── Goal templates ──────────────────────────────────────────────────────────
 
-const GOAL_TEMPLATES = [
-  { label: 'Like niche posts', goal: 'like educational and informative posts in niche', icon: '❤️' },
-  { label: 'Comment on follower posts', goal: 'leave thoughtful comments on recent follower posts', icon: '💬' },
-  { label: 'Engage with hashtags', goal: 'engage with top posts under relevant niche hashtags', icon: '#' },
-  { label: 'Warm up cold leads', goal: 'engage with potential leads who recently interacted with profile', icon: '🔥' },
-  { label: 'Reply to mentions', goal: 'reply to story mentions and post tags', icon: '📩' },
-  { label: 'Support collaborators', goal: 'like and comment on recent posts from collaboration partners', icon: '🤝' },
+const GOAL_TEMPLATES: Array<{ label: string; goal: string; icon: LucideIcon }> = [
+  { label: 'Like niche posts', goal: 'like educational and informative posts in niche', icon: Heart },
+  { label: 'Comment on follower posts', goal: 'leave thoughtful comments on recent follower posts', icon: MessageCircle },
+  { label: 'Engage with hashtags', goal: 'engage with top posts under relevant niche hashtags', icon: Hash },
+  { label: 'Warm up cold leads', goal: 'engage with potential leads who recently interacted with profile', icon: Flame },
+  { label: 'Reply to mentions', goal: 'reply to story mentions and post tags', icon: AtSign },
+  { label: 'Support collaborators', goal: 'like and comment on recent posts from collaboration partners', icon: Handshake },
 ];
 
 // ─── Status dot color ────────────────────────────────────────────────────────
@@ -577,22 +584,25 @@ export function SmartEngagementPage() {
             <div className="space-y-2">
               <label className="field-label">Goal</label>
               <div className="flex flex-wrap gap-1.5">
-                {GOAL_TEMPLATES.map((t) => (
-                  <button
-                    key={t.label}
-                    type="button"
-                    onClick={() => setGoal(t.goal)}
-                    className={cn(
-                      'cursor-pointer rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-all duration-150',
-                      goal === t.goal
-                        ? 'border-[rgba(187,154,247,0.35)] bg-[rgba(187,154,247,0.14)] text-[#f0e0ff]'
-                        : 'border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.03)] text-[#8e9ac0] hover:border-[rgba(162,179,229,0.24)] hover:text-[#c0caf5]',
-                    )}
-                  >
-                    <span className="mr-1">{t.icon}</span>
-                    {t.label}
-                  </button>
-                ))}
+                {GOAL_TEMPLATES.map((t) => {
+                  const Icon = t.icon;
+                  return (
+                    <button
+                      key={t.label}
+                      type="button"
+                      onClick={() => setGoal(t.goal)}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-all duration-150',
+                        goal === t.goal
+                          ? 'border-[rgba(187,154,247,0.35)] bg-[rgba(187,154,247,0.14)] text-[#f0e0ff]'
+                          : 'border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.03)] text-[#8e9ac0] hover:border-[rgba(162,179,229,0.24)] hover:text-[#c0caf5]',
+                      )}
+                    >
+                      <Icon className="h-3 w-3 shrink-0" />
+                      {t.label}
+                    </button>
+                  );
+                })}
               </div>
               <input
                 value={goal}
