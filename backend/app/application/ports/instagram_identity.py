@@ -73,6 +73,26 @@ class InstagramIdentityReader(Protocol):
         """
         ...
 
+    def get_own_user_info(self, account_id: str) -> PublicUserProfile:
+        """
+        Get the authenticated account's own profile via users/{id}/info/.
+
+        Unlike get_authenticated_account(), this endpoint returns follower_count,
+        following_count, and media_count. Use this for any query that needs
+        engagement statistics for the logged-in account.
+
+        Args:
+            account_id: The application account ID.
+
+        Returns:
+            PublicUserProfile with follower_count, following_count, media_count.
+
+        Raises:
+            ValueError: If account not found or client not authenticated.
+            InstagramAdapterError: If the Instagram API call fails.
+        """
+        ...
+
     def get_profile_for_hydration(self, account_id: str) -> dict | None:
         """
         Single user_info() call returning all fields needed for background hydration.

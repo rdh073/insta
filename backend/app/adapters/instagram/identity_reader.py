@@ -84,6 +84,39 @@ class InstagramIdentityReaderAdapter:
             phone_number=account.phone_number,
         )
 
+    def get_own_user_info(self, account_id: str) -> PublicUserProfile:
+        """Get the authenticated account's own profile via users/{id}/info/.
+
+        Calls user_info(client.user_id) which hits /api/v1/users/{id}/info/ and
+        returns follower_count, following_count, and media_count — fields absent
+        from the account_edit endpoint used by get_authenticated_account().
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            user = client.user_info(client.user_id)
+        except Exception as e:
+            failure = translate_instagram_error(
+                e,
+                operation="user_info_own",
+                account_id=account_id,
+            )
+            raise InstagramAdapterError(failure) from e
+
+        return PublicUserProfile(
+            pk=user.pk,
+            username=user.username,
+            full_name=user.full_name,
+            biography=user.biography,
+            profile_pic_url=self._to_string(user.profile_pic_url),
+            follower_count=user.follower_count,
+            following_count=user.following_count,
+            media_count=user.media_count,
+            is_private=user.is_private,
+            is_verified=user.is_verified,
+            is_business=user.is_business,
+        )
+
     def get_profile_for_hydration(self, account_id: str) -> dict | None:
         """Single user_info() call for background profile hydration.
 

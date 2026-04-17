@@ -86,24 +86,26 @@ class AccountProfileUseCases:
             )
 
         try:
-            # Get authenticated account profile via identity reader
-            profile = self.identity_reader.get_authenticated_account(account_id)
+            # Use user_info(user_id) → /api/v1/users/{id}/info/ which returns
+            # follower_count, following_count, and media_count.  The older
+            # account_info() call hit accounts/current_user/?edit=true, an edit
+            # endpoint that never includes engagement stats.
+            profile = self.identity_reader.get_own_user_info(account_id)
 
-            # Update cached account metadata with latest data
             self.account_repo.update(
                 account_id,
                 full_name=profile.full_name,
-                followers=None,  # Account profile doesn't have follower_count
-                following=None,  # Account profile doesn't have following_count
+                followers=profile.follower_count,
+                following=profile.following_count,
             )
 
             return AccountInfoResponse(
                 username=profile.username,
                 full_name=profile.full_name,
                 biography=profile.biography,
-                followers=None,
-                following=None,
-                media_count=None,
+                followers=profile.follower_count,
+                following=profile.following_count,
+                media_count=profile.media_count,
                 is_private=profile.is_private,
                 is_verified=profile.is_verified,
                 is_business=profile.is_business,
