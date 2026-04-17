@@ -37,6 +37,8 @@ const routeMeta: Array<{
   { startsWith: '/insights', label: 'Instagram', title: 'Insights', subtitle: 'Media analytics — reach, impressions, engagement metrics per post.' },
   { startsWith: '/discovery', label: 'Instagram', title: 'Hashtag Discovery', subtitle: 'Search hashtags, browse top and recent posts for content research.' },
   { startsWith: '/campaign', label: 'Broadcast Control', title: 'Campaign Monitor', subtitle: 'Track every post job across all accounts — live status and per-account results.' },
+  { startsWith: '/relationships', label: 'Social Graph', title: 'Relationships', subtitle: 'Follow, unfollow, and cross-follow users across multiple managed accounts.' },
+  { startsWith: '/logstream', label: 'Infrastructure', title: 'Log Stream', subtitle: 'Live Python logging output streamed from the backend process over SSE.' },
   { startsWith: '/accounts', label: 'Identity Operations', title: 'Account Workspace', subtitle: 'Session health, relogin actions, and account lifecycle controls.' },
 ];
 
