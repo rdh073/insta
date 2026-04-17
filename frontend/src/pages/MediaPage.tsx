@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
+  AtSign,
   Film,
   Heart,
   Image,
@@ -24,9 +25,13 @@ import type { CommentPage } from '../types/instagram/comment';
 import { Button } from '../components/ui/Button';
 import { useMediaStore } from '../store/media';
 import { MediaActionsMenu } from '../features/media/MediaActionsMenu';
+import { MediaLikersPanel } from '../features/media/MediaLikersPanel';
+import { UserClipsGrid } from '../features/media/UserClipsGrid';
+import { UserTaggedGrid } from '../features/media/UserTaggedGrid';
 import { cn } from '../lib/cn';
 
-type DrawerTab = 'detail' | 'comments';
+type DrawerTab = 'detail' | 'comments' | 'likers';
+type FeedTab = 'posts' | 'clips' | 'tagged';
 
 const MEDIA_TYPE_LABEL: Record<number, string> = { 1: 'Photo', 2: 'Video', 8: 'Album' };
 
@@ -335,6 +340,7 @@ export function MediaPage() {
   const media      = useMediaStore((s) => s.media);
   const selected   = useMediaStore((s) => s.selected);
   const drawerTab  = useMediaStore((s) => s.drawerTab);
+  const feedTab    = useMediaStore((s) => s.feedTab);
 
   const setScopeAccountId = useMediaStore((s) => s.setScopeAccountId);
   const setUserId    = useMediaStore((s) => s.setUserId);
@@ -342,11 +348,13 @@ export function MediaPage() {
   const prependMedia = useMediaStore((s) => s.prependMedia);
   const setSelected  = useMediaStore((s) => s.setSelected);
   const setDrawerTab = useMediaStore((s) => s.setDrawerTab);
+  const setFeedTab   = useMediaStore((s) => s.setFeedTab);
 
   const [postUrl, setPostUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [urlLoading, setUrlLoading] = useState(false);
-  const selectedMedia = selected && media.some((item) => item.pk === selected.pk) ? selected : null;
+  const [resolvedUserId, setResolvedUserId] = useState<number | null>(null);
+  const selectedMedia = selected ?? null;
 
   useEffect(() => {
     setScopeAccountId(accountId);
@@ -364,6 +372,7 @@ export function MediaPage() {
         const profile = await identityApi.getUserByUsername(accountId, raw);
         numericId = profile.pk;
       }
+      setResolvedUserId(numericId);
       const result = await mediaApi.getUserMedias(accountId, numericId, 24);
       setMedia(result.posts);
     } catch (e) {
@@ -439,35 +448,81 @@ export function MediaPage() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Grid */}
         <div className="flex-1 overflow-y-auto p-5">
-          {media.length === 0 && !loading && (
-            <div className="flex h-full items-center justify-center text-sm text-[#4a5578]">
-              Enter a username or User ID and click Load
-            </div>
-          )}
-          {loading && (
-            <div className="flex h-40 items-center justify-center">
-              <Loader className="h-5 w-5 animate-spin text-[#7dcfff]" />
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {media.map((m) => (
-                <MediaCard
-                  key={m.pk}
-                  accountId={accountId}
-                  media={m}
-                  selected={selectedMedia?.pk === m.pk}
-                  onClick={() => { setSelected(m); setDrawerTab('detail'); }}
-                />
+          {/* Feed tab switcher */}
+          {resolvedUserId && (
+            <div className="mb-4 flex items-center gap-1 rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.02)] p-1">
+              {(['posts', 'clips', 'tagged'] as FeedTab[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFeedTab(t)}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium capitalize transition-colors duration-150',
+                    feedTab === t
+                      ? 'bg-[rgba(125,207,255,0.12)] text-[#7dcfff]'
+                      : 'text-[#6a7aa0] hover:text-[#c0caf5]',
+                  )}
+                >
+                  {t === 'posts' && <Image className="h-3 w-3" />}
+                  {t === 'clips' && <Film className="h-3 w-3" />}
+                  {t === 'tagged' && <AtSign className="h-3 w-3" />}
+                  {t}
+                </button>
               ))}
             </div>
-          </div>
+          )}
+
+          {feedTab === 'posts' && (
+            <>
+              {media.length === 0 && !loading && (
+                <div className="flex h-full items-center justify-center text-sm text-[#4a5578]">
+                  Enter a username or User ID and click Load
+                </div>
+              )}
+              {loading && (
+                <div className="flex h-40 items-center justify-center">
+                  <Loader className="h-5 w-5 animate-spin text-[#7dcfff]" />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {media.map((m) => (
+                  <MediaCard
+                    key={m.pk}
+                    accountId={accountId}
+                    media={m}
+                    selected={selectedMedia?.pk === m.pk}
+                    onClick={() => { setSelected(m); setDrawerTab('detail'); }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {feedTab === 'clips' && (
+            <UserClipsGrid
+              accountId={accountId}
+              userId={resolvedUserId}
+              selectedPk={selectedMedia?.pk ?? null}
+              onSelect={(m) => { setSelected(m); setDrawerTab('detail'); }}
+            />
+          )}
+
+          {feedTab === 'tagged' && (
+            <UserTaggedGrid
+              accountId={accountId}
+              userId={resolvedUserId}
+              selectedPk={selectedMedia?.pk ?? null}
+              onSelect={(m) => { setSelected(m); setDrawerTab('detail'); }}
+            />
+          )}
+        </div>
 
           {/* Drawer */}
         {selectedMedia && (
           <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-[rgba(162,179,229,0.10)] bg-[rgba(6,8,16,0.60)] p-5 lg:flex lg:flex-col">
             <div className="flex items-center justify-between">
               <div className="flex gap-2">
-                {(['detail', 'comments'] as DrawerTab[]).map((t) => (
+                {(['detail', 'comments', 'likers'] as DrawerTab[]).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -522,6 +577,9 @@ export function MediaPage() {
               )}
               {drawerTab === 'comments' && (
                 <CommentsPanel accountId={accountId} mediaId={selectedMedia.mediaId} />
+              )}
+              {drawerTab === 'likers' && (
+                <MediaLikersPanel accountId={accountId} mediaId={selectedMedia.mediaId} />
               )}
             </div>
           </div>

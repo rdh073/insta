@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.dto.instagram_media_dto import (
     MediaActionReceipt,
     MediaSummary,
@@ -146,6 +147,84 @@ class MediaUseCases:
         if not clean_url.startswith("http"):
             raise ValueError(f"url must start with 'http', got {clean_url!r}")
         return self.media_reader.get_media_oembed(account_id, clean_url)
+
+    def list_media_likers(
+        self, account_id: str, media_id: str
+    ) -> list[PublicUserProfile]:
+        """List users who liked a media post.
+
+        Args:
+            account_id: Application account ID.
+            media_id: Instagram media ID string (e.g. '123_456'). Stripped of
+                surrounding whitespace.
+
+        Returns:
+            List of PublicUserProfile in Instagram's returned order.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or media_id empty.
+        """
+        self._require_authenticated(account_id)
+        clean_id = (media_id or "").strip()
+        if not clean_id:
+            raise ValueError("media_id must not be empty")
+        return self.media_reader.list_media_likers(account_id, clean_id)
+
+    def list_user_clips(
+        self,
+        account_id: str,
+        user_id: int,
+        amount: int = _AMOUNT_DEFAULT,
+    ) -> list[MediaSummary]:
+        """List a user's clip (reels) catalog.
+
+        Clamps amount to [1, 200] so callers cannot request unbounded pages.
+
+        Args:
+            account_id: Application account ID.
+            user_id: Instagram user ID (positive integer).
+            amount: Number of clips to retrieve. Clamped to [1, 200].
+
+        Returns:
+            List of MediaSummary representing reels.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or user_id invalid.
+        """
+        self._require_authenticated(account_id)
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError(f"user_id must be a positive integer, got {user_id!r}")
+        clamped_amount = max(_AMOUNT_MIN, min(amount, _AMOUNT_MAX))
+        return self.media_reader.list_user_clips(account_id, user_id, clamped_amount)
+
+    def list_usertag_medias(
+        self,
+        account_id: str,
+        user_id: int,
+        amount: int = _AMOUNT_DEFAULT,
+    ) -> list[MediaSummary]:
+        """List media in which a user is tagged.
+
+        Clamps amount to [1, 200] so callers cannot request unbounded pages.
+
+        Args:
+            account_id: Application account ID.
+            user_id: Instagram user ID (positive integer).
+            amount: Number of tagged-in media to retrieve. Clamped to [1, 200].
+
+        Returns:
+            List of MediaSummary in which the user is tagged.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or user_id invalid.
+        """
+        self._require_authenticated(account_id)
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError(f"user_id must be a positive integer, got {user_id!r}")
+        clamped_amount = max(_AMOUNT_MIN, min(amount, _AMOUNT_MAX))
+        return self.media_reader.list_usertag_medias(
+            account_id, user_id, clamped_amount
+        )
 
     # -------------------------------------------------------------------------
     # Write operations

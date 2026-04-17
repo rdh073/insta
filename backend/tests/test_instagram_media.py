@@ -9,6 +9,7 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock
 
+from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.dto.instagram_media_dto import (
     MediaSummary,
     ResourceSummary,
@@ -345,6 +346,172 @@ class TestMediaReaderAdapter:
         assert result.author_url == "https://example.com/image.jpg"
         assert isinstance(result.thumbnail_url, str)
         assert result.thumbnail_url == "https://example.com/image.jpg"
+
+
+class TestMediaLikersAdapter:
+    """Verify list_media_likers calls instagrapi.media_likers and maps UserShort->DTO."""
+
+    def _build(self, vendor_users):
+        mock_client = Mock()
+        mock_client.media_likers.return_value = vendor_users
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+        return InstagramMediaReaderAdapter(mock_repo), mock_client
+
+    @staticmethod
+    def _vendor_user(pk=1, username="liker", full_name=None, profile_pic_url=None):
+        u = Mock()
+        u.pk = pk
+        u.username = username
+        u.full_name = full_name
+        u.profile_pic_url = profile_pic_url
+        # UserShort doesn't carry these; force absence to None
+        u.biography = None
+        u.follower_count = None
+        u.following_count = None
+        u.media_count = None
+        u.is_private = None
+        u.is_verified = None
+        u.is_business = None
+        return u
+
+    def test_calls_vendor_with_exact_method_and_signature(self):
+        """Evidence: instagrapi mixins/media.py — `media_likers(self, media_id: str)`."""
+        adapter, client = self._build([])
+        adapter.list_media_likers("acc-1", "123_456")
+        client.media_likers.assert_called_once_with("123_456")
+
+    def test_maps_each_user_to_public_profile(self):
+        adapter, _ = self._build(
+            [
+                self._vendor_user(pk=11, username="alice", full_name="Alice"),
+                self._vendor_user(pk=22, username="bob"),
+            ]
+        )
+        result = adapter.list_media_likers("acc-1", "123_456")
+
+        assert len(result) == 2
+        assert all(isinstance(p, PublicUserProfile) for p in result)
+        assert result[0].pk == 11
+        assert result[0].username == "alice"
+        assert result[0].full_name == "Alice"
+        assert result[1].pk == 22
+        assert result[1].username == "bob"
+
+    def test_does_not_leak_vendor_object(self):
+        vendor = self._vendor_user()
+        adapter, _ = self._build([vendor])
+        result = adapter.list_media_likers("acc-1", "1_1")
+        assert result[0] is not vendor
+        assert isinstance(result[0], PublicUserProfile)
+
+    def test_httpurl_profile_pic_converted_to_string(self):
+        class HttpUrl:
+            def __str__(self):
+                return "https://cdn/avatar.jpg"
+
+        u = self._vendor_user(profile_pic_url=HttpUrl())
+        adapter, _ = self._build([u])
+        result = adapter.list_media_likers("acc-1", "1_1")
+        assert result[0].profile_pic_url == "https://cdn/avatar.jpg"
+
+    def test_missing_client_raises(self):
+        mock_repo = Mock()
+        mock_repo.get.return_value = None
+        adapter = InstagramMediaReaderAdapter(mock_repo)
+        with pytest.raises(ValueError, match="not found or not authenticated"):
+            adapter.list_media_likers("acc-1", "1_1")
+
+
+class TestUserClipsAdapter:
+    """Verify list_user_clips calls instagrapi.user_clips and maps Media->MediaSummary."""
+
+    def _build(self, vendor_clips):
+        mock_client = Mock()
+        mock_client.user_clips.return_value = vendor_clips
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+        return InstagramMediaReaderAdapter(mock_repo), mock_client
+
+    def test_calls_vendor_with_exact_method_and_amount_kwarg(self):
+        """Evidence: instagrapi mixins/clip.py — `user_clips(self, user_id: str, amount: int = 0)`."""
+        adapter, client = self._build([])
+        adapter.list_user_clips("acc-1", 999, amount=24)
+        client.user_clips.assert_called_once_with(999, amount=24)
+
+    def test_maps_each_media_to_media_summary(self):
+        media1 = TestMediaReaderAdapter._create_mock_media(
+            pk=10, code="r1", caption_text="reel1"
+        )
+        media2 = TestMediaReaderAdapter._create_mock_media(
+            pk=11, code="r2", caption_text="reel2"
+        )
+        adapter, _ = self._build([media1, media2])
+
+        result = adapter.list_user_clips("acc-1", 999, amount=2)
+
+        assert len(result) == 2
+        assert all(isinstance(m, MediaSummary) for m in result)
+        assert result[0].pk == 10
+        assert result[1].pk == 11
+
+    def test_does_not_leak_vendor_objects(self):
+        vendor = TestMediaReaderAdapter._create_mock_media()
+        adapter, _ = self._build([vendor])
+        result = adapter.list_user_clips("acc-1", 999, amount=1)
+        assert result[0] is not vendor
+        assert isinstance(result[0], MediaSummary)
+
+    def test_missing_client_raises(self):
+        mock_repo = Mock()
+        mock_repo.get.return_value = None
+        adapter = InstagramMediaReaderAdapter(mock_repo)
+        with pytest.raises(ValueError, match="not found or not authenticated"):
+            adapter.list_user_clips("acc-1", 999, amount=12)
+
+
+class TestUsertagMediasAdapter:
+    """Verify list_usertag_medias calls instagrapi.usertag_medias and maps Media->MediaSummary."""
+
+    def _build(self, vendor_tagged):
+        mock_client = Mock()
+        mock_client.usertag_medias.return_value = vendor_tagged
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+        return InstagramMediaReaderAdapter(mock_repo), mock_client
+
+    def test_calls_vendor_with_exact_method_and_amount_kwarg(self):
+        """Evidence: instagrapi mixins/media.py — `usertag_medias(self, user_id: str, amount: int = 0)`."""
+        adapter, client = self._build([])
+        adapter.list_usertag_medias("acc-1", 999, amount=15)
+        client.usertag_medias.assert_called_once_with(999, amount=15)
+
+    def test_maps_each_tagged_media_to_media_summary(self):
+        media = TestMediaReaderAdapter._create_mock_media(
+            pk=42, code="t1", caption_text="tagged"
+        )
+        adapter, _ = self._build([media])
+
+        result = adapter.list_usertag_medias("acc-1", 999, amount=12)
+
+        assert len(result) == 1
+        assert isinstance(result[0], MediaSummary)
+        assert result[0].pk == 42
+        assert result[0].caption_text == "tagged"
+
+    def test_does_not_leak_vendor_objects(self):
+        vendor = TestMediaReaderAdapter._create_mock_media()
+        adapter, _ = self._build([vendor])
+        result = adapter.list_usertag_medias("acc-1", 999, amount=1)
+        assert result[0] is not vendor
+        assert isinstance(result[0], MediaSummary)
+
+    def test_missing_client_raises(self):
+        mock_repo = Mock()
+        mock_repo.get.return_value = None
+        adapter = InstagramMediaReaderAdapter(mock_repo)
+        with pytest.raises(ValueError, match="not found or not authenticated"):
+            adapter.list_usertag_medias("acc-1", 999, amount=12)
 
 
 class TestMediaDTOs:

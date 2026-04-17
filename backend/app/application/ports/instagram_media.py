@@ -7,6 +7,7 @@ Separates media queries from authentication/session management.
 
 from typing import Protocol
 
+from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.dto.instagram_media_dto import (
     MediaSummary,
     MediaOembedSummary,
@@ -87,5 +88,70 @@ class InstagramMediaReader(Protocol):
 
         Raises:
             Exception: If URL invalid or read fails.
+        """
+        ...
+
+    def list_media_likers(
+        self, account_id: str, media_id: str
+    ) -> list[PublicUserProfile]:
+        """
+        List users who liked a media post.
+
+        Backed by instagrapi ``media_likers(media_id)`` which returns
+        ``List[UserShort]``.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            media_id: Instagram media ID string (e.g., '123_456').
+
+        Returns:
+            List of PublicUserProfile in the order returned by Instagram.
+
+        Raises:
+            Exception: If media not found or read fails.
+        """
+        ...
+
+    def list_user_clips(
+        self, account_id: str, user_id: int, amount: int = 12
+    ) -> list[MediaSummary]:
+        """
+        List a user's clip (reels) catalog.
+
+        Backed by instagrapi ``user_clips(user_id, amount)`` which returns
+        ``List[Media]`` of product_type='clips'.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            user_id: The Instagram user ID.
+            amount: Maximum number of clips to retrieve.
+
+        Returns:
+            List of MediaSummary representing reels.
+
+        Raises:
+            Exception: If user not found or read fails.
+        """
+        ...
+
+    def list_usertag_medias(
+        self, account_id: str, user_id: int, amount: int = 12
+    ) -> list[MediaSummary]:
+        """
+        List media posts in which a user is tagged.
+
+        Backed by instagrapi ``usertag_medias(user_id, amount)`` which returns
+        ``List[Media]``.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            user_id: The Instagram user ID.
+            amount: Maximum number of media to retrieve.
+
+        Returns:
+            List of MediaSummary in which the user appears as a tag.
+
+        Raises:
+            Exception: If user not found or read fails.
         """
         ...

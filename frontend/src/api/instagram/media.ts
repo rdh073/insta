@@ -5,6 +5,12 @@ import type {
   MediaSummary,
   UserMediasResult,
 } from '../../types/instagram/media';
+import type { PublicUserProfile } from '../../types/instagram/user';
+
+export interface MediaLikersResult {
+  count: number;
+  users: PublicUserProfile[];
+}
 
 export const mediaApi = {
   getByPk: (accountId: string, mediaPk: number) =>
@@ -21,6 +27,25 @@ export const mediaApi = {
   getOembed: (accountId: string, url: string) =>
     api
       .get<MediaOembedSummary>(`/instagram/media/${accountId}/oembed`, { params: { url } })
+      .then((r) => r.data),
+
+  listMediaLikers: (accountId: string, mediaId: string) =>
+    api
+      .get<MediaLikersResult>(`/instagram/media/${accountId}/likers/${mediaId}`)
+      .then((r) => r.data),
+
+  listUserClips: (accountId: string, userId: number, amount = 12) =>
+    api
+      .get<UserMediasResult>(`/instagram/media/${accountId}/user/${userId}/clips`, {
+        params: { amount },
+      })
+      .then((r) => r.data),
+
+  listUserTaggedMedia: (accountId: string, userId: number, amount = 12) =>
+    api
+      .get<UserMediasResult>(`/instagram/media/${accountId}/user/${userId}/tagged`, {
+        params: { amount },
+      })
       .then((r) => r.data),
 
   editCaption: (accountId: string, mediaId: string, caption: string) =>

@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.dto.instagram_media_dto import (
     MediaActionReceipt,
     MediaOembedSummary,
@@ -356,6 +357,162 @@ class TestDTOBoundary:
         result = uc.get_media_oembed("acc-1", "https://instagram.com/p/X/")
 
         assert isinstance(result, MediaOembedSummary)
+
+
+# ---------------------------------------------------------------------------
+# list_media_likers / list_user_clips / list_usertag_medias
+# ---------------------------------------------------------------------------
+
+
+def _make_profile(pk: int = 1, username: str = "u") -> PublicUserProfile:
+    return PublicUserProfile(pk=pk, username=username)
+
+
+class TestListMediaLikers:
+    def test_raises_if_account_missing(self):
+        uc, _ = _build_use_cases(account_exists=False)
+        with pytest.raises(ValueError, match="not found"):
+            uc.list_media_likers("no-such", "1_1")
+
+    def test_raises_if_not_authenticated(self):
+        uc, _ = _build_use_cases(client_exists=False)
+        with pytest.raises(ValueError, match="not authenticated"):
+            uc.list_media_likers("acc-1", "1_1")
+
+    def test_rejects_empty_media_id(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="media_id"):
+            uc.list_media_likers("acc-1", "")
+
+    def test_rejects_whitespace_only_media_id(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="media_id"):
+            uc.list_media_likers("acc-1", "   ")
+
+    def test_strips_media_id_whitespace(self):
+        uc, reader = _build_use_cases()
+        reader.list_media_likers.return_value = []
+
+        uc.list_media_likers("acc-1", "  1_1  ")
+
+        reader.list_media_likers.assert_called_once_with("acc-1", "1_1")
+
+    def test_returns_dto_list_from_reader(self):
+        uc, reader = _build_use_cases()
+        expected = [_make_profile(pk=1), _make_profile(pk=2)]
+        reader.list_media_likers.return_value = expected
+
+        result = uc.list_media_likers("acc-1", "1_1")
+
+        assert result is expected
+        assert all(isinstance(p, PublicUserProfile) for p in result)
+
+
+class TestListUserClips:
+    def test_raises_if_account_missing(self):
+        uc, _ = _build_use_cases(account_exists=False)
+        with pytest.raises(ValueError, match="not found"):
+            uc.list_user_clips("no-such", 1)
+
+    def test_raises_if_not_authenticated(self):
+        uc, _ = _build_use_cases(client_exists=False)
+        with pytest.raises(ValueError, match="not authenticated"):
+            uc.list_user_clips("acc-1", 1)
+
+    def test_rejects_zero_user_id(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="positive integer"):
+            uc.list_user_clips("acc-1", 0)
+
+    def test_rejects_negative_user_id(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="positive integer"):
+            uc.list_user_clips("acc-1", -1)
+
+    def test_clamps_amount_to_min(self):
+        uc, reader = _build_use_cases()
+        reader.list_user_clips.return_value = []
+
+        uc.list_user_clips("acc-1", 999, amount=0)
+
+        reader.list_user_clips.assert_called_once_with("acc-1", 999, 1)
+
+    def test_clamps_amount_to_max(self):
+        uc, reader = _build_use_cases()
+        reader.list_user_clips.return_value = []
+
+        uc.list_user_clips("acc-1", 999, amount=9999)
+
+        reader.list_user_clips.assert_called_once_with("acc-1", 999, 200)
+
+    def test_default_amount(self):
+        uc, reader = _build_use_cases()
+        reader.list_user_clips.return_value = []
+
+        uc.list_user_clips("acc-1", 999)
+
+        reader.list_user_clips.assert_called_once_with("acc-1", 999, 12)
+
+    def test_returns_dto_list_from_reader(self):
+        uc, reader = _build_use_cases()
+        expected = [_make_media(pk=1), _make_media(pk=2)]
+        reader.list_user_clips.return_value = expected
+
+        result = uc.list_user_clips("acc-1", 999, amount=2)
+
+        assert result is expected
+        assert all(isinstance(m, MediaSummary) for m in result)
+
+
+class TestListUsertagMedias:
+    def test_raises_if_account_missing(self):
+        uc, _ = _build_use_cases(account_exists=False)
+        with pytest.raises(ValueError, match="not found"):
+            uc.list_usertag_medias("no-such", 1)
+
+    def test_raises_if_not_authenticated(self):
+        uc, _ = _build_use_cases(client_exists=False)
+        with pytest.raises(ValueError, match="not authenticated"):
+            uc.list_usertag_medias("acc-1", 1)
+
+    def test_rejects_zero_user_id(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="positive integer"):
+            uc.list_usertag_medias("acc-1", 0)
+
+    def test_clamps_amount_to_min(self):
+        uc, reader = _build_use_cases()
+        reader.list_usertag_medias.return_value = []
+
+        uc.list_usertag_medias("acc-1", 999, amount=0)
+
+        reader.list_usertag_medias.assert_called_once_with("acc-1", 999, 1)
+
+    def test_clamps_amount_to_max(self):
+        uc, reader = _build_use_cases()
+        reader.list_usertag_medias.return_value = []
+
+        uc.list_usertag_medias("acc-1", 999, amount=9999)
+
+        reader.list_usertag_medias.assert_called_once_with("acc-1", 999, 200)
+
+    def test_default_amount(self):
+        uc, reader = _build_use_cases()
+        reader.list_usertag_medias.return_value = []
+
+        uc.list_usertag_medias("acc-1", 999)
+
+        reader.list_usertag_medias.assert_called_once_with("acc-1", 999, 12)
+
+    def test_returns_dto_list_from_reader(self):
+        uc, reader = _build_use_cases()
+        expected = [_make_media(pk=1)]
+        reader.list_usertag_medias.return_value = expected
+
+        result = uc.list_usertag_medias("acc-1", 999, amount=1)
+
+        assert result is expected
+        assert all(isinstance(m, MediaSummary) for m in result)
 
 
 # ---------------------------------------------------------------------------

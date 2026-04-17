@@ -1,9 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { MediaSummary } from '../types/instagram/media';
+import type { PublicUserProfile } from '../types/instagram/user';
 import type { MediaAction } from '../features/media/types';
 
-type DrawerTab = 'detail' | 'comments';
+type DrawerTab = 'detail' | 'comments' | 'likers';
+type FeedTab = 'posts' | 'clips' | 'tagged';
+
+interface UserMediaCache {
+  posts: MediaSummary[];
+  clips: MediaSummary[];
+  tagged: MediaSummary[];
+}
+
+const EMPTY_USER_CACHE: UserMediaCache = { posts: [], clips: [], tagged: [] };
 
 interface MediaState {
   // Persisted preferences
@@ -14,9 +24,17 @@ interface MediaState {
   media: MediaSummary[];
   selected: MediaSummary | null;
   drawerTab: DrawerTab;
+  feedTab: FeedTab;
 
   // Per-media in-flight mutation actions (for disabling buttons + spinners).
   mutating: Record<string, MediaAction[]>;
+
+  // Caches for new reads, keyed by id.
+  // likers: keyed by media_id (string)
+  // clips/tagged: keyed by user_id (number stringified)
+  likersByMediaId: Record<string, PublicUserProfile[]>;
+  clipsByUserId: Record<string, MediaSummary[]>;
+  taggedByUserId: Record<string, MediaSummary[]>;
 
   // Actions
   setScopeAccountId: (accountId: string) => void;
@@ -25,7 +43,14 @@ interface MediaState {
   prependMedia: (item: MediaSummary) => void;
   setSelected: (item: MediaSummary | null) => void;
   setDrawerTab: (tab: DrawerTab) => void;
+  setFeedTab: (tab: FeedTab) => void;
   clearMedia: () => void;
+
+  // Cache writers
+  setLikers: (mediaId: string, users: PublicUserProfile[]) => void;
+  setClips: (userId: number | string, items: MediaSummary[]) => void;
+  setTagged: (userId: number | string, items: MediaSummary[]) => void;
+  getUserCache: (userId: number | string) => UserMediaCache;
 
   // Mutation helpers
   beginMutation: (mediaId: string, action: MediaAction) => void;
@@ -41,13 +66,17 @@ function withoutAction(actions: MediaAction[] | undefined, action: MediaAction):
 
 export const useMediaStore = create<MediaState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       userId: '',
       scopeAccountId: '',
       media: [],
       selected: null,
       drawerTab: 'detail',
+      feedTab: 'posts',
       mutating: {},
+      likersByMediaId: {},
+      clipsByUserId: {},
+      taggedByUserId: {},
 
       setScopeAccountId: (scopeAccountId) =>
         set((state) => {
@@ -59,7 +88,11 @@ export const useMediaStore = create<MediaState>()(
             media: [],
             selected: null,
             drawerTab: 'detail',
+            feedTab: 'posts',
             mutating: {},
+            likersByMediaId: {},
+            clipsByUserId: {},
+            taggedByUserId: {},
           };
         }),
 
@@ -73,18 +106,48 @@ export const useMediaStore = create<MediaState>()(
           selected: item,
         })),
 
-      setSelected: (selected) =>
-        set((state) => {
-          if (!selected) {
-            return { selected: null };
-          }
-          const exists = state.media.some((item) => item.pk === selected.pk);
-          return { selected: exists ? selected : null };
-        }),
+      setSelected: (selected) => set({ selected }),
 
       setDrawerTab: (drawerTab) => set({ drawerTab }),
 
-      clearMedia: () => set({ media: [], selected: null, drawerTab: 'detail', mutating: {} }),
+      setFeedTab: (feedTab) => set({ feedTab }),
+
+      clearMedia: () =>
+        set({
+          media: [],
+          selected: null,
+          drawerTab: 'detail',
+          feedTab: 'posts',
+          mutating: {},
+          likersByMediaId: {},
+          clipsByUserId: {},
+          taggedByUserId: {},
+        }),
+
+      setLikers: (mediaId, users) =>
+        set((state) => ({
+          likersByMediaId: { ...state.likersByMediaId, [mediaId]: users },
+        })),
+
+      setClips: (userId, items) =>
+        set((state) => ({
+          clipsByUserId: { ...state.clipsByUserId, [String(userId)]: items },
+        })),
+
+      setTagged: (userId, items) =>
+        set((state) => ({
+          taggedByUserId: { ...state.taggedByUserId, [String(userId)]: items },
+        })),
+
+      getUserCache: (userId) => {
+        const key = String(userId);
+        const state = get();
+        return {
+          posts: state.media,
+          clips: state.clipsByUserId[key] ?? EMPTY_USER_CACHE.clips,
+          tagged: state.taggedByUserId[key] ?? EMPTY_USER_CACHE.tagged,
+        };
+      },
 
       beginMutation: (mediaId, action) =>
         set((state) => {

@@ -8,6 +8,7 @@ Handles vendor field conversions and album resource normalization.
 from datetime import datetime
 from typing import Optional
 
+from app.application.dto.instagram_identity_dto import PublicUserProfile
 from app.application.dto.instagram_media_dto import (
     MediaSummary,
     ResourceSummary,
@@ -122,6 +123,99 @@ class InstagramMediaReaderAdapter:
         except Exception as e:
             failure = translate_instagram_error(
                 e, operation="get_user_medias", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def list_media_likers(
+        self, account_id: str, media_id: str
+    ) -> list[PublicUserProfile]:
+        """
+        List users who liked a media post.
+
+        Calls instagrapi ``media_likers(media_id)`` and maps the resulting
+        ``List[UserShort]`` to application DTOs.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            media_id: Instagram media ID string (e.g., '123_456').
+
+        Returns:
+            List of PublicUserProfile.
+
+        Raises:
+            ValueError: If account not found, client not authenticated, or
+                vendor call fails.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            likers = client.media_likers(media_id)
+            return [self._map_user_short_to_profile(u) for u in likers]
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="media_likers", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def list_user_clips(
+        self, account_id: str, user_id: int, amount: int = 12
+    ) -> list[MediaSummary]:
+        """
+        List a user's clip (reels) catalog.
+
+        Calls instagrapi ``user_clips(user_id, amount)`` and maps each
+        ``Media`` entry to a ``MediaSummary`` DTO.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            user_id: The Instagram user ID.
+            amount: Maximum number of clips to retrieve.
+
+        Returns:
+            List of MediaSummary (product_type='clips').
+
+        Raises:
+            ValueError: If account not found or vendor call fails.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            medias = client.user_clips(user_id, amount=amount)
+            return [self._map_media_to_summary(media) for media in medias]
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="user_clips", account_id=account_id
+            )
+            raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
+
+    def list_usertag_medias(
+        self, account_id: str, user_id: int, amount: int = 12
+    ) -> list[MediaSummary]:
+        """
+        List media posts in which a user is tagged.
+
+        Calls instagrapi ``usertag_medias(user_id, amount)`` and maps each
+        ``Media`` entry to a ``MediaSummary`` DTO.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            user_id: The Instagram user ID.
+            amount: Maximum number of media to retrieve.
+
+        Returns:
+            List of MediaSummary the user is tagged in.
+
+        Raises:
+            ValueError: If account not found or vendor call fails.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            medias = client.usertag_medias(user_id, amount=amount)
+            return [self._map_media_to_summary(media) for media in medias]
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="usertag_medias", account_id=account_id
             )
             raise attach_instagram_failure(ValueError(failure.user_message), failure) from e
 
@@ -250,6 +344,31 @@ class InstagramMediaReaderAdapter:
             width=getattr(oembed, "width", None),
             height=getattr(oembed, "height", None),
             can_view=getattr(oembed, "can_view", None),
+        )
+
+    @staticmethod
+    def _map_user_short_to_profile(user) -> PublicUserProfile:
+        """
+        Map instagrapi UserShort (likers payload) to PublicUserProfile DTO.
+
+        UserShort carries a sparse subset of the full User type — typically
+        only pk, username, full_name, profile_pic_url, and a few flags.
+        Missing fields are filled with None to match PublicUserProfile.
+        """
+        return PublicUserProfile(
+            pk=int(getattr(user, "pk", 0) or 0),
+            username=getattr(user, "username", "") or "",
+            full_name=getattr(user, "full_name", None),
+            biography=getattr(user, "biography", None),
+            profile_pic_url=InstagramMediaReaderAdapter._to_string(
+                getattr(user, "profile_pic_url", None)
+            ),
+            follower_count=getattr(user, "follower_count", None),
+            following_count=getattr(user, "following_count", None),
+            media_count=getattr(user, "media_count", None),
+            is_private=getattr(user, "is_private", None),
+            is_verified=getattr(user, "is_verified", None),
+            is_business=getattr(user, "is_business", None),
         )
 
     @staticmethod

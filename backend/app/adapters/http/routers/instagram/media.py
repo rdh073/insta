@@ -12,7 +12,7 @@ from app.adapters.http.schemas.instagram import (
 )
 from app.adapters.http.utils import format_instagram_http_error
 
-from .mappers import _to_media, _to_media_receipt, _to_oembed
+from .mappers import _to_media, _to_media_receipt, _to_oembed, _to_public_profile
 
 router = APIRouter()
 
@@ -70,6 +70,59 @@ def get_user_medias(
     except Exception as exc:
         status_code, detail = format_instagram_http_error(
             exc, context="Get user medias failed"
+        )
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/media/{account_id}/likers/{media_id}")
+def list_media_likers(
+    account_id: str,
+    media_id: str,
+    usecases=Depends(get_media_usecases),
+):
+    """List users who liked a media post (instagrapi `media_likers`)."""
+    try:
+        likers = usecases.list_media_likers(account_id, media_id)
+        return {"count": len(likers), "users": [_to_public_profile(u) for u in likers]}
+    except Exception as exc:
+        status_code, detail = format_instagram_http_error(
+            exc, context="List media likers failed"
+        )
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/media/{account_id}/user/{user_id}/clips")
+def list_user_clips(
+    account_id: str,
+    user_id: int,
+    amount: int = Query(12, ge=1, le=200),
+    usecases=Depends(get_media_usecases),
+):
+    """List a user's clip (reels) catalog (instagrapi `user_clips`)."""
+    try:
+        clips = usecases.list_user_clips(account_id, user_id, amount=amount)
+        return {"count": len(clips), "posts": [_to_media(m) for m in clips]}
+    except Exception as exc:
+        status_code, detail = format_instagram_http_error(
+            exc, context="List user clips failed"
+        )
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/media/{account_id}/user/{user_id}/tagged")
+def list_user_tagged_medias(
+    account_id: str,
+    user_id: int,
+    amount: int = Query(12, ge=1, le=200),
+    usecases=Depends(get_media_usecases),
+):
+    """List media in which the user is tagged (instagrapi `usertag_medias`)."""
+    try:
+        tagged = usecases.list_usertag_medias(account_id, user_id, amount=amount)
+        return {"count": len(tagged), "posts": [_to_media(m) for m in tagged]}
+    except Exception as exc:
+        status_code, detail = format_instagram_http_error(
+            exc, context="List user tagged medias failed"
         )
         raise HTTPException(status_code=status_code, detail=detail)
 
