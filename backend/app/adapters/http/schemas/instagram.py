@@ -82,6 +82,29 @@ class HighlightDeleteEnvelope(InstagramWriteEnvelope):
     highlight_pk: int = Field(..., description="Instagram highlight PK")
 
 
+class MediaEditEnvelope(InstagramWriteEnvelope):
+    """Write envelope for media caption edit."""
+
+    media_id: str = Field(..., description="Instagram media id (e.g. '3488_25025')")
+    caption: str = Field(..., description="New caption text (max 2200 chars)")
+
+
+class MediaActionEnvelope(InstagramWriteEnvelope):
+    """Write envelope for stateless media actions (delete/pin/archive/etc)."""
+
+    media_id: str = Field(..., description="Instagram media id")
+
+
+class MediaSaveEnvelope(InstagramWriteEnvelope):
+    """Write envelope for media save/unsave (optional collection target)."""
+
+    media_id: str = Field(..., description="Instagram media id")
+    collection_pk: Optional[int] = Field(
+        default=None,
+        description="Optional collection PK. None targets the default 'All Posts' collection.",
+    )
+
+
 class CommentCreateEnvelope(InstagramWriteEnvelope):
     """Write envelope contract for future comment create endpoint."""
 

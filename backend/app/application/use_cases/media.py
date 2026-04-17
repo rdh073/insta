@@ -7,7 +7,10 @@ must use this class instead of calling the adapter directly.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from app.application.dto.instagram_media_dto import (
+    MediaActionReceipt,
     MediaSummary,
     MediaOembedSummary,
 )
@@ -17,6 +20,7 @@ from app.application.ports.repositories import AccountRepository, ClientReposito
 _AMOUNT_MIN = 1
 _AMOUNT_MAX = 200
 _AMOUNT_DEFAULT = 12
+_CAPTION_MAX_LEN = 2200
 
 
 class MediaUseCases:
@@ -182,3 +186,96 @@ class MediaUseCases:
         if not clean_id:
             raise ValueError("media_id must not be empty")
         return self.media_writer.unlike_media(account_id, clean_id)
+
+    def _prepare_write(self, account_id: str, media_id: str) -> str:
+        """Shared precondition for media-write methods.
+
+        Returns the normalized media_id and raises ValueError on any failure.
+        """
+        self._require_authenticated(account_id)
+        if self.media_writer is None:
+            raise ValueError("media writer not configured")
+        clean_id = (media_id or "").strip()
+        if not clean_id:
+            raise ValueError("media_id must not be empty")
+        return clean_id
+
+    def edit_caption(
+        self, account_id: str, media_id: str, caption: str
+    ) -> MediaActionReceipt:
+        """Edit a published post's caption.
+
+        Raises:
+            ValueError: If preconditions fail or caption exceeds Instagram's
+                2200-character limit.
+        """
+        clean_id = self._prepare_write(account_id, media_id)
+        if caption is None:
+            raise ValueError("caption must not be None")
+        if len(caption) > _CAPTION_MAX_LEN:
+            raise ValueError(
+                f"caption must be <= {_CAPTION_MAX_LEN} characters, got {len(caption)}"
+            )
+        return self.media_writer.edit_caption(account_id, clean_id, caption)
+
+    def delete_media(self, account_id: str, media_id: str) -> MediaActionReceipt:
+        """Permanently delete a post owned by the account."""
+        clean_id = self._prepare_write(account_id, media_id)
+        return self.media_writer.delete_media(account_id, clean_id)
+
+    def pin_media(self, account_id: str, media_id: str) -> MediaActionReceipt:
+        """Pin a post to the profile grid (max 3 pinned)."""
+        clean_id = self._prepare_write(account_id, media_id)
+        return self.media_writer.pin_media(account_id, clean_id)
+
+    def unpin_media(self, account_id: str, media_id: str) -> MediaActionReceipt:
+        """Unpin a previously pinned post."""
+        clean_id = self._prepare_write(account_id, media_id)
+        return self.media_writer.unpin_media(account_id, clean_id)
+
+    def archive_media(self, account_id: str, media_id: str) -> MediaActionReceipt:
+        """Archive a post (hides from public profile)."""
+        clean_id = self._prepare_write(account_id, media_id)
+        return self.media_writer.archive_media(account_id, clean_id)
+
+    def unarchive_media(self, account_id: str, media_id: str) -> MediaActionReceipt:
+        """Restore an archived post to the public profile."""
+        clean_id = self._prepare_write(account_id, media_id)
+        return self.media_writer.unarchive_media(account_id, clean_id)
+
+    def save_media(
+        self,
+        account_id: str,
+        media_id: str,
+        collection_pk: Optional[int] = None,
+    ) -> MediaActionReceipt:
+        """Bookmark a post into a saved collection.
+
+        Args:
+            collection_pk: Optional Instagram collection PK. None saves to the
+                default "All Posts" collection.
+        """
+        clean_id = self._prepare_write(account_id, media_id)
+        if collection_pk is not None and (
+            not isinstance(collection_pk, int) or collection_pk <= 0
+        ):
+            raise ValueError(
+                f"collection_pk must be a positive integer, got {collection_pk!r}"
+            )
+        return self.media_writer.save_media(account_id, clean_id, collection_pk)
+
+    def unsave_media(
+        self,
+        account_id: str,
+        media_id: str,
+        collection_pk: Optional[int] = None,
+    ) -> MediaActionReceipt:
+        """Remove a post from a saved collection."""
+        clean_id = self._prepare_write(account_id, media_id)
+        if collection_pk is not None and (
+            not isinstance(collection_pk, int) or collection_pk <= 0
+        ):
+            raise ValueError(
+                f"collection_pk must be a positive integer, got {collection_pk!r}"
+            )
+        return self.media_writer.unsave_media(account_id, clean_id, collection_pk)

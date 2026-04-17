@@ -5,11 +5,21 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.adapters.http.dependencies import get_media_usecases
+from app.adapters.http.schemas.instagram import (
+    MediaActionEnvelope,
+    MediaEditEnvelope,
+    MediaSaveEnvelope,
+)
 from app.adapters.http.utils import format_instagram_http_error
 
-from .mappers import _to_media, _to_oembed
+from .mappers import _to_media, _to_media_receipt, _to_oembed
 
 router = APIRouter()
+
+
+def _raise_instagram_error(exc: Exception, *, context: str) -> None:
+    status_code, detail = format_instagram_http_error(exc, context=context)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/media/{account_id}/pk/{media_pk}")
@@ -79,3 +89,111 @@ def get_media_oembed(
             exc, context="Get media oembed failed"
         )
         raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post("/media/edit")
+def edit_media_caption(
+    body: MediaEditEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Edit a published post's caption."""
+    try:
+        receipt = usecases.edit_caption(body.account_id, body.media_id, body.caption)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Edit media caption failed")
+
+
+@router.post("/media/delete")
+def delete_media(
+    body: MediaActionEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Permanently delete a post."""
+    try:
+        receipt = usecases.delete_media(body.account_id, body.media_id)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Delete media failed")
+
+
+@router.post("/media/pin")
+def pin_media(
+    body: MediaActionEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Pin a post to the profile grid."""
+    try:
+        receipt = usecases.pin_media(body.account_id, body.media_id)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Pin media failed")
+
+
+@router.post("/media/unpin")
+def unpin_media(
+    body: MediaActionEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Unpin a previously pinned post."""
+    try:
+        receipt = usecases.unpin_media(body.account_id, body.media_id)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unpin media failed")
+
+
+@router.post("/media/archive")
+def archive_media(
+    body: MediaActionEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Archive a post (hidden from public profile)."""
+    try:
+        receipt = usecases.archive_media(body.account_id, body.media_id)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Archive media failed")
+
+
+@router.post("/media/unarchive")
+def unarchive_media(
+    body: MediaActionEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Restore an archived post to the public profile."""
+    try:
+        receipt = usecases.unarchive_media(body.account_id, body.media_id)
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unarchive media failed")
+
+
+@router.post("/media/save")
+def save_media(
+    body: MediaSaveEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Bookmark a post into a saved collection (optional collection target)."""
+    try:
+        receipt = usecases.save_media(
+            body.account_id, body.media_id, body.collection_pk
+        )
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Save media failed")
+
+
+@router.post("/media/unsave")
+def unsave_media(
+    body: MediaSaveEnvelope,
+    usecases=Depends(get_media_usecases),
+):
+    """Remove a post from a saved collection."""
+    try:
+        receipt = usecases.unsave_media(
+            body.account_id, body.media_id, body.collection_pk
+        )
+        return _to_media_receipt(receipt)
+    except Exception as exc:
+        _raise_instagram_error(exc, context="Unsave media failed")

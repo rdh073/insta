@@ -23,6 +23,7 @@ import type { MediaSummary } from '../types/instagram/media';
 import type { CommentPage } from '../types/instagram/comment';
 import { Button } from '../components/ui/Button';
 import { useMediaStore } from '../store/media';
+import { MediaActionsMenu } from '../features/media/MediaActionsMenu';
 import { cn } from '../lib/cn';
 
 type DrawerTab = 'detail' | 'comments';
@@ -35,41 +36,56 @@ function mediaTypeIcon(t: number) {
   return <Image className="h-3 w-3" />;
 }
 
-function MediaCard({ media, selected, onClick }: { media: MediaSummary; selected: boolean; onClick: () => void }) {
+function MediaCard({
+  accountId,
+  media,
+  selected,
+  onClick,
+}: {
+  accountId: string;
+  media: MediaSummary;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const thumb = media.resources[0]?.thumbnailUrl ?? null;
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        'group relative aspect-square w-full cursor-pointer overflow-hidden rounded-2xl border transition-all duration-200',
+        'group relative aspect-square w-full overflow-hidden rounded-2xl border transition-all duration-200',
         selected
           ? 'border-[rgba(125,207,255,0.40)] ring-1 ring-[rgba(125,207,255,0.24)]'
           : 'border-[rgba(162,179,229,0.10)] hover:border-[rgba(125,207,255,0.24)]',
       )}
     >
-      {thumb ? (
-        <img src={thumb} alt={media.captionText || 'media'} className="h-full w-full object-cover" loading="lazy" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-[rgba(255,255,255,0.03)]">
-          {mediaTypeIcon(media.mediaType)}
+      <button type="button" onClick={onClick} className="block h-full w-full cursor-pointer">
+        {thumb ? (
+          <img src={thumb} alt={media.captionText || 'media'} className="h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[rgba(255,255,255,0.03)]">
+            {mediaTypeIcon(media.mediaType)}
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 bg-gradient-to-t from-[rgba(4,6,14,0.82)] to-transparent p-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <span className="flex items-center gap-1 text-[10px] text-[#9aa7cf]">
+            <Heart className="h-2.5 w-2.5 text-[#f7768e]" /> {media.likeCount}
+          </span>
+          <span className="flex items-center gap-1 text-[10px] text-[#9aa7cf]">
+            <MessageCircle className="h-2.5 w-2.5 text-[#7dcfff]" /> {media.commentCount}
+          </span>
         </div>
-      )}
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 bg-gradient-to-t from-[rgba(4,6,14,0.82)] to-transparent p-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-        <span className="flex items-center gap-1 text-[10px] text-[#9aa7cf]">
-          <Heart className="h-2.5 w-2.5 text-[#f7768e]" /> {media.likeCount}
-        </span>
-        <span className="flex items-center gap-1 text-[10px] text-[#9aa7cf]">
-          <MessageCircle className="h-2.5 w-2.5 text-[#7dcfff]" /> {media.commentCount}
-        </span>
-      </div>
-      <div className="absolute right-1.5 top-1.5">
+      </button>
+      <div className="pointer-events-none absolute left-1.5 top-1.5">
         <span className="glass-chip !px-1.5 !py-0.5 !text-[9px]">
           {mediaTypeIcon(media.mediaType)}
           {MEDIA_TYPE_LABEL[media.mediaType] ?? media.mediaType}
         </span>
       </div>
-    </button>
+      {accountId && (
+        <div className="absolute right-1.5 top-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+          <MediaActionsMenu accountId={accountId} media={media} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -437,6 +453,7 @@ export function MediaPage() {
             {media.map((m) => (
                 <MediaCard
                   key={m.pk}
+                  accountId={accountId}
                   media={m}
                   selected={selectedMedia?.pk === m.pk}
                   onClick={() => { setSelected(m); setDrawerTab('detail'); }}
@@ -466,13 +483,16 @@ export function MediaPage() {
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="cursor-pointer text-[#4a5578] transition-colors duration-150 hover:text-[#c0caf5]"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {accountId && <MediaActionsMenu accountId={accountId} media={selectedMedia} />}
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="cursor-pointer text-[#4a5578] transition-colors duration-150 hover:text-[#c0caf5]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 flex-1 space-y-3">

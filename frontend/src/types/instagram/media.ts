@@ -38,3 +38,9 @@ export interface UserMediasResult {
   count: number;
   posts: MediaSummary[];
 }
+
+export interface MediaActionReceipt {
+  actionId: string;
+  success: boolean;
+  reason: string;
+}

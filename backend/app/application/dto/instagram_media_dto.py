@@ -79,6 +79,25 @@ class MediaSummary:
 
 
 @dataclass(frozen=True)
+class MediaActionReceipt:
+    """
+    Result of a media write mutation (edit/delete/pin/archive/save/etc).
+
+    Mirrors CommentActionReceipt so HTTP responses are uniform across
+    media mutation endpoints.
+    """
+
+    action_id: str
+    """Identifier of the affected media (typically the media_id)."""
+
+    success: bool
+    """Whether the vendor call succeeded."""
+
+    reason: str
+    """Human-readable description (success or translated failure message)."""
+
+
+@dataclass(frozen=True)
 class MediaOembedSummary:
     """
     oEmbed summary for an Instagram media URL.

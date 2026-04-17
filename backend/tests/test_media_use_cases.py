@@ -13,6 +13,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.application.dto.instagram_media_dto import (
+    MediaActionReceipt,
     MediaOembedSummary,
     MediaSummary,
     ResourceSummary,
@@ -65,6 +66,31 @@ def _build_use_cases(
         media_reader=reader,
     )
     return uc, reader
+
+
+def _build_use_cases_with_writer(
+    *,
+    account_exists: bool = True,
+    client_exists: bool = True,
+    writer: Mock | None = None,
+) -> tuple[MediaUseCases, Mock]:
+    """Build MediaUseCases with a writer mock for write-method tests."""
+    account_repo = Mock()
+    account_repo.get.return_value = {"username": "testuser"} if account_exists else None
+
+    client_repo = Mock()
+    client_repo.exists.return_value = client_exists
+
+    if writer is None:
+        writer = Mock()
+
+    uc = MediaUseCases(
+        account_repo=account_repo,
+        client_repo=client_repo,
+        media_reader=Mock(),
+        media_writer=writer,
+    )
+    return uc, writer
 
 
 # ---------------------------------------------------------------------------
@@ -330,3 +356,150 @@ class TestDTOBoundary:
         result = uc.get_media_oembed("acc-1", "https://instagram.com/p/X/")
 
         assert isinstance(result, MediaOembedSummary)
+
+
+# ---------------------------------------------------------------------------
+# Write methods (edit/delete/pin/archive/save)
+# ---------------------------------------------------------------------------
+
+def _ok(action_id: str, reason: str = "ok") -> MediaActionReceipt:
+    return MediaActionReceipt(action_id=action_id, success=True, reason=reason)
+
+
+WRITE_METHODS = [
+    "edit_caption",
+    "delete_media",
+    "pin_media",
+    "unpin_media",
+    "archive_media",
+    "unarchive_media",
+    "save_media",
+    "unsave_media",
+]
+
+
+class TestMediaWritePreconditions:
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_raises_if_account_missing(self, method):
+        uc, _ = _build_use_cases_with_writer(account_exists=False)
+        kwargs = {"caption": ""} if method == "edit_caption" else {}
+        with pytest.raises(ValueError, match="not found"):
+            getattr(uc, method)("no-such", "1_1", **kwargs)
+
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_raises_if_not_authenticated(self, method):
+        uc, _ = _build_use_cases_with_writer(client_exists=False)
+        kwargs = {"caption": ""} if method == "edit_caption" else {}
+        with pytest.raises(ValueError, match="not authenticated"):
+            getattr(uc, method)("acc-1", "1_1", **kwargs)
+
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_raises_if_writer_not_configured(self, method):
+        # Build with the read-only helper so writer is None.
+        uc, _ = _build_use_cases()
+        kwargs = {"caption": ""} if method == "edit_caption" else {}
+        with pytest.raises(ValueError, match="writer not configured"):
+            getattr(uc, method)("acc-1", "1_1", **kwargs)
+
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_rejects_empty_media_id(self, method):
+        uc, _ = _build_use_cases_with_writer()
+        kwargs = {"caption": ""} if method == "edit_caption" else {}
+        with pytest.raises(ValueError, match="media_id"):
+            getattr(uc, method)("acc-1", "", **kwargs)
+
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_rejects_whitespace_only_media_id(self, method):
+        uc, _ = _build_use_cases_with_writer()
+        kwargs = {"caption": ""} if method == "edit_caption" else {}
+        with pytest.raises(ValueError, match="media_id"):
+            getattr(uc, method)("acc-1", "   ", **kwargs)
+
+    @pytest.mark.parametrize("method", WRITE_METHODS)
+    def test_strips_media_id_whitespace(self, method):
+        uc, writer = _build_use_cases_with_writer()
+        getattr(writer, method).return_value = _ok("3_4")
+        kwargs = {"caption": "ok"} if method == "edit_caption" else {}
+
+        getattr(uc, method)("acc-1", "  3_4  ", **kwargs)
+
+        # Adapter is called with stripped id; collection_pk is added by the use
+        # case for save/unsave (positional or default None — accept either).
+        call = getattr(writer, method).call_args
+        assert call.args[1] == "3_4"
+
+
+class TestMediaWriteCaptionValidation:
+    def test_edit_caption_rejects_none(self):
+        uc, _ = _build_use_cases_with_writer()
+        with pytest.raises(ValueError, match="caption"):
+            uc.edit_caption("acc-1", "1_1", None)  # type: ignore[arg-type]
+
+    def test_edit_caption_rejects_oversize(self):
+        uc, _ = _build_use_cases_with_writer()
+        with pytest.raises(ValueError, match="2200"):
+            uc.edit_caption("acc-1", "1_1", "x" * 2201)
+
+    def test_edit_caption_accepts_max_length(self):
+        uc, writer = _build_use_cases_with_writer()
+        writer.edit_caption.return_value = _ok("1_1")
+
+        result = uc.edit_caption("acc-1", "1_1", "x" * 2200)
+
+        assert result.success
+        writer.edit_caption.assert_called_once_with("acc-1", "1_1", "x" * 2200)
+
+
+class TestMediaWriteCollectionPkValidation:
+    @pytest.mark.parametrize("method", ["save_media", "unsave_media"])
+    def test_accepts_none_collection_pk(self, method):
+        uc, writer = _build_use_cases_with_writer()
+        getattr(writer, method).return_value = _ok("1_1")
+
+        getattr(uc, method)("acc-1", "1_1")
+
+        getattr(writer, method).assert_called_once_with("acc-1", "1_1", None)
+
+    @pytest.mark.parametrize("method", ["save_media", "unsave_media"])
+    def test_accepts_positive_collection_pk(self, method):
+        uc, writer = _build_use_cases_with_writer()
+        getattr(writer, method).return_value = _ok("1_1")
+
+        getattr(uc, method)("acc-1", "1_1", collection_pk=42)
+
+        getattr(writer, method).assert_called_once_with("acc-1", "1_1", 42)
+
+    @pytest.mark.parametrize("method", ["save_media", "unsave_media"])
+    @pytest.mark.parametrize("bad_pk", [0, -1, "42"])
+    def test_rejects_invalid_collection_pk(self, method, bad_pk):
+        uc, _ = _build_use_cases_with_writer()
+        with pytest.raises(ValueError, match="collection_pk"):
+            getattr(uc, method)("acc-1", "1_1", collection_pk=bad_pk)
+
+
+class TestMediaWriteHappyPath:
+    @pytest.mark.parametrize(
+        "method, vendor_args",
+        [
+            ("delete_media", ("acc-1", "1_1")),
+            ("pin_media", ("acc-1", "1_1")),
+            ("unpin_media", ("acc-1", "1_1")),
+            ("archive_media", ("acc-1", "1_1")),
+            ("unarchive_media", ("acc-1", "1_1")),
+        ],
+    )
+    def test_delegates_to_writer(self, method, vendor_args):
+        uc, writer = _build_use_cases_with_writer()
+        receipt = _ok("1_1", reason=f"{method} ok")
+        getattr(writer, method).return_value = receipt
+
+        result = getattr(uc, method)("acc-1", "1_1")
+
+        assert result is receipt
+        getattr(writer, method).assert_called_once_with(*vendor_args)
+
+    def test_writer_not_called_when_precondition_fails(self):
+        uc, writer = _build_use_cases_with_writer(account_exists=False)
+        with pytest.raises(ValueError):
+            uc.delete_media("acc-1", "1_1")
+        writer.delete_media.assert_not_called()

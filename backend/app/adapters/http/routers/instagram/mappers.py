@@ -44,6 +44,14 @@ def _to_resource(r) -> dict:
     }
 
 
+def _to_media_receipt(r) -> dict:
+    return {
+        "actionId": r.action_id,
+        "success": r.success,
+        "reason": r.reason,
+    }
+
+
 def _to_oembed(o) -> dict:
     return {
         "mediaId": o.media_id,
