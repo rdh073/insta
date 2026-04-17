@@ -81,7 +81,7 @@ class TestDirectReaderAdapter:
         mock_message1 = self._create_mock_message(id="msg-1", text="First")
         mock_message2 = self._create_mock_message(id="msg-2", text="Second")
         mock_thread = self._create_mock_thread(
-            id="thread-1", pk=1, messages=[mock_message1, mock_message2]
+            id="1234567890", pk=1, messages=[mock_message1, mock_message2]
         )
         mock_client.direct_thread.return_value = mock_thread
 
@@ -89,12 +89,14 @@ class TestDirectReaderAdapter:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — instagrapi 2.3.0 direct_thread(thread_id: int, ...)
+        # requires numeric thread id; adapter coerces at the boundary.
         adapter = InstagramDirectReaderAdapter(mock_repo)
-        result = adapter.get_thread("acc-123", "thread-1")
+        result = adapter.get_thread("acc-123", "1234567890")
 
         assert isinstance(result, DirectThreadDetail)
-        assert result.summary.direct_thread_id == "thread-1"
+        assert result.summary.direct_thread_id == "1234567890"
+        mock_client.direct_thread.assert_called_once_with(1234567890, amount=20)
         assert len(result.messages) == 2
         assert result.messages[0].text == "First"
         assert result.messages[1].text == "Second"
@@ -113,14 +115,15 @@ class TestDirectReaderAdapter:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — numeric string id required so int() coercion succeeds.
         adapter = InstagramDirectReaderAdapter(mock_repo)
-        results = adapter.list_messages("acc-123", "thread-1")
+        results = adapter.list_messages("acc-123", "1234567890")
 
         assert len(results) == 2
         assert all(isinstance(r, DirectMessageSummary) for r in results)
         assert results[0].direct_message_id == "msg-1"
         assert results[1].direct_message_id == "msg-2"
+        mock_client.direct_messages.assert_called_once_with(1234567890, amount=20)
 
     def test_search_threads(self):
         """Verify direct_search() maps UserShort results (not thread summaries)."""
@@ -209,9 +212,9 @@ class TestDirectReaderAdapter:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — numeric string id required so int() coercion succeeds.
         adapter = InstagramDirectReaderAdapter(mock_repo)
-        results = adapter.list_messages("acc-123", "thread-1")
+        results = adapter.list_messages("acc-123", "1234567890")
 
         assert results[0].text is None
         assert results[0].sender_user_id is None
@@ -390,7 +393,11 @@ class TestDirectWriterAdapter:
         assert result.last_message is None
 
     def test_send_to_thread(self):
-        """Verify direct_answer() sends message to thread."""
+        """Verify direct_answer() sends message to thread with int thread id.
+
+        instagrapi 2.3.0 ``direct_answer(thread_id: int, text: str)`` requires
+        an int thread id; the adapter coerces at the boundary.
+        """
         # Create mock client
         mock_client = Mock()
         sent_message = TestDirectReaderAdapter._create_mock_message(id="sent-1")
@@ -400,13 +407,15 @@ class TestDirectWriterAdapter:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — pass a numeric-string thread id so the adapter's
+        # ``int(direct_thread_id)`` coercion succeeds. Real Instagram thread
+        # ids are always numeric.
         adapter = InstagramDirectWriterAdapter(mock_repo)
-        result = adapter.send_to_thread("acc-123", "thread-1", "Hello")
+        result = adapter.send_to_thread("acc-123", "1234567890", "Hello")
 
         assert isinstance(result, DirectMessageSummary)
         assert result.direct_message_id == "sent-1"
-        mock_client.direct_answer.assert_called_once_with("thread-1", "Hello")
+        mock_client.direct_answer.assert_called_once_with(1234567890, "Hello")
 
     def test_send_to_users(self):
         """Verify direct_send() sends message to users."""
@@ -428,7 +437,11 @@ class TestDirectWriterAdapter:
         mock_client.direct_send.assert_called_once_with("Hi there", user_ids=[100, 101])
 
     def test_delete_message(self):
-        """Verify direct_message_delete() deletes message."""
+        """Verify direct_message_delete() deletes message with int ids.
+
+        instagrapi 2.3.0 expects int thread_id and int message_id; adapter
+        coerces at the boundary.
+        """
         # Create mock client
         mock_client = Mock()
         mock_client.direct_message_delete.return_value = None
@@ -437,14 +450,14 @@ class TestDirectWriterAdapter:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — pass numeric-string ids so int() coercion succeeds.
         adapter = InstagramDirectWriterAdapter(mock_repo)
-        result = adapter.delete_message("acc-123", "thread-1", "msg-1")
+        result = adapter.delete_message("acc-123", "1234567890", "5555")
 
         assert isinstance(result, DirectActionReceipt)
         assert result.success is True
-        assert result.action_id == "msg-1"
-        mock_client.direct_message_delete.assert_called_once_with("thread-1", "msg-1")
+        assert result.action_id == "5555"
+        mock_client.direct_message_delete.assert_called_once_with(1234567890, 5555)
 
     def test_delete_message_failure(self):
         """Verify delete failure is captured."""
@@ -578,9 +591,9 @@ class TestDirectContractProofing:
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
 
-        # Test adapter
+        # Test adapter — numeric string id required so int() coercion succeeds.
         adapter = InstagramDirectReaderAdapter(mock_repo)
-        results = adapter.list_messages("acc-123", "thread-1")
+        results = adapter.list_messages("acc-123", "1234567890")
 
         # Verify result is only DTO
         assert isinstance(results[0], DirectMessageSummary)
