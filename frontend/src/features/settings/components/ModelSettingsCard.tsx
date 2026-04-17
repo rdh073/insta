@@ -73,6 +73,7 @@ function OllamaModelSelect({ baseUrl, model, setModel }: OllamaModelSelectProps)
         <div className="relative flex-1">
           <select
             id="settings-model-select"
+            name="model"
             value={disabled ? '' : model}
             onChange={(e) => setModel(e.target.value)}
             className="glass-select w-full text-sm disabled:cursor-not-allowed disabled:opacity-60"
@@ -154,6 +155,7 @@ export function ModelSettingsCard({ provider, model, setModel, effectiveBaseUrl 
           {cfg.models.length === 0 ? (
             <input
               id="settings-model-select"
+              name="model"
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
@@ -165,6 +167,7 @@ export function ModelSettingsCard({ provider, model, setModel, effectiveBaseUrl 
             <div className="relative">
               <select
                 id="settings-model-select"
+                name="model"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 className="glass-select text-sm"

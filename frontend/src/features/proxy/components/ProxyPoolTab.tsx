@@ -196,6 +196,9 @@ export function ProxyPoolTab() {
             </p>
           </div>
           <textarea
+            id="proxy-pool-import-list"
+            name="proxy_import_list"
+            aria-label="Proxy import list"
             value={importText}
             onChange={(e) => { setImportText(e.target.value); setImportSummary(null); }}
             placeholder={'1.2.3.4:8080\nhttp://5.6.7.8:3128\nsocks5://9.10.11.12:1080'}
@@ -203,7 +206,15 @@ export function ProxyPoolTab() {
             className="glass-textarea w-full resize-y font-mono text-xs"
           />
           {importSummary && <ImportSummaryBar summary={importSummary} />}
-          <input ref={fileInputRef} type="file" accept=".txt,.csv,text/plain" className="hidden" onChange={handleFileChange} />
+          <input
+            id="proxy-pool-import-file"
+            name="proxy_import_file"
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.csv,text/plain"
+            className="hidden"
+            onChange={handleFileChange}
+          />
           <div className="flex gap-3">
             <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="flex-1">
               <FolderOpen className="h-4 w-4" />
@@ -222,7 +233,14 @@ export function ProxyPoolTab() {
             <h2 className="mt-2 text-lg font-semibold text-[#eef4ff]">Test a proxy URL</h2>
           </div>
           <div className="space-y-2">
-            <Input label="Proxy URL" value={checkUrl} onChange={(e) => { setCheckUrl(e.target.value); setCheckResult(null); }} placeholder="http://host:port or socks5://host:port" />
+            <Input
+              id="proxy-pool-check-url"
+              name="proxy_check_url"
+              label="Proxy URL"
+              value={checkUrl}
+              onChange={(e) => { setCheckUrl(e.target.value); setCheckResult(null); }}
+              placeholder="http://host:port or socks5://host:port"
+            />
             {checkResult && <ProxyTestChip result={checkResult} />}
           </div>
           <Button variant="secondary" onClick={handleCheck} loading={checking} disabled={!checkUrl.trim() || checking}>
@@ -242,7 +260,16 @@ export function ProxyPoolTab() {
             <div className="flex items-center gap-3">
               <div className="relative w-56">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7f8bb3]" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter proxies…" className="glass-field pl-10 text-sm" />
+                <input
+                  id="proxy-pool-search"
+                  name="proxy_pool_search"
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter proxies…"
+                  aria-label="Filter proxies"
+                  className="glass-field pl-10 text-sm"
+                />
               </div>
               <Button variant="secondary" size="sm" onClick={handleRecheck} loading={rechecking} disabled={pool.length === 0 || rechecking}>
                 <Zap className="h-4 w-4" />

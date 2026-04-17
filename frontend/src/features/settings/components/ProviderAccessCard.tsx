@@ -87,6 +87,7 @@ export function ProviderAccessCard({
       {cfg.defaultBaseUrl !== undefined && (
         <Input
           id={`settings-base-url-${provider}`}
+          name={`base_url_${provider}`}
           label="Base URL"
           value={effectiveBaseUrl}
           onChange={(e) => onBaseUrlChange(e.target.value)}
@@ -116,6 +117,8 @@ export function ProviderAccessCard({
         <>
           <Input
             id={`settings-api-key-${provider}`}
+            name={`api_key_${provider}`}
+            autoComplete="off"
             label={`${cfg.label} API Key`}
             type="password"
             value={apiKey}
@@ -179,6 +182,8 @@ export function ProviderAccessCard({
                 </label>
                 <input
                   id={`settings-oauth-code-${provider}`}
+                  name={`oauth_code_${provider}`}
+                  autoComplete="off"
                   value={oauth.code}
                   onChange={(e) => oauth.setCode(e.target.value)}
                   placeholder={
@@ -222,6 +227,8 @@ export function ProviderAccessCard({
                 </label>
                 <input
                   id={`settings-oauth-code-${provider}`}
+                  name={`oauth_code_${provider}`}
+                  autoComplete="off"
                   value={oauth.code}
                   onChange={(e) => oauth.setCode(e.target.value)}
                   placeholder={

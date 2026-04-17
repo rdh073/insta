@@ -43,7 +43,10 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Input
+            id="login-password"
+            name="password"
             type="password"
+            autoComplete="new-password"
             placeholder="Admin password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

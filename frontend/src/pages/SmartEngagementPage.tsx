@@ -162,11 +162,14 @@ function AccountMultiPicker({
             <div className="flex items-center gap-2 rounded-lg border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5">
               <Search className="h-3.5 w-3.5 shrink-0 text-[#4a5578]" />
               <input
+                id="engagement-account-search"
+                name="account_search"
                 ref={searchRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search accounts…"
+                aria-label="Search accounts"
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-[#c0caf5] outline-none placeholder:text-[#4a5578]"
               />
               {query && (
@@ -394,6 +397,9 @@ function EngagementResult({
           {editState === 'editing' ? (
             <div className="space-y-2">
               <textarea
+                id={`engagement-edit-${response.thread_id ?? 'content'}`}
+                name="edit_content"
+                aria-label="Edited content"
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 rows={3}
@@ -582,7 +588,7 @@ export function SmartEngagementPage() {
 
             {/* Goal templates */}
             <div className="space-y-2">
-              <label className="field-label">Goal</label>
+              <label htmlFor="engagement-goal" className="field-label">Goal</label>
               <div className="flex flex-wrap gap-1.5">
                 {GOAL_TEMPLATES.map((t) => {
                   const Icon = t.icon;
@@ -605,6 +611,9 @@ export function SmartEngagementPage() {
                 })}
               </div>
               <input
+                id="engagement-goal"
+                name="engagement_goal"
+                type="text"
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
                 placeholder="Or type a custom engagement goal…"
@@ -614,12 +623,19 @@ export function SmartEngagementPage() {
 
             {/* Mode */}
             <div className="space-y-2">
-              <label className="field-label">Execution Mode</label>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <span id="engagement-mode-label" className="field-label">Execution Mode</span>
+              <div
+                role="radiogroup"
+                aria-labelledby="engagement-mode-label"
+                className="grid gap-2 sm:grid-cols-2"
+              >
                 {(['recommendation', 'execute'] as const).map((value) => (
                   <button
                     key={value}
                     type="button"
+                    role="radio"
+                    aria-checked={mode === value}
+                    aria-label={`Execution mode: ${value}`}
                     onClick={() => setMode(value)}
                     className={cn(
                       'cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
@@ -648,6 +664,7 @@ export function SmartEngagementPage() {
               <label className="field-label" htmlFor="engagement-targets">Max Targets</label>
               <input
                 id="engagement-targets"
+                name="max_targets"
                 type="number"
                 min={1}
                 max={20}

@@ -95,6 +95,8 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
             <p className="text-sm text-[#7f8bb3]">Drop a .txt / .csv file here, or click to browse</p>
           )}
           <input
+            id="import-accounts-file"
+            name="accounts_file"
             ref={fileInputRef}
             type="file"
             accept=".txt,.csv,text/plain,text/csv"
@@ -110,6 +112,8 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
         </div>
 
         <textarea
+          id="import-accounts-list"
+          name="accounts_list"
           value={text}
           onChange={(event) => { setText(event.target.value); setFileName(''); }}
           placeholder={"user1:pass1\nuser2:pass2:http://proxy:3128\nuser3:pass3|BASE32TOTPSECRET"}

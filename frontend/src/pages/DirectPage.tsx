@@ -478,9 +478,12 @@ export function DirectPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#4a5578]" />
             <input
+              id="direct-search"
+              name="direct_search"
               value={searchQuery}
               onChange={(e) => void handleSearch(e.target.value)}
               placeholder="Search threads…"
+              aria-label="Search threads"
               className="glass-field w-full pl-8 text-sm"
             />
           </div>
@@ -617,6 +620,9 @@ export function DirectPage() {
             <div className="shrink-0 border-t border-[rgba(162,179,229,0.08)] p-3">
               <div className="flex gap-2">
                 <textarea
+                  id="direct-compose"
+                  name="message"
+                  aria-label="Compose message"
                   value={composeText}
                   onChange={(e) => setComposeText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend(); } }}

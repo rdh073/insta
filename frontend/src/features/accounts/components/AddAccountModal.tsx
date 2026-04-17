@@ -91,16 +91,18 @@ export function AddAccountModal({ open, onClose }: { open: boolean; onClose: () 
     <Modal open={open} onClose={handleModalClose} title={step === 'credentials' ? 'Add Account' : 'Enter 2FA Code'}>
       {step === 'credentials' ? (
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input label="Username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your_instagram" autoFocus />
-          <Input label="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
+          <Input id="add-account-username" name="username" autoComplete="username" label="Username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your_instagram" autoFocus />
+          <Input id="add-account-password" name="password" autoComplete="new-password" label="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
           <Input
+            id="add-account-totp-secret"
+            name="totp_secret"
             label="2FA Secret / TOTP"
             value={totpSecret}
             onChange={(event) => setTotpSecret(event.target.value)}
             placeholder="2OWR 5YTV ZHAN 66UJ YOCT RZC2 7DCS WTDQ"
             hint="Optional base32 TOTP secret. Spaces are removed automatically."
           />
-          <Input label="Proxy" value={proxy} onChange={(event) => setProxy(event.target.value)} placeholder="http://user:pass@host:port" hint="Optional. Leave empty to use direct connection." />
+          <Input id="add-account-proxy" name="proxy" label="Proxy" value={proxy} onChange={(event) => setProxy(event.target.value)} placeholder="http://user:pass@host:port" hint="Optional. Leave empty to use direct connection." />
           {error && <p className="text-sm text-[#ff9db0]">{error}</p>}
           {loading && <p className="text-xs text-[#8e9ac0]">Connecting to Instagram — this can take up to 30 seconds…</p>}
           <div className="flex gap-3 pt-1">
@@ -116,6 +118,10 @@ export function AddAccountModal({ open, onClose }: { open: boolean; onClose: () 
         <form onSubmit={handle2FASubmit} className="space-y-4">
           <p className="text-sm text-[#8e9ac0]">Enter the 6-digit code from your authenticator app or SMS.</p>
           <Input
+            id="add-account-2fa-code"
+            name="two_factor_code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
             label="2FA Code"
             value={twoFACode}
             onChange={(event) => setTwoFACode(event.target.value)}

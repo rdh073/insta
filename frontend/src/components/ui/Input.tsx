@@ -7,8 +7,9 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
   hint?: string;
 }
 
-export function Input({ label, error, hint, className, id, ...props }: Props) {
-  const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+export function Input({ label, error, hint, className, id, name, ...props }: Props) {
+  const inputId = id ?? label?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const inputName = name ?? inputId;
 
   return (
     <div className="flex flex-col gap-2">
@@ -19,6 +20,7 @@ export function Input({ label, error, hint, className, id, ...props }: Props) {
       )}
       <input
         id={inputId}
+        name={inputName}
         {...props}
         className={cn(
           'glass-field text-sm',

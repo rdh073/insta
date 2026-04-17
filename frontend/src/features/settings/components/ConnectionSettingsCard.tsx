@@ -29,6 +29,7 @@ export function ConnectionSettingsCard({ url, setUrl, backendLabel, urlError, ap
 
       <Input
         id="settings-backend-url"
+        name="backend_url"
         label="Backend URL"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
@@ -45,6 +46,8 @@ export function ConnectionSettingsCard({ url, setUrl, backendLabel, urlError, ap
           <p className="field-label mb-1">API Key</p>
           <Input
             id="settings-backend-api-key"
+            name="backend_api_key"
+            autoComplete="off"
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}

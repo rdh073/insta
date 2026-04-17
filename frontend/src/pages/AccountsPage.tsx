@@ -327,6 +327,8 @@ export function AccountsPage() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a90]" />
               <input
+                id="accounts-search"
+                name="accounts_search"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -493,7 +495,16 @@ export function AccountsPage() {
         </div>
       )}
 
-      <input ref={sessionInputRef} type="file" accept=".json" className="hidden" onChange={handleImportSessions} aria-hidden="true" />
+      <input
+        id="accounts-import-session"
+        name="session"
+        ref={sessionInputRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={handleImportSessions}
+        aria-hidden="true"
+      />
 
       <AddAccountModal open={showAdd} onClose={() => setShowAdd(false)} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} />

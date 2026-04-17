@@ -104,6 +104,10 @@ export function TOTPSetupModal({
           </div>
 
           <Input
+            id="totp-verification-code"
+            name="verification_code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
             label="Verification Code"
             value={verificationCode}
             onChange={(event) => setVerificationCode(event.target.value)}

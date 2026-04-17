@@ -202,6 +202,8 @@ export function AccountRoutingTab() {
           </div>
           <div className="space-y-2">
             <Input
+              id="proxy-routing-bulk-url"
+              name="bulk_proxy_url"
               label="Proxy URL"
               value={bulkProxy}
               onChange={(e) => { setBulkProxy(e.target.value); setBulkCheckResult(null); }}
@@ -247,7 +249,16 @@ export function AccountRoutingTab() {
               <div className="flex items-center gap-3">
                 <div className="relative lg:w-72">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7f8bb3]" />
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search accounts or proxy…" className="glass-field pl-10 text-sm" />
+                  <input
+                    id="proxy-routing-search"
+                    name="proxy_routing_search"
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search accounts or proxy…"
+                    aria-label="Search accounts or proxy"
+                    className="glass-field pl-10 text-sm"
+                  />
                 </div>
                 <Button variant="secondary" size="sm" onClick={handleRefresh} loading={refreshing}>
                   <RefreshCw className="h-4 w-4" />
@@ -277,7 +288,16 @@ export function AccountRoutingTab() {
       <Modal open={editing !== null} onClose={() => { setEditing(null); setModalCheckResult(null); }} title={editing ? `Proxy for @${editing.username}` : 'Proxy editor'}>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Input label="Proxy URL" value={draftProxy} onChange={(e) => { setDraftProxy(e.target.value); setModalCheckResult(null); }} placeholder="Leave blank to remove proxy routing" hint="Supports HTTP, HTTPS, SOCKS4, and SOCKS5 URLs." autoFocus />
+            <Input
+              id="proxy-routing-edit-url"
+              name="account_proxy_url"
+              label="Proxy URL"
+              value={draftProxy}
+              onChange={(e) => { setDraftProxy(e.target.value); setModalCheckResult(null); }}
+              placeholder="Leave blank to remove proxy routing"
+              hint="Supports HTTP, HTTPS, SOCKS4, and SOCKS5 URLs."
+              autoFocus
+            />
             {modalCheckResult && <ProxyTestChip result={modalCheckResult} />}
           </div>
           <div className="rounded-[1.2rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)] p-4 text-sm text-[#8e9ac0]">

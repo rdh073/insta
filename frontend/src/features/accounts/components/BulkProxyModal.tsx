@@ -18,6 +18,8 @@ export function BulkProxyModal({
     <Modal open={open} onClose={onClose} title="Set Proxy for Selected">
       <div className="space-y-4">
         <Input
+          id="bulk-proxy-url"
+          name="proxy_url"
           label="Proxy URL"
           value={proxy}
           onChange={(event) => setProxy(event.target.value)}
