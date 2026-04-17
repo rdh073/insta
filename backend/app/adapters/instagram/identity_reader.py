@@ -41,7 +41,12 @@ class InstagramIdentityReaderAdapter:
         """
         Get authenticated account profile for the logged-in user.
 
-        Calls account_info() on the authenticated client and maps to DTO.
+        Calls user_info(client.user_id) which hits /api/v1/users/{id}/info/.
+        Previously used account_info() which hits /accounts/current_user/?edit=true
+        — that edit endpoint returns 400 for some accounts (challenged/flagged
+        sessions) and trips the Smart Engagement candidate_discovery circuit
+        breaker. The users/{id}/info/ endpoint is the same source get_own_user_info
+        uses and carries the same pk/username/counts fields needed by callers.
 
         Args:
             account_id: The application account ID.
@@ -58,11 +63,11 @@ class InstagramIdentityReaderAdapter:
         client = get_guarded_client(self.client_repo, account_id)
 
         try:
-            account = client.account_info()
+            user = client.user_info(client.user_id)
         except Exception as e:
             failure = translate_instagram_error(
                 e,
-                operation="account_info",
+                operation="user_info_own",
                 account_id=account_id,
             )
             raise InstagramAdapterError(failure) from e
@@ -71,17 +76,17 @@ class InstagramIdentityReaderAdapter:
         # email and phone_number are intentionally excluded — they are PII
         # that must not cross the LLM boundary via tool results.
         return AuthenticatedAccountProfile(
-            pk=account.pk,
-            username=account.username,
-            full_name=account.full_name,
-            biography=account.biography,
-            profile_pic_url=self._to_string(account.profile_pic_url),
-            follower_count=getattr(account, "follower_count", None),
-            following_count=getattr(account, "following_count", None),
-            external_url=account.external_url,
-            is_private=account.is_private,
-            is_verified=account.is_verified,
-            is_business=account.is_business,
+            pk=user.pk,
+            username=user.username,
+            full_name=user.full_name,
+            biography=user.biography,
+            profile_pic_url=self._to_string(user.profile_pic_url),
+            follower_count=getattr(user, "follower_count", None),
+            following_count=getattr(user, "following_count", None),
+            external_url=user.external_url,
+            is_private=user.is_private,
+            is_verified=user.is_verified,
+            is_business=user.is_business,
         )
 
     def get_own_user_info(self, account_id: str) -> PublicUserProfile:

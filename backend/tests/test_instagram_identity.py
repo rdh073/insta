@@ -35,7 +35,7 @@ class TestIdentityReaderAdapter:
         mock_account.is_verified = True
         mock_account.is_business = False
 
-        mock_client.account_info.return_value = mock_account
+        mock_client.user_info.return_value = mock_account
 
         # Create mock repo
         mock_repo = Mock()
@@ -138,7 +138,7 @@ class TestIdentityReaderAdapter:
         mock_account.is_private = None
         mock_account.is_verified = None
         mock_account.is_business = None
-        mock_client.account_info.return_value = mock_account
+        mock_client.user_info.return_value = mock_account
 
         # Create mock repo
         mock_repo = Mock()
@@ -174,7 +174,7 @@ class TestIdentityReaderAdapter:
         mock_account.is_verified = False
         mock_account.is_business = False
 
-        mock_client.account_info.return_value = mock_account
+        mock_client.user_info.return_value = mock_account
 
         # Create mock repo
         mock_repo = Mock()
@@ -206,10 +206,14 @@ class TestIdentityReaderAdapter:
             adapter.get_public_user_by_username("acc-123", "someone")
 
     def test_get_authenticated_account_raises_adapter_error_with_failure(self):
-        """Vendor exception from account_info() must be wrapped in InstagramAdapterError
-        with the translated InstagramFailure preserved, NOT a plain ValueError."""
+        """Vendor exception from user_info() must be wrapped in InstagramAdapterError
+        with the translated InstagramFailure preserved, NOT a plain ValueError.
+        get_authenticated_account now routes through user_info(client.user_id) —
+        the legacy account_info() call tripped Smart Engagement's candidate
+        discovery circuit breaker for accounts where Instagram flags the
+        /accounts/current_user/?edit=true endpoint."""
         mock_client = Mock()
-        mock_client.account_info.side_effect = Exception("ChallengeRequired")
+        mock_client.user_info.side_effect = Exception("ChallengeRequired")
 
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
@@ -243,7 +247,7 @@ class TestIdentityReaderAdapter:
     def test_get_authenticated_account_adapter_error_not_plain_value_error(self):
         """Confirm the raised exception is InstagramAdapterError, never a bare ValueError."""
         mock_client = Mock()
-        mock_client.account_info.side_effect = RuntimeError("login_required")
+        mock_client.user_info.side_effect = RuntimeError("login_required")
 
         mock_repo = Mock()
         mock_repo.get.return_value = mock_client
