@@ -39,8 +39,10 @@ export interface AccountSecurityInfo {
 }
 
 export const accountsApi = {
-  list: () => api.get<Account[]>('/accounts').then((r) => r.data),
-  bulkHydrateProfiles: () => api.post<{ queued: number }>('/accounts/bulk/hydrate-profiles').then((r) => r.data),
+  list: (signal?: AbortSignal) =>
+    api.get<Account[]>('/accounts', { signal }).then((r) => r.data),
+  bulkHydrateProfiles: (signal?: AbortSignal) =>
+    api.post<{ queued: number }>('/accounts/bulk/hydrate-profiles', undefined, { signal }).then((r) => r.data),
   refreshCounts: (id: string) => api.post<{ status: string }>(`/accounts/${id}/refresh-counts`).then((r) => r.data),
 
   login: (username: string, password: string, proxy?: string, totp_secret?: string) =>

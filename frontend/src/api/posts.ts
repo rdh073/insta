@@ -10,7 +10,8 @@ import {
 } from '../lib/sse-run-error';
 
 export const postsApi = {
-  list: () => api.get<PostJob[]>('/posts').then((r) => r.data),
+  list: (signal?: AbortSignal) =>
+    api.get<PostJob[]>('/posts', { signal }).then((r) => r.data),
 
   /**
    * Connect to the SSE stream for real-time post job updates.

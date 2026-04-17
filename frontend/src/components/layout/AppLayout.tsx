@@ -7,8 +7,6 @@ import { postsApi } from '../../api/posts';
 import { describeBackend } from '../../lib/api-base';
 import {
   buildBulkHydrateSessionKey,
-  classifyStartupHydrationFailure,
-  getHydrationErrorStatus,
   shouldResetStartupStores,
 } from '../../lib/startup-hydration';
 import { useAccountStore } from '../../store/accounts';
@@ -16,6 +14,7 @@ import { usePostStore } from '../../store/posts';
 import { PROVIDERS, useSettingsStore } from '../../store/settings';
 import { useAccountEvents } from '../../features/accounts/hooks/useAccountEvents';
 import { Sidebar } from './Sidebar';
+import { runStartupHydration } from './startup-hydrate';
 
 const routeMeta: Array<{
   startsWith: string;
@@ -56,113 +55,58 @@ export function AppLayout() {
   const previousBackendUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    let cleanupFired = false;
     const normalizedBackendUrl = backendUrl.trim();
     const shouldReset = shouldResetStartupStores(previousBackendUrlRef.current, normalizedBackendUrl);
     previousBackendUrlRef.current = normalizedBackendUrl;
 
-    const waitForBackend = async (maxRetries = 10, delayMs = 2000): Promise<boolean> => {
+    const waitForBackend = async (
+      outerSignal: AbortSignal,
+      maxRetries = 10,
+      delayMs = 2000,
+    ): Promise<boolean> => {
       for (let i = 0; i < maxRetries; i++) {
-        if (cancelled) return false;
+        if (outerSignal.aborted) return false;
         try {
           const baseUrl = normalizedBackendUrl;
           const healthUrl = baseUrl ? `${baseUrl.replace(/\/+$/, '')}/health` : '/api/../health';
-          const res = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });
+          const perAttempt = AbortSignal.any([outerSignal, AbortSignal.timeout(3000)]);
+          const res = await fetch(healthUrl, { signal: perAttempt });
           if (res.ok) return true;
         } catch {
+          if (outerSignal.aborted) return false;
           // backend not ready yet
         }
+        if (outerSignal.aborted) return false;
         await new Promise((r) => setTimeout(r, delayMs));
       }
       return false;
     };
 
-    const hydrate = async () => {
-      if (shouldReset) {
-        startTransition(() => {
-          setAccounts([]);
-          setJobs([]);
-        });
-      }
-      setSyncing(true);
+    void runStartupHydration({
+      signal: controller.signal,
+      listAccounts: (signal) => accountsApi.list(signal),
+      listPosts: (signal) => postsApi.list(signal),
+      bulkHydrateProfiles: (signal) => accountsApi.bulkHydrateProfiles(signal),
+      waitForBackend,
+      setAccounts,
+      setJobs,
+      isStoreEmpty: () =>
+        useAccountStore.getState().accounts.length === 0 &&
+        usePostStore.getState().jobs.length === 0,
+      isCleanupFired: () => cleanupFired,
+      sessionStore: sessionStorage,
+      sessionKey: buildBulkHydrateSessionKey(normalizedBackendUrl),
+      commit: (update) => startTransition(update),
+      setSyncing,
+      resetStores: shouldReset,
+      backendUrlLabel: normalizedBackendUrl || '(vite-proxy)',
+    });
 
-      try {
-        // Wait for backend before fetching data — avoids ECONNREFUSED spam
-        const ready = await waitForBackend();
-        if (cancelled) return;
-
-        if (!ready) {
-          console.warn('[startup-hydration]', {
-            outcome: 'backend_unavailable',
-            backendUrl: normalizedBackendUrl || '(vite-proxy)',
-          });
-          return;
-        }
-
-        const [accountsResult, jobsResult] = await Promise.allSettled([accountsApi.list(), postsApi.list()]);
-        if (cancelled) return;
-
-        const failures: unknown[] = [];
-        if (accountsResult.status === 'rejected') failures.push(accountsResult.reason);
-        if (jobsResult.status === 'rejected') failures.push(jobsResult.reason);
-
-        startTransition(() => {
-          if (accountsResult.status === 'fulfilled') {
-            setAccounts(accountsResult.value);
-          }
-          if (jobsResult.status === 'fulfilled') {
-            setJobs(jobsResult.value);
-          }
-        });
-
-        const failure = classifyStartupHydrationFailure({ backendReady: true, failures });
-        if (failure) {
-          console.warn('[startup-hydration]', {
-            outcome: failure,
-            backendUrl: normalizedBackendUrl || '(vite-proxy)',
-            statusCodes: failures.map(getHydrationErrorStatus).filter((code): code is number => code !== null),
-          });
-        }
-
-        const sessionKey = buildBulkHydrateSessionKey(normalizedBackendUrl);
-        if (failure === 'unauthorized') {
-          // Ensure a later valid credential update can retry startup bulk hydrate.
-          sessionStorage.removeItem(sessionKey);
-          return;
-        }
-
-        // Fire-and-forget-ish: hydrate follower/following counts for all active accounts.
-        // Results arrive via SSE account_updated events — no need to block UI sync.
-        // Guard: one successful request per backend URL per tab session.
-        if (!sessionStorage.getItem(sessionKey)) {
-          try {
-            await accountsApi.bulkHydrateProfiles();
-            sessionStorage.setItem(sessionKey, Date.now().toString());
-          } catch (error) {
-            const bulkFailure = classifyStartupHydrationFailure({
-              backendReady: true,
-              failures: [error],
-            });
-            if (bulkFailure) {
-              console.warn('[startup-hydration]', {
-                outcome: bulkFailure,
-                phase: 'bulk_hydrate_profiles',
-                backendUrl: normalizedBackendUrl || '(vite-proxy)',
-                statusCodes: [getHydrationErrorStatus(error)].filter((code): code is number => code !== null),
-              });
-            }
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setSyncing(false);
-        }
-      }
-    };
-
-    hydrate();
     return () => {
-      cancelled = true;
+      cleanupFired = true;
+      controller.abort();
     };
   }, [backendUrl, backendApiKey, dashboardToken, setAccounts, setJobs]);
 
