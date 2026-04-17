@@ -181,6 +181,18 @@ function RecentJobRow({ job }: { job: DashboardData['recent_jobs'][number] }) {
   );
 }
 
+export function ManageAccountsLink() {
+  return (
+    <a
+      href="/accounts"
+      className="ml-auto inline-flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors duration-200 hover:text-[var(--color-text-strong)]"
+    >
+      Manage accounts
+      <ArrowUpRight className="h-4 w-4" />
+    </a>
+  );
+}
+
 function ErrorAccountRow({
   account,
   loading,
@@ -419,13 +431,7 @@ export function DashboardPage() {
                 Needs attention <span className="text-[var(--color-error-fg)]">({data!.error_accounts.length})</span>
               </h2>
             </div>
-            <a
-              href="/"
-              className="ml-auto inline-flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors duration-200 hover:text-[var(--color-text-strong)]"
-            >
-              Manage accounts
-              <ArrowUpRight className="h-4 w-4" />
-            </a>
+            <ManageAccountsLink />
           </div>
           <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             {data!.error_accounts.map((account) => (
