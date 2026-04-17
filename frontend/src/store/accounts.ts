@@ -126,6 +126,24 @@ export function migratePersistedAccountsState(persistedState: unknown): {
 export const selectTrackedAccountCount = (state: Pick<AccountStore, 'accounts'>): number =>
   state.accounts.length;
 
+/**
+ * Active-account list selector — the single source of truth for "active" in
+ * the UI. An account is "active" iff its status is `'active'` (i.e. the
+ * Instagram session is established and not in error/challenge/2FA/idle).
+ * All pages and features that filter on status must go through this selector
+ * so the count stays identical across Accounts, Dashboard, Media, Direct,
+ * Highlights, Insights, Discovery, Relationships, and Smart Engagement.
+ */
+export const selectActiveAccounts = (state: Pick<AccountStore, 'accounts'>): Account[] =>
+  state.accounts.filter((account) => account.status === 'active');
+
+/**
+ * Active-account count selector — companion to `selectActiveAccounts` for
+ * header metrics that only need the number.
+ */
+export const selectActiveAccountCount = (state: Pick<AccountStore, 'accounts'>): number =>
+  selectActiveAccounts(state).length;
+
 export const useAccountStore = create<AccountStore>()(
   persist(
     (set) => ({

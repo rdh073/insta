@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { useEffect, useState } from 'react';
-import { useAccountStore } from '../../store/accounts';
+import { selectActiveAccounts, useAccountStore } from '../../store/accounts';
 import { cn } from '../../lib/cn';
 
 const SESSION_KEY = 'ig-account-id';
@@ -44,7 +44,7 @@ export function reconcileAccountSelection(
 
 export function AccountPicker({ value, onChange, className }: AccountPickerProps) {
   const accounts = useAccountStore((s) => s.accounts);
-  const active = accounts.filter((a) => a.status === 'active');
+  const active = selectActiveAccounts({ accounts });
   const activeIds = active.map((a) => a.id);
   const activeKey = activeIds.join('|');
 
@@ -95,7 +95,7 @@ export function AccountPicker({ value, onChange, className }: AccountPickerProps
 /** Hook version — manages accountId state with sessionStorage persistence */
 export function useAccountPicker() {
   const accounts = useAccountStore((s) => s.accounts);
-  const active = accounts.filter((a) => a.status === 'active');
+  const active = selectActiveAccounts({ accounts });
   const activeIds = active.map((a) => a.id);
   const activeKey = activeIds.join('|');
   const [accountId, setAccountId] = useState<string>('');

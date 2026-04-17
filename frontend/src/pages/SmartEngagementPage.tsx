@@ -29,7 +29,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
-import { useAccountStore } from '../store/accounts';
+import { selectActiveAccounts, useAccountStore } from '../store/accounts';
 import { useSettingsStore } from '../store/settings';
 import { getValidSelectedIds, useSmartEngagementStore } from '../store/smartEngagement';
 import { buildProxyImageUrl } from '../lib/api-base';
@@ -70,7 +70,7 @@ function AccountMultiPicker({
   const accounts = useAccountStore((s) => s.accounts);
   const backendUrl = useSettingsStore((s) => s.backendUrl);
   const backendApiKey = useSettingsStore((s) => s.backendApiKey);
-  const activeAccounts = accounts.filter((a) => a.status === 'active');
+  const activeAccounts = selectActiveAccounts({ accounts });
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -454,7 +454,7 @@ interface AccountResult {
 
 export function SmartEngagementPage() {
   const accounts = useAccountStore((s) => s.accounts);
-  const activeAccounts = accounts.filter((a) => a.status === 'active');
+  const activeAccounts = selectActiveAccounts({ accounts });
   const activeAccountIds = activeAccounts.map((a) => a.id);
   const activeAccountIdsKey = activeAccountIds.join('|');
   const firstActiveAccountId = activeAccounts[0]?.id ?? '';

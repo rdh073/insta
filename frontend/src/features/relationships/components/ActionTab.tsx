@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Square as StopIcon, UserMinus, UserPlus } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
-import { useAccountStore } from '../../../store/accounts';
+import { selectActiveAccounts, useAccountStore } from '../../../store/accounts';
 import { useFollowAction } from '../hooks/useFollowAction';
 import { AccountChip } from './AccountChip';
 import { ResultRow } from './ResultRow';
@@ -17,7 +17,7 @@ function parseUsernames(raw: string): string[] {
 
 export function ActionTab({ action }: { action: 'follow' | 'unfollow' }) {
   const accounts = useAccountStore((s) => s.accounts);
-  const activeAccounts = useMemo(() => accounts.filter((a) => a.status === 'active'), [accounts]);
+  const activeAccounts = useMemo(() => selectActiveAccounts({ accounts }), [accounts]);
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [targetInput, setTargetInput] = useState('');

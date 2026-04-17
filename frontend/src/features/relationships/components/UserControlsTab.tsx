@@ -1,15 +1,12 @@
 import { useMemo, useState } from 'react';
 import { UserCog } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
-import { useAccountStore } from '../../../store/accounts';
+import { selectActiveAccounts, useAccountStore } from '../../../store/accounts';
 import { UserRelationshipControls } from './UserRelationshipControls';
 
 export function UserControlsTab() {
   const accounts = useAccountStore((s) => s.accounts);
-  const activeAccounts = useMemo(
-    () => accounts.filter((a) => a.status === 'active'),
-    [accounts],
-  );
+  const activeAccounts = useMemo(() => selectActiveAccounts({ accounts }), [accounts]);
 
   const [accountId, setAccountId] = useState<string>(() => activeAccounts[0]?.id ?? '');
   const [targetInput, setTargetInput] = useState('');

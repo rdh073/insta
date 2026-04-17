@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
 import { ArrowLeftRight, UserCog, UserMinus, UserPlus, Users } from 'lucide-react';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
-import { useAccountStore } from '../store/accounts';
+import { selectActiveAccountCount, useAccountStore } from '../store/accounts';
 import { useRelationshipsStore } from '../store/relationships';
 import { ActionTab } from '../features/relationships/components/ActionTab';
 import { CrossFollowTab } from '../features/relationships/components/CrossFollowTab';
@@ -19,7 +18,7 @@ export function RelationshipsPage() {
   const tab = useRelationshipsStore((s) => s.tab);
   const setTab = useRelationshipsStore((s) => s.setTab);
   const accounts = useAccountStore((s) => s.accounts);
-  const activeCount = useMemo(() => accounts.filter((a) => a.status === 'active').length, [accounts]);
+  const activeCount = useAccountStore(selectActiveAccountCount);
 
   return (
     <div className="page-shell max-w-7xl space-y-6">

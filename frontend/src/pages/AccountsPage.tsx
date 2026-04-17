@@ -19,7 +19,7 @@ import { ApiError } from '../api/client';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { HeaderStat, PageHeader } from '../components/ui/PageHeader';
-import { useAccountStore } from '../store/accounts';
+import { selectActiveAccountCount, useAccountStore } from '../store/accounts';
 import { useAccountsUIStore } from '../store/accountsUI';
 import type { Account } from '../types';
 import {
@@ -103,7 +103,7 @@ export function AccountsPage() {
   };
 
   const errorAccounts = accounts.filter((a) => a.status === 'error' || a.status === 'challenge');
-  const activeAccounts = accounts.filter((a) => a.status === 'active').length;
+  const activeAccounts = selectActiveAccountCount({ accounts });
   const focusedAccount = accounts.find((a) => a.id === activeId) ?? null;
 
   const filteredAccounts = useMemo(() => {

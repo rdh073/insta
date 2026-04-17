@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { identityApi } from '../../../api/instagram/identity';
-import { useAccountStore } from '../../../store/accounts';
+import { selectActiveAccounts, useAccountStore } from '../../../store/accounts';
 import type { CrossFollowPair, JobResult } from '../types';
 
 export function useCrossFollow(selectedAccountIds: Set<string>) {
   const accounts = useAccountStore((s) => s.accounts);
-  const activeAccounts = useMemo(() => accounts.filter((a) => a.status === 'active'), [accounts]);
+  const activeAccounts = useMemo(() => selectActiveAccounts({ accounts }), [accounts]);
   const selectedAccounts = useMemo(
     () => activeAccounts.filter((a) => selectedAccountIds.has(a.id)),
     [activeAccounts, selectedAccountIds],

@@ -4,6 +4,8 @@ import {
   migratePersistedAccountsState,
   normalizeAccount,
   normalizeAccountPatch,
+  selectActiveAccountCount,
+  selectActiveAccounts,
   selectTrackedAccountCount,
   useAccountStore,
 } from './accounts';
@@ -109,5 +111,66 @@ describe('selectTrackedAccountCount', () => {
 
     useAccountStore.getState().removeAccount('acct-2');
     expect(selectTrackedAccountCount(useAccountStore.getState())).toBe(2);
+  });
+});
+
+describe('selectActiveAccounts / selectActiveAccountCount', () => {
+  beforeEach(() => {
+    useAccountStore.setState({ accounts: [], activeId: null });
+  });
+
+  it('returns zero on an empty store', () => {
+    expect(selectActiveAccounts({ accounts: [] })).toEqual([]);
+    expect(selectActiveAccountCount({ accounts: [] })).toBe(0);
+  });
+
+  it('counts only accounts whose status is "active" (the Accounts/Dashboard definition)', () => {
+    // One account per non-active status plus one active — ensures the selector
+    // distinguishes active from idle, logging_in, error, challenge, and 2fa_required.
+    const accounts: Account[] = [
+      { id: 'a-active', username: 'alpha', status: 'active' },
+      { id: 'a-idle', username: 'bravo', status: 'idle' },
+      { id: 'a-logging', username: 'charlie', status: 'logging_in' },
+      { id: 'a-error', username: 'delta', status: 'error' },
+      { id: 'a-challenge', username: 'echo', status: 'challenge' },
+      { id: 'a-2fa', username: 'foxtrot', status: '2fa_required' },
+    ];
+    expect(selectActiveAccountCount({ accounts })).toBe(1);
+    expect(selectActiveAccounts({ accounts }).map((a) => a.id)).toEqual(['a-active']);
+  });
+
+  it('agrees with the count rendered by the Accounts/Dashboard header stats', () => {
+    // The scope fix requires Accounts/Dashboard (which already render the
+    // correct number) and every other page (Media, Direct, Highlights,
+    // Insights, Discovery, Relationships, Smart Engagement) to compute the
+    // same value from the same dataset.
+    const accounts: Account[] = [
+      { ...BASE_ACCOUNT },
+      { id: 'acct-2', username: 'bravo', status: 'error' },
+      { id: 'acct-3', username: 'charlie', status: 'active' },
+      { id: 'acct-4', username: 'delta', status: 'idle' },
+    ];
+    useAccountStore.setState({ accounts });
+
+    const storeState = useAccountStore.getState();
+    const accountsPageCount = storeState.accounts.filter((a) => a.status === 'active').length;
+    expect(selectActiveAccountCount(storeState)).toBe(accountsPageCount);
+    expect(selectActiveAccountCount(storeState)).toBe(2);
+  });
+
+  it('tracks store mutations so every consumer stays in sync', () => {
+    expect(selectActiveAccountCount(useAccountStore.getState())).toBe(0);
+
+    useAccountStore.getState().setAccounts([
+      { id: 'a', username: 'alpha', status: 'active' },
+      { id: 'b', username: 'bravo', status: 'idle' },
+    ]);
+    expect(selectActiveAccountCount(useAccountStore.getState())).toBe(1);
+
+    useAccountStore.getState().updateStatus('b', 'active');
+    expect(selectActiveAccountCount(useAccountStore.getState())).toBe(2);
+
+    useAccountStore.getState().updateStatus('a', 'error', 'boom');
+    expect(selectActiveAccountCount(useAccountStore.getState())).toBe(1);
   });
 });
