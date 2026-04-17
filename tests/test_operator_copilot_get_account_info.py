@@ -143,3 +143,106 @@ class TestGetAccountInfoToolFollowers:
         result = _execute_get_account_info(response)
 
         assert result.get("biography") == "Living life"
+
+
+# ---------------------------------------------------------------------------
+# PII guard — regression tests for LLM boundary protection
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN_PII_KEYS = frozenset({
+    "birthday",
+    "phone_number",
+    "national_number",
+    "email",
+    "supervision_info",
+    "interop_messaging_user_fbid",
+    "pk_id",
+    "fbid_v2",
+})
+
+_ALLOWED_RESULT_KEYS = frozenset({
+    "username",
+    "fullName",
+    "biography",
+    "followers",
+    "following",
+    "mediaCount",
+    "isPrivate",
+    "isVerified",
+    "isBusiness",
+})
+
+
+def _all_keys(obj, _path="") -> set[str]:
+    """Recursively collect all dict keys in a nested structure."""
+    keys: set[str] = set()
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            keys.add(k)
+            keys |= _all_keys(v, f"{_path}.{k}")
+    elif isinstance(obj, list):
+        for item in obj:
+            keys |= _all_keys(item, _path)
+    return keys
+
+
+class TestGetAccountInfoToolPIIGuard:
+    """Regression guard: tool result must never contain PII keys.
+
+    These tests assert that even if the underlying DTO or use case were to
+    add PII fields in the future, the tool handler's explicit field listing
+    keeps them out of the LLM-bound tool result.
+    """
+
+    def test_successful_result_contains_no_forbidden_pii_keys(self):
+        response = AccountInfoResponse(
+            username="testuser",
+            full_name="Test User",
+            biography="Bio",
+            followers=1000,
+            following=500,
+            media_count=42,
+            is_private=False,
+            is_verified=True,
+            is_business=False,
+        )
+        result = _execute_get_account_info(response)
+
+        all_keys = _all_keys(result)
+        violations = all_keys & _FORBIDDEN_PII_KEYS
+        assert not violations, (
+            f"PII keys found in get_account_info tool result: {violations!r}"
+        )
+
+    def test_error_result_contains_no_forbidden_pii_keys(self):
+        response = AccountInfoResponse(
+            username="testuser",
+            error="Account not logged in",
+        )
+        result = _execute_get_account_info(response)
+
+        all_keys = _all_keys(result)
+        violations = all_keys & _FORBIDDEN_PII_KEYS
+        assert not violations, (
+            f"PII keys found in error tool result: {violations!r}"
+        )
+
+    def test_successful_result_contains_only_allowed_keys(self):
+        """Whitelist check: result keys must be a subset of the declared safe set."""
+        response = AccountInfoResponse(
+            username="testuser",
+            full_name="Test User",
+            biography="Bio",
+            followers=1000,
+            following=500,
+            media_count=42,
+            is_private=False,
+            is_verified=True,
+            is_business=False,
+        )
+        result = _execute_get_account_info(response)
+
+        unexpected = set(result.keys()) - _ALLOWED_RESULT_KEYS
+        assert not unexpected, (
+            f"Unexpected keys in get_account_info tool result: {unexpected!r}"
+        )

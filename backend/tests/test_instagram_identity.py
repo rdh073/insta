@@ -34,8 +34,6 @@ class TestIdentityReaderAdapter:
         mock_account.is_private = False
         mock_account.is_verified = True
         mock_account.is_business = False
-        mock_account.email = "test@example.com"
-        mock_account.phone_number = "+1234567890"
 
         mock_client.account_info.return_value = mock_account
 
@@ -53,8 +51,9 @@ class TestIdentityReaderAdapter:
         assert result.full_name == "Test User"
         assert result.biography == "Test bio"
         assert result.is_verified is True
-        assert result.email == "test@example.com"
-        assert result.phone_number == "+1234567890"
+        # PII fields must not be present in the DTO
+        assert not hasattr(result, "email")
+        assert not hasattr(result, "phone_number")
 
     def test_public_user_by_id_mapping(self):
         """Verify User object maps correctly to PublicUserProfile."""
@@ -139,9 +138,6 @@ class TestIdentityReaderAdapter:
         mock_account.is_private = None
         mock_account.is_verified = None
         mock_account.is_business = None
-        mock_account.email = None
-        mock_account.phone_number = None
-
         mock_client.account_info.return_value = mock_account
 
         # Create mock repo
@@ -156,7 +152,6 @@ class TestIdentityReaderAdapter:
         assert result.username == "minimal"
         assert result.full_name is None
         assert result.biography is None
-        assert result.email is None
 
     def test_httpurl_to_string_conversion(self):
         """Verify HttpUrl fields are converted to strings."""
@@ -178,8 +173,6 @@ class TestIdentityReaderAdapter:
         mock_account.is_private = False
         mock_account.is_verified = False
         mock_account.is_business = False
-        mock_account.email = None
-        mock_account.phone_number = None
 
         mock_client.account_info.return_value = mock_account
 
@@ -306,47 +299,30 @@ class TestIdentityDTOs:
         with pytest.raises(AttributeError):
             profile.follower_count = 200
 
-    def test_authenticated_account_has_private_fields(self):
-        """Verify AuthenticatedAccountProfile includes private fields."""
-        profile = AuthenticatedAccountProfile(
-            pk=123,
-            username="test",
-            email="test@example.com",
-            phone_number="+1234567890",
-        )
+    def test_authenticated_account_profile_has_no_pii_fields(self):
+        """AuthenticatedAccountProfile must not carry email or phone_number PII."""
+        profile = AuthenticatedAccountProfile(pk=123, username="test")
 
-        assert profile.email == "test@example.com"
-        assert profile.phone_number == "+1234567890"
+        assert not hasattr(profile, "email")
+        assert not hasattr(profile, "phone_number")
 
     def test_public_user_does_not_have_private_fields(self):
         """Verify PublicUserProfile does not have private fields."""
-        profile = PublicUserProfile(
-            pk=456,
-            username="testuser",
-        )
+        profile = PublicUserProfile(pk=456, username="testuser")
 
-        # These attributes should not exist on PublicUserProfile
         assert not hasattr(profile, "email")
         assert not hasattr(profile, "phone_number")
 
     def test_profiles_are_distinct(self):
         """Verify the two profile types are properly distinct."""
-        account_profile = AuthenticatedAccountProfile(
-            pk=123,
-            username="user1",
-            email="user1@example.com",
-        )
-
-        user_profile = PublicUserProfile(
-            pk=456,
-            username="user2",
-            follower_count=100,
-        )
+        account_profile = AuthenticatedAccountProfile(pk=123, username="user1")
+        user_profile = PublicUserProfile(pk=456, username="user2", follower_count=100)
 
         # Different types
         assert type(account_profile) != type(user_profile)
-        # Different fields
-        assert hasattr(account_profile, "email")
+        # media_count belongs only to PublicUserProfile
+        assert not hasattr(account_profile, "media_count")
+        assert hasattr(user_profile, "media_count")
+        # Neither carries email or phone_number PII
+        assert not hasattr(account_profile, "email")
         assert not hasattr(user_profile, "email")
-        assert hasattr(user_profile, "follower_count")
-        assert not hasattr(account_profile, "follower_count")

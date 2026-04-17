@@ -67,7 +67,9 @@ class InstagramIdentityReaderAdapter:
             )
             raise InstagramAdapterError(failure) from e
 
-        # Map to DTO, converting HttpUrl fields to strings
+        # Map to DTO, converting HttpUrl fields to strings.
+        # email and phone_number are intentionally excluded — they are PII
+        # that must not cross the LLM boundary via tool results.
         return AuthenticatedAccountProfile(
             pk=account.pk,
             username=account.username,
@@ -80,8 +82,6 @@ class InstagramIdentityReaderAdapter:
             is_private=account.is_private,
             is_verified=account.is_verified,
             is_business=account.is_business,
-            email=account.email,
-            phone_number=account.phone_number,
         )
 
     def get_own_user_info(self, account_id: str) -> PublicUserProfile:

@@ -52,12 +52,6 @@ class AuthenticatedAccountProfile:
     is_business: Optional[bool] = None
     """Whether the account is a business account."""
 
-    email: Optional[str] = None
-    """Email address (self-only field)."""
-
-    phone_number: Optional[str] = None
-    """Phone number (self-only field)."""
-
 
 @dataclass(frozen=True)
 class PublicUserProfile:

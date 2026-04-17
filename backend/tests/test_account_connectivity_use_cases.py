@@ -52,8 +52,6 @@ def _make_profile(**kwargs) -> AuthenticatedAccountProfile:
         is_private=False,
         is_verified=False,
         is_business=False,
-        email=None,
-        phone_number=None,
         profile_pic_url="https://example.com/pic.jpg",
         follower_count=100,
         following_count=50,

@@ -69,8 +69,6 @@ def test_get_account_info_uses_identity_reader_for_authenticated_profile():
         is_private=False,
         is_verified=True,
         is_business=False,
-        email="alice@example.com",
-        phone_number="+620000000",
     )
 
     result = usecase.get_account_info("acc-1")

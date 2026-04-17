@@ -33,6 +33,18 @@ _KNOWN_SECURITY_KEYS = {
     "status",
 }
 
+# PII fields that must never appear in the extra dict even if Instagram adds
+# them to the account_security_info() response in the future.
+_PII_SECURITY_KEYS = {
+    "birthday",
+    "phone_number",
+    "email",
+    "supervision_info",
+    "interop_messaging_user_fbid",
+    "pk_id",
+    "fbid_v2",
+}
+
 
 class InstagramAccountSecurityReaderAdapter:
     """Adapter for reading the authenticated account's security posture."""
@@ -74,7 +86,9 @@ class InstagramAccountSecurityReaderAdapter:
             trusted_count = None
 
         extra = {
-            k: v for k, v in payload.items() if k not in _KNOWN_SECURITY_KEYS
+            k: v
+            for k, v in payload.items()
+            if k not in _KNOWN_SECURITY_KEYS and k not in _PII_SECURITY_KEYS
         }
 
         return AccountSecurityInfo(
