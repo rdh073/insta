@@ -964,6 +964,45 @@ async def test_summarize_skips_llm_call_when_final_response_already_set():
     assert result["final_response"] == "Action cancelled by operator."
 
 
+@pytest.mark.asyncio
+async def test_summarize_redacts_raw_exception_text_from_final_response():
+    """Regression guard: when the summary LLM call raises (e.g. missing
+    provider credentials), the operator-facing ``final_response`` must NOT
+    contain raw provider internals like env-var names, API key hints, or
+    stack traces. The leak channel at nodes_approval_execution.py:354 used
+    to embed ``str(exc)`` directly into the chat stream — CLAUDE.md's error
+    translation rule forbids that."""
+
+    class _RaisingLLMGateway(FakeLLMGateway):
+        def __init__(self, exc: Exception):
+            super().__init__()
+            self._exc = exc
+
+        async def request_completion(self, messages, **kwargs):
+            raise self._exc
+
+    leaky_message = (
+        "OpenAIError: The api_key client option must be set either by "
+        "passing apiKey or by setting the OPENAI_API_KEY environment variable"
+    )
+    llm = _RaisingLLMGateway(RuntimeError(leaky_message))
+    nodes = _make_nodes(llm=llm)
+    state = _base_state(
+        provider="openai",
+        tool_results={"c1": {"accounts": []}},
+        execution_plan=[{"step": 1, "tool": "list_accounts"}],
+    )
+
+    result = await nodes.summarize_result_node(state)
+
+    final = result["final_response"]
+    assert isinstance(final, str) and final.strip(), "must return a generic message"
+    for forbidden in ("OPENAI_API_KEY", "apiKey", "api_key", "OpenAIError", "Traceback", leaky_message):
+        assert forbidden not in final, (
+            f"final_response leaked sensitive substring {forbidden!r}: {final!r}"
+        )
+
+
 # ===========================================================================
 # finish_node tests
 # ===========================================================================

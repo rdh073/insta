@@ -350,8 +350,13 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
                 **llm_kwargs,
             )
             final_response = response.get("content", "")
-        except Exception as exc:
-            final_response = f"Summary unavailable: {exc}"
+        except Exception:
+            # Raw exception text may contain provider internals (env-var names,
+            # config hints, stack traces). Keep details in server logs; surface
+            # only a generic, operator-safe message per the CLAUDE.md "never
+            # surface raw vendor exception strings" rule.
+            logger.exception("summarize_result_node: summary LLM call failed")
+            final_response = "Summary unavailable due to provider error."
 
         return {"final_response": final_response}
 
