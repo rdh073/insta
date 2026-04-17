@@ -386,11 +386,23 @@ def create_authenticated_client(
                 client.account_info()
 
         except LoginRequired:
-            # Session expired — preserve device UUIDs, reset cookies, re-auth.
+            # Session expired — preserve the FULL device fingerprint (not just
+            # UUIDs), reset cookies, re-auth. Without device_settings +
+            # user_agent, set_settings({}) followed by init() resets device
+            # to the SDK defaults — Instagram then sees a different device
+            # than the saved session and flags re-auth as new-device.
             try:
-                old_settings = client.get_settings()
+                old_settings = client.get_settings() or {}
+                _saved_uuids = old_settings.get("uuids") or _saved_uuids
+                _old_device_settings = old_settings.get("device_settings") or _saved_device_settings
+                _old_user_agent = old_settings.get("user_agent") or _saved_user_agent
                 client.set_settings({})
-                client.set_uuids(old_settings["uuids"])
+                if _old_device_settings:
+                    client.set_device(_old_device_settings)
+                if _old_user_agent:
+                    client.set_user_agent(_old_user_agent)
+                if _saved_uuids:
+                    client.set_uuids(_saved_uuids)
                 client.login(username, password, verification_code=_totp_code())
             except TwoFactorRequired:
                 store_pending_2fa_client(username, client)
