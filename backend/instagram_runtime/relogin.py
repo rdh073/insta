@@ -263,28 +263,18 @@ def _relogin_fresh_credentials(
         locale=locale,
         timezone_offset=timezone_offset,
     )
-    # Preserve the FULL device fingerprint (UUIDs + device_settings +
-    # user_agent) from any existing session so Instagram recognises the
-    # same device on fresh-credential logins.
-    #
-    # Carrying only uuids is not enough: _new_client_with_optional_geo()
-    # picks a random profile, then set_settings({}) zeroes device_settings
-    # back to SDK defaults, so repeated relogin attempts look to Instagram
-    # like the same account logging in from many different devices. That
-    # triggers deceptive bad_password replies that escalate to
-    # ChallengeRequired (observed live 2026-04-17 on doloresball269: 18
-    # consecutive login POSTs spanned 15 distinct devices).
+    # Preserve device fingerprint — load UUIDs from any existing session so
+    # Instagram recognises the same device on fresh-credential logins.
+    # Per instagrapi best-practices guide, UUIDs are the device identity
+    # Instagram actually checks; restoring them after set_settings({}) is
+    # the canonical LoginRequired retry pattern.
     if session_file.exists():
         try:
             client.load_settings(session_file)
             old = client.get_settings() or {}
             client.set_settings({})  # discard stale cookies
-            if old.get("device_settings"):
-                client.set_device(old["device_settings"])
-            if old.get("user_agent"):
-                client.set_user_agent(old["user_agent"])
             if old.get("uuids"):
-                client.set_uuids(old["uuids"])
+                client.set_uuids(old["uuids"])  # restore device fingerprint
         except Exception:
             pass  # malformed session file — proceed with fresh device fingerprint
 
