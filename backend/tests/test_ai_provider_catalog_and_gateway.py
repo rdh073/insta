@@ -114,3 +114,88 @@ def test_gateway_client_cache_is_scoped_by_key_and_base_url(monkeypatch):
 
     # one client for (key-a, url-a), one for (key-b, url-a), one for (key-a, url-b)
     assert len(_FakeAsyncOpenAI.instances) == 3
+
+
+def test_gateway_falls_back_to_env_when_api_key_omitted(monkeypatch):
+    """Without an explicit api_key, the gateway must read OPENAI_API_KEY from env.
+
+    Regression guard for the prod container bug where summarize_result raised
+    "No API key for openai" despite OPENAI_API_KEY being present in PID 1's
+    environment. The gateway must resolve the env value at call time.
+    """
+    _install_fake_openai(monkeypatch)
+    _FakeAsyncOpenAI.instances.clear()
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+
+    gateway = AIGateway()
+    response = asyncio.run(
+        gateway.request_completion(
+            messages=[{"role": "user", "content": "hi"}],
+            provider="openai",
+        )
+    )
+
+    assert response.content == "ok"
+    assert len(_FakeAsyncOpenAI.instances) == 1
+    assert _FakeAsyncOpenAI.instances[0].kwargs["api_key"] == "sk-from-env"
+
+
+def test_gateway_strips_whitespace_from_env_api_key(monkeypatch):
+    """Env files (docker-compose env_file, --env-file) sometimes carry stray
+    newlines/spaces around the value. The gateway must trim them so the OpenAI
+    SDK doesn't silently reject an otherwise-valid key."""
+    _install_fake_openai(monkeypatch)
+    _FakeAsyncOpenAI.instances.clear()
+    monkeypatch.setenv("OPENAI_API_KEY", "  sk-padded\n")
+
+    gateway = AIGateway()
+    asyncio.run(
+        gateway.request_completion(
+            messages=[{"role": "user", "content": "hi"}],
+            provider="openai",
+        )
+    )
+
+    assert _FakeAsyncOpenAI.instances[0].kwargs["api_key"] == "sk-padded"
+
+
+def test_gateway_whitespace_only_override_falls_back_to_env(monkeypatch):
+    """A whitespace-only api_key override must not block the env fallback."""
+    _install_fake_openai(monkeypatch)
+    _FakeAsyncOpenAI.instances.clear()
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+
+    gateway = AIGateway()
+    asyncio.run(
+        gateway.request_completion(
+            messages=[{"role": "user", "content": "hi"}],
+            provider="openai",
+            api_key="   ",
+        )
+    )
+
+    assert _FakeAsyncOpenAI.instances[0].kwargs["api_key"] == "sk-from-env"
+
+
+def test_gateway_raises_when_env_and_override_both_absent(monkeypatch):
+    """Without any key source, the gateway must surface a clear error."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    gateway = AIGateway()
+    with pytest.raises(ValueError, match="No API key for openai"):
+        asyncio.run(
+            gateway.request_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+            )
+        )
+
+
+def test_provider_config_get_returns_defensive_copy():
+    """Callers must not be able to mutate the shared ProviderConfig state."""
+    from app.adapters.ai.openai_gateway import ProviderConfig
+
+    config = ProviderConfig.get("openai")
+    config["env_key"] = "TAMPERED"
+
+    assert ProviderConfig.get("openai")["env_key"] == "OPENAI_API_KEY"

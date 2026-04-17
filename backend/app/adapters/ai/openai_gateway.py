@@ -57,12 +57,30 @@ class ProviderConfig:
         if key not in cls.CONFIGS:
             valid = ", ".join(sorted(cls.CONFIGS.keys()))
             raise ValueError(f"Unknown provider {provider!r}. Must be one of: {valid}")
-        return cls.CONFIGS[key]
+        # Defensive copy so callers can't mutate shared class state.
+        return dict(cls.CONFIGS[key])
 
     @classmethod
     def get_default_model(cls, provider: str) -> str:
         """Get default model for provider."""
         return cls.get(provider)["default_model"]
+
+
+def _resolve_api_key_from_env(env_key: str) -> str:
+    """Read an API key from the process environment, trimming whitespace.
+
+    Env files loaded via docker-compose `env_file`, `--env-file`, or pasted by
+    operators frequently smuggle in trailing newlines or spaces. The OpenAI SDK
+    silently rejects such values, which surfaces here as "No API key" even when
+    `cat /proc/1/environ` shows the variable is present. Trim at the boundary so
+    the rest of the gateway only sees a clean value.
+    """
+    if not env_key:
+        return ""
+    raw = os.getenv(env_key)
+    if raw is None:
+        return ""
+    return raw.strip()
 
 
 class AIGateway:
@@ -126,7 +144,14 @@ class AIGateway:
             )
         effective_model = model or config["default_model"]
         env_key = config["env_key"]
-        effective_api_key = api_key or (os.getenv(env_key, "") if env_key else "")
+
+        # Treat whitespace-only overrides as absent — operators paste keys with
+        # trailing newlines, and docker-compose env_file parsers occasionally
+        # attach stray whitespace. An unstripped " " would bypass the env
+        # fallback entirely and reach the SDK as an invalid key.
+        override = (api_key or "").strip()
+        env_value = _resolve_api_key_from_env(env_key)
+        effective_api_key = override or env_value
 
         if not effective_api_key:
             # Ollama ignores the Bearer token but the OpenAI SDK still requires
