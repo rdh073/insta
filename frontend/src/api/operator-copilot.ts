@@ -4,7 +4,7 @@ import { useSettingsStore } from '../store/settings';
 export interface CopilotRunRequest {
   message: string;
   threadId?: string;
-  provider?: 'openai' | 'gemini' | 'deepseek' | 'antigravity' | 'openai_codex' | 'claude_code' | 'openai_compatible';
+  provider?: 'openai' | 'gemini' | 'deepseek' | 'antigravity' | 'openai_codex' | 'claude_code' | 'openai_compatible' | 'ollama';
   model?: string;
   apiKey?: string;
   providerBaseUrl?: string;
