@@ -109,6 +109,15 @@ Each event lists `required` payload keys and `optional` payload keys.
     "optional": [
       "reason"
     ]
+  },
+  "node_error": {
+    "required": [
+      "error_class",
+      "error_message",
+      "node_name",
+      "thread_id"
+    ],
+    "optional": []
   }
 }
 ```

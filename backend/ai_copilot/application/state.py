@@ -38,7 +38,8 @@ VALID_STOP_REASONS: frozenset[str] = frozenset({
     "rejected",
     "blocked",
     "error",
-    "responded",   # legacy read-only copilot value
+    "responded",    # legacy read-only copilot value
+    "llm_failed",   # LLM gateway raised on classify_goal or plan_actions
 })
 """Allowed values for the stop_reason state field.
 
@@ -48,6 +49,7 @@ VALID_STOP_REASONS: frozenset[str] = frozenset({
 - blocked    — intent classified as blocked by policy
 - error      — unrecoverable error in a node
 - responded  — legacy value from read-only copilot (backward compat)
+- llm_failed — LLM gateway raised before the run could proceed (auth, network, quota)
 """
 
 

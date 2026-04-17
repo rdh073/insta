@@ -278,17 +278,14 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
         parse_error: str | None = None
         findings: dict | None = None
         try:
-            response = await self.llm_gateway.request_completion(
-                messages=messages,
-                **self._llm_request_kwargs(state),
-            )
+            response = await self._call_llm_or_fail("review_results", state, messages)
             raw = response.get("content", "") or ""
             findings = _extract_json_object(raw)
             if findings is None:
                 parse_error = "reviewer_returned_non_json"
-        except Exception as exc:
-            parse_error = str(exc)
-            logger.exception("review_results_node: reviewer LLM call failed")
+        except Exception:
+            # node_error audit event and logger.exception already emitted by _call_llm_or_fail.
+            parse_error = "llm_call_failed"
 
         if findings is None:
             # Reviewer failed, but tool results themselves are fine. Treat as
@@ -343,19 +340,14 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             },
         ]
 
-        llm_kwargs = self._llm_request_kwargs(state)
         try:
-            response = await self.llm_gateway.request_completion(
-                messages=messages,
-                **llm_kwargs,
-            )
+            response = await self._call_llm_or_fail("summarize_result", state, messages)
             final_response = response.get("content", "")
         except Exception:
             # Raw exception text may contain provider internals (env-var names,
-            # config hints, stack traces). Keep details in server logs; surface
-            # only a generic, operator-safe message per the CLAUDE.md "never
-            # surface raw vendor exception strings" rule.
-            logger.exception("summarize_result_node: summary LLM call failed")
+            # config hints, stack traces). Keep details in server logs (already
+            # logged by _call_llm_or_fail); surface only a generic operator-safe
+            # message per the CLAUDE.md "never surface raw vendor exception strings" rule.
             final_response = "Summary unavailable due to provider error."
 
         return {"final_response": final_response}

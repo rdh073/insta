@@ -1040,5 +1040,144 @@ async def test_finish_node_converts_responded_to_done():
     assert result["stop_reason"] == "done"
 
 
+# ===========================================================================
+# LLM failure surfacing tests (classify_goal and plan_actions hard failure)
+# ===========================================================================
+
+
+class FailingLLMGateway(FakeLLMGateway):
+    """LLM stub that always raises on request_completion."""
+
+    def __init__(self, exc: Exception | None = None) -> None:
+        super().__init__()
+        self._exc = exc or ValueError(
+            "OpenAIError: The api_key client option must be set either by "
+            "passing apiKey or by setting the OPENAI_API_KEY environment variable"
+        )
+
+    async def request_completion(self, messages, **kwargs):
+        raise self._exc
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_llm_failure_sets_llm_failed_stop_reason():
+    nodes = _make_nodes(llm=FailingLLMGateway())
+    result = await nodes.classify_goal_node(_base_state())
+    assert result.get("stop_reason") == "llm_failed"
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_llm_failure_emits_node_error_event():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FailingLLMGateway(), audit=audit)
+    await nodes.classify_goal_node(_base_state())
+    assert audit.has_event("node_error")
+    events = audit.get_events("node_error")
+    assert len(events) == 1
+    data = events[0]["data"]
+    assert data["node_name"] == "classify_goal"
+    assert data["error_class"] == "ValueError"
+    assert isinstance(data["error_message"], str) and data["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_llm_failure_error_message_sanitized():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FailingLLMGateway(), audit=audit)
+    await nodes.classify_goal_node(_base_state())
+    error_message = audit.get_events("node_error")[0]["data"]["error_message"]
+    for forbidden in ("OPENAI_API_KEY", "apiKey", "api_key"):
+        assert forbidden not in error_message, (
+            f"error_message leaked sensitive substring {forbidden!r}: {error_message!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_llm_failure_does_not_emit_planner_decision():
+    """When the LLM fails, classify_goal returns early before logging planner_decision."""
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FailingLLMGateway(), audit=audit)
+    await nodes.classify_goal_node(_base_state())
+    assert not audit.has_event("planner_decision")
+
+
+@pytest.mark.asyncio
+async def test_classify_goal_json_parse_error_does_not_set_llm_failed():
+    """A bad-JSON response from the LLM is a soft failure — run must continue."""
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=["not json at all"]))
+    result = await nodes.classify_goal_node(_base_state())
+    assert result.get("stop_reason") is None
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_llm_failure_sets_llm_failed_stop_reason():
+    nodes = _make_nodes(llm=FailingLLMGateway())
+    result = await nodes.plan_actions_node(_base_state())
+    assert result.get("stop_reason") == "llm_failed"
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_llm_failure_emits_node_error_event():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FailingLLMGateway(), audit=audit)
+    await nodes.plan_actions_node(_base_state())
+    assert audit.has_event("node_error")
+    events = audit.get_events("node_error")
+    assert len(events) == 1
+    data = events[0]["data"]
+    assert data["node_name"] == "plan_actions"
+    assert data["error_class"] == "ValueError"
+    assert isinstance(data["error_message"], str) and data["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_llm_failure_error_message_sanitized():
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(llm=FailingLLMGateway(), audit=audit)
+    await nodes.plan_actions_node(_base_state())
+    error_message = audit.get_events("node_error")[0]["data"]["error_message"]
+    for forbidden in ("OPENAI_API_KEY", "apiKey", "api_key"):
+        assert forbidden not in error_message, (
+            f"error_message leaked sensitive substring {forbidden!r}: {error_message!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_plan_actions_json_parse_error_does_not_set_llm_failed():
+    """A bad-JSON response from the planner LLM is a soft failure — run must continue."""
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=["bad json"]))
+    result = await nodes.plan_actions_node(_base_state())
+    assert result.get("stop_reason") is None
+
+
+# ===========================================================================
+# Routing tests for llm_failed stop_reason
+# ===========================================================================
+
+
+def test_route_after_classify_llm_failed_routes_to_finish():
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_classify
+    state = _base_state(stop_reason="llm_failed")
+    assert route_after_classify(state) == "finish"
+
+
+def test_route_after_plan_llm_failed_routes_to_finish():
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_plan
+    state = _base_state(stop_reason="llm_failed", proposed_tool_calls=[])
+    assert route_after_plan(state) == "finish"
+
+
+def test_route_after_classify_blocked_still_routes_to_summarize():
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_classify
+    state = _base_state(stop_reason="blocked")
+    assert route_after_classify(state) == "summarize_result"
+
+
+def test_route_after_plan_empty_calls_still_routes_to_summarize():
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_plan
+    state = _base_state(stop_reason=None, proposed_tool_calls=[])
+    assert route_after_plan(state) == "summarize_result"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

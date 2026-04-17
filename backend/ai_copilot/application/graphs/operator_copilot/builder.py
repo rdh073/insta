@@ -34,6 +34,7 @@ def build_operator_copilot_graph(
         {
             "plan_actions": "plan_actions",
             "summarize_result": "summarize_result",
+            "finish": "finish",
         },
     )
 
@@ -43,6 +44,7 @@ def build_operator_copilot_graph(
         {
             "review_tool_policy": "review_tool_policy",
             "summarize_result": "summarize_result",
+            "finish": "finish",
         },
     )
 

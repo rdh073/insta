@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 
 from ai_copilot.application.operator_copilot_policy import ToolPolicy, ToolPolicyRegistry
 from ai_copilot.application.ports import (
@@ -23,6 +24,22 @@ from .prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Matches patterns that reveal API credentials or env-var hints in error strings.
+_SENSITIVE_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{8,}|api[_-]?key)", re.IGNORECASE)
+
+
+def _sanitize_llm_error(exc: Exception) -> str:
+    """Return a safe, one-line error summary for audit log error_message.
+
+    Strips stack traces (takes only the first line) and redacts patterns that
+    could expose API key values or environment variable names.
+    """
+    first_line = str(exc).split("\n")[0].strip()
+    sanitized = _SENSITIVE_RE.sub("[redacted]", first_line)
+    if len(sanitized) > 200:
+        sanitized = sanitized[:197] + "..."
+    return sanitized or type(exc).__name__
 
 
 class OperatorCopilotPlanPolicyNodes:
@@ -67,6 +84,33 @@ class OperatorCopilotPlanPolicyNodes:
             "api_key": api_key,
             "provider_base_url": provider_base_url,
         }
+
+    async def _call_llm_or_fail(
+        self,
+        node_name: str,
+        state: OperatorCopilotState,
+        messages: list[dict],
+    ) -> dict:
+        """Call the LLM gateway, emitting a node_error audit event on failure then re-raising.
+
+        All four LLM-calling nodes (classify_goal, plan_actions, review_results,
+        summarize_result) share this helper so every LLM failure produces a
+        consistent node_error event before the caller decides how to recover.
+        """
+        try:
+            return await self.llm_gateway.request_completion(
+                messages=messages,
+                **self._llm_request_kwargs(state),
+            )
+        except Exception as exc:
+            logger.exception("%s: LLM call failed", node_name)
+            await self.audit_log.log("node_error", {
+                "thread_id": state.get("thread_id"),
+                "node_name": node_name,
+                "error_class": type(exc).__name__,
+                "error_message": _sanitize_llm_error(exc),
+            })
+            raise
 
     async def _planner_runtime_context(self, thread_id: str | None = None) -> dict:
         """Load optional runtime context for the planner without widening the port contract."""
@@ -279,11 +323,15 @@ class OperatorCopilotPlanPolicyNodes:
             {"role": "user", "content": operator_request},
         ]
 
+        # Hard failure: LLM unreachable / auth missing / quota exceeded.
+        # _call_llm_or_fail emits node_error and re-raises; we short-circuit here.
         try:
-            response = await self.llm_gateway.request_completion(
-                messages=messages,
-                **self._llm_request_kwargs(state),
-            )
+            response = await self._call_llm_or_fail("classify_goal", state, messages)
+        except Exception:
+            return {"stop_reason": "llm_failed"}
+
+        # Soft failure: LLM responded but output is not valid JSON → use fallback.
+        try:
             raw = response.get("content", "{}")
             raw = raw.strip()
             if raw.startswith("```"):
@@ -373,11 +421,14 @@ class OperatorCopilotPlanPolicyNodes:
             {"role": "user", "content": json.dumps(user_payload)},
         ]
 
+        # Hard failure: LLM unreachable / auth missing / quota exceeded.
         try:
-            response = await self.llm_gateway.request_completion(
-                messages=messages,
-                **self._llm_request_kwargs(state),
-            )
+            response = await self._call_llm_or_fail("plan_actions", state, messages)
+        except Exception:
+            return {"stop_reason": "llm_failed"}
+
+        # Soft failure: LLM responded but output is not valid JSON → empty plan.
+        try:
             raw = response.get("content", "{}")
             raw = raw.strip()
             if raw.startswith("```"):

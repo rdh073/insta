@@ -7,15 +7,19 @@ from ai_copilot.application.state import OperatorCopilotState
 
 
 def route_after_classify(state: OperatorCopilotState) -> str:
-    """After classify_goal: blocked/conversational -> summarize_result, else -> plan_actions."""
+    """After classify_goal: llm_failed -> finish, blocked/conversational -> summarize_result, else -> plan_actions."""
     stop_reason = state.get("stop_reason")
+    if stop_reason == "llm_failed":
+        return "finish"
     if stop_reason in ("blocked", "responded"):
         return "summarize_result"
     return "plan_actions"
 
 
 def route_after_plan(state: OperatorCopilotState) -> str:
-    """After plan_actions: no valid calls -> summarize_result, else -> review_tool_policy."""
+    """After plan_actions: llm_failed -> finish, no valid calls -> summarize_result, else -> review_tool_policy."""
+    if state.get("stop_reason") == "llm_failed":
+        return "finish"
     proposed = state.get("proposed_tool_calls", [])
     if not proposed:
         return "summarize_result"

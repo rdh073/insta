@@ -90,6 +90,10 @@ AUDIT_EVENT_SCHEMA: dict[str, AuditEventSchema] = {
         "required": frozenset({"thread_id", "stop_reason"}),
         "optional": frozenset({"reason"}),
     },
+    "node_error": {
+        "required": frozenset({"thread_id", "node_name", "error_class", "error_message"}),
+        "optional": frozenset(),
+    },
 }
 """Canonical operator-copilot audit schema.
 
@@ -380,5 +384,6 @@ class AuditLogPort(ABC):
                 - "execution_failure" — tool raised or returned an error payload
                 - "review_finding"    — reviewer finding before final response
                 - "stop_reason"       — why the run ended
+                - "node_error"        — LLM call in a node raised an exception
             data: Event-specific payload (all fields must be JSON-serialisable)
         """
