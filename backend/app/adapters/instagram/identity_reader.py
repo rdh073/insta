@@ -63,7 +63,13 @@ class InstagramIdentityReaderAdapter:
         client = get_guarded_client(self.client_repo, account_id)
 
         try:
-            user = client.user_info(client.user_id)
+            # user_info_v1 goes straight to /api/v1/users/{id}/info/. The plain
+            # user_info() tries the public graphql endpoint first, which
+            # returns 401 for authenticated-only Instagram accounts and
+            # retries up to 6 times with exponential backoff — easily blowing
+            # past the frontend timeout. v1 is the direct, authenticated
+            # private path and matches the endpoint our copilot tool relies on.
+            user = client.user_info_v1(client.user_id)
         except Exception as e:
             failure = translate_instagram_error(
                 e,
@@ -92,14 +98,15 @@ class InstagramIdentityReaderAdapter:
     def get_own_user_info(self, account_id: str) -> PublicUserProfile:
         """Get the authenticated account's own profile via users/{id}/info/.
 
-        Calls user_info(client.user_id) which hits /api/v1/users/{id}/info/ and
-        returns follower_count, following_count, and media_count — fields absent
-        from the account_edit endpoint used by get_authenticated_account().
+        Calls user_info_v1(client.user_id) which hits /api/v1/users/{id}/info/
+        directly — skipping the graphql public fallback that returns 401 for
+        authenticated-only accounts and triggers a 6-retry loop exceeding any
+        reasonable frontend timeout.
         """
         client = get_guarded_client(self.client_repo, account_id)
 
         try:
-            user = client.user_info(client.user_id)
+            user = client.user_info_v1(client.user_id)
         except Exception as e:
             failure = translate_instagram_error(
                 e,
@@ -146,7 +153,10 @@ class InstagramIdentityReaderAdapter:
         if not client:
             return None
         try:
-            user = client.user_info(client.user_id)
+            # user_info_v1 hits /api/v1/users/{id}/info/ directly — see
+            # comment in get_authenticated_account for why we skip the
+            # graphql fallback that plain user_info() tries first.
+            user = client.user_info_v1(client.user_id)
             result: dict = {}
             if user.full_name:
                 result["full_name"] = user.full_name

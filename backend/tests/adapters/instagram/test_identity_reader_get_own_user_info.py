@@ -65,7 +65,7 @@ class TestGetOwnUserInfo:
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
         mock_user = _make_mock_user()
-        mock_client.user_info.return_value = mock_user
+        mock_client.user_info_v1.return_value = mock_user
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
@@ -78,10 +78,13 @@ class TestGetOwnUserInfo:
         assert isinstance(result, PublicUserProfile)
 
     def test_calls_user_info_with_own_user_id(self):
-        """Must call user_info(client.user_id), not account_info()."""
+        """Must call user_info_v1(client.user_id) — the direct private-v1
+        endpoint — not user_info() which tries graphql first and retries 6x
+        on 401, and not account_info() which hits the legacy edit endpoint.
+        """
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.return_value = _make_mock_user()
+        mock_client.user_info_v1.return_value = _make_mock_user()
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
@@ -91,13 +94,14 @@ class TestGetOwnUserInfo:
         ):
             adapter.get_own_user_info(_ACCOUNT_ID)
 
-        mock_client.user_info.assert_called_once_with(_USER_PK)
+        mock_client.user_info_v1.assert_called_once_with(_USER_PK)
+        mock_client.user_info.assert_not_called()
         mock_client.account_info.assert_not_called()
 
     def test_follower_count_is_populated(self):
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.return_value = _make_mock_user(follower_count=4200)
+        mock_client.user_info_v1.return_value = _make_mock_user(follower_count=4200)
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
@@ -112,7 +116,7 @@ class TestGetOwnUserInfo:
     def test_following_count_is_populated(self):
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.return_value = _make_mock_user(following_count=310)
+        mock_client.user_info_v1.return_value = _make_mock_user(following_count=310)
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
@@ -127,7 +131,7 @@ class TestGetOwnUserInfo:
     def test_media_count_is_populated(self):
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.return_value = _make_mock_user(media_count=87)
+        mock_client.user_info_v1.return_value = _make_mock_user(media_count=87)
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
@@ -143,7 +147,7 @@ class TestGetOwnUserInfo:
         """A zero count must map to 0 (int), not None."""
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.return_value = _make_mock_user(
+        mock_client.user_info_v1.return_value = _make_mock_user(
             follower_count=0, following_count=0, media_count=0
         )
 
@@ -164,7 +168,7 @@ class TestGetOwnUserInfo:
 
         mock_client = MagicMock()
         mock_client.user_id = _USER_PK
-        mock_client.user_info.side_effect = Exception("network error")
+        mock_client.user_info_v1.side_effect = Exception("network error")
 
         adapter = InstagramIdentityReaderAdapter(MagicMock())
 
