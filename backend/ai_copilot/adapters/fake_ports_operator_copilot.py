@@ -108,7 +108,12 @@ class FakeLLMGateway(LLMGatewayPort):
 
         self.call_log.append({
             "messages": messages,
-            "kwargs": {"provider": provider, "model": model},
+            "kwargs": {
+                "provider": provider,
+                "model": model,
+                "api_key": api_key,
+                "provider_base_url": provider_base_url,
+            },
             "response": response,
         })
 

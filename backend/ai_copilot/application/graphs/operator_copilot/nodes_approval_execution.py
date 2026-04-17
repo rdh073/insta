@@ -311,7 +311,14 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
         return {"review_findings": findings}
 
     async def summarize_result_node(self, state: OperatorCopilotState) -> dict:
-        """Produce the final response for the operator."""
+        """Produce the final response for the operator.
+
+        Provider routing is state-driven: the summarize LLM call must target
+        the provider/model/credentials the operator selected for this thread
+        (read from ``state.provider``/``model``/``api_key``/``provider_base_url``
+        via ``_llm_request_kwargs``). Do not re-introduce a node-local default
+        — that would silently route Ollama-configured threads to OpenAI.
+        """
         existing = state.get("final_response")
         stop_reason = state.get("stop_reason")
         if existing and stop_reason in ("blocked", "rejected", "responded"):
@@ -336,10 +343,11 @@ class OperatorCopilotApprovalExecutionNodes(OperatorCopilotPlanPolicyNodes):
             },
         ]
 
+        llm_kwargs = self._llm_request_kwargs(state)
         try:
             response = await self.llm_gateway.request_completion(
                 messages=messages,
-                **self._llm_request_kwargs(state),
+                **llm_kwargs,
             )
             final_response = response.get("content", "")
         except Exception as exc:

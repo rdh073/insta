@@ -882,6 +882,89 @@ async def test_review_results_valid_json_reviewer_output_no_parse_error():
 
 
 # ===========================================================================
+# summarize_result_node provider routing tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_summarize_routes_to_state_provider_ollama():
+    """A thread configured with Ollama must route its summarize LLM call to
+    Ollama, not a silent OpenAI default. Regression guard for the pre-
+    2026-04-17 bug where summarize ignored the thread's selected provider."""
+    llm = FakeLLMGateway(responses=["Summary text"])
+    nodes = _make_nodes(llm=llm)
+    state = _base_state(
+        provider="ollama",
+        model="llama3.2:3b",
+        api_key=None,
+        provider_base_url="http://localhost:11434/v1",
+        tool_results={"c1": {"accounts": []}},
+        execution_plan=[{"step": 1, "tool": "list_accounts"}],
+        review_findings={"matched_intent": True, "warnings": [], "recommendation": "proceed_to_summary"},
+    )
+
+    await nodes.summarize_result_node(state)
+
+    assert llm.call_count == 1
+    kwargs = llm.call_log[-1]["kwargs"]
+    assert kwargs["provider"] == "ollama"
+    assert kwargs["model"] == "llama3.2:3b"
+    assert kwargs["provider_base_url"] == "http://localhost:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_summarize_routes_to_state_provider_openai():
+    """A thread configured with OpenAI must route its summarize call to OpenAI."""
+    llm = FakeLLMGateway(responses=["Summary text"])
+    nodes = _make_nodes(llm=llm)
+    state = _base_state(
+        provider="openai",
+        model="gpt-4o-mini",
+        api_key="sk-test",
+        tool_results={"c1": {"accounts": []}},
+    )
+
+    await nodes.summarize_result_node(state)
+
+    kwargs = llm.call_log[-1]["kwargs"]
+    assert kwargs["provider"] == "openai"
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-test"
+
+
+@pytest.mark.asyncio
+async def test_summarize_does_not_fall_back_when_state_provider_is_set():
+    """Even when api_key/base_url are unset, a set state.provider must be
+    honored — summarize must not silently default to 'openai'."""
+    llm = FakeLLMGateway(responses=["ok"])
+    nodes = _make_nodes(llm=llm)
+    state = _base_state(provider="gemini", tool_results={"c1": {}})
+
+    await nodes.summarize_result_node(state)
+
+    assert llm.call_log[-1]["kwargs"]["provider"] == "gemini"
+
+
+@pytest.mark.asyncio
+async def test_summarize_skips_llm_call_when_final_response_already_set():
+    """If an earlier gate (block/reject/responded) set final_response, summarize
+    must short-circuit and NOT call the LLM at all — so provider routing is
+    moot on those paths."""
+    llm = FakeLLMGateway(responses=["should not be called"])
+    nodes = _make_nodes(llm=llm)
+    state = _base_state(
+        provider="ollama",
+        final_response="Action cancelled by operator.",
+        stop_reason="rejected",
+    )
+
+    result = await nodes.summarize_result_node(state)
+
+    assert llm.call_count == 0
+    assert result["final_response"] == "Action cancelled by operator."
+
+
+# ===========================================================================
 # finish_node tests
 # ===========================================================================
 

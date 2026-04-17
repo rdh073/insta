@@ -48,7 +48,15 @@ class OperatorCopilotPlanPolicyNodes:
 
     @staticmethod
     def _llm_request_kwargs(state: OperatorCopilotState) -> dict:
-        """Build provider overrides for LLM calls from persisted thread state."""
+        """Build provider overrides for LLM calls from persisted thread state.
+
+        State is the authoritative source for provider routing — every LLM
+        call in the operator copilot graph (classify, plan, review, summarize)
+        MUST resolve its provider/model/api_key/base_url through this helper,
+        never via a node-local default. The ``"openai"`` fallback only kicks
+        in when ``state.provider`` is falsy (legacy threads seeded without
+        a provider).
+        """
         provider = state.get("provider") or "openai"
         model = state.get("model") or None
         api_key = state.get("api_key") or None
