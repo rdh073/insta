@@ -90,6 +90,51 @@ def test_sqlalchemy_uow_calls_session_lifecycle(tmp_path: Path):
     assert uow.rollback_calls == 0
 
 
+def test_sqlalchemy_uow_shared_across_concurrent_threads(tmp_path: Path):
+    """One shared UoW instance used by many concurrent threads must not
+    leak a session Token from one thread's context into another thread's
+    ContextVar.reset() call.
+
+    Regression for the
+        "Invalid request: <Token var=<ContextVar name='sqlalchemy_persistence_session'...>"
+    error surfaced to the operator when two relogin requests ran in
+    parallel via asyncio.to_thread() and the shared UoW instance
+    overwrote its _session_token attribute between begin() and commit().
+    """
+    import threading
+
+    store = SqlitePersistenceStore(tmp_path / "uow-concurrent.sqlite3")
+    uow = SqlAlchemyPersistenceUoW(store)
+
+    # Barrier forces both threads to hold an active session at the same
+    # moment, so the second begin() happens BEFORE the first commit().
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def _worker():
+        try:
+            with uow:
+                # Both workers are now inside `with uow:` simultaneously.
+                barrier.wait(timeout=5.0)
+                # Each worker's own ContextVar context must carry its own
+                # Token. If the UoW shared state, the later __exit__ would
+                # call reset() with the wrong Token and raise ValueError.
+                assert store.get_active_session() is not None
+        except Exception as exc:  # pragma: no cover — test fails if hit
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_worker)
+    t2 = threading.Thread(target=_worker)
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not errors, f"unexpected error from concurrent UoW use: {errors!r}"
+    # Both threads completed their own begin+commit cycles.
+    assert store.get_active_session() is None
+
+
 def test_build_persistence_adapters_switches_to_sqlite(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("PERSISTENCE_BACKEND", "sqlite")
     monkeypatch.setenv("PERSISTENCE_SQLITE_PATH", str(tmp_path / "runtime.sqlite3"))
