@@ -25,6 +25,7 @@ import type { Account } from '../types';
 import {
   AccountDetail,
   AccountRow,
+  AccountSecurityCard,
   AddAccountModal,
   BulkProxyModal,
   ImportModal,
@@ -416,18 +417,26 @@ export function AccountsPage() {
           </div>
 
           {/* ── Right column: detail panel ──────────────── */}
-          <div className="hidden lg:block">
+          <div className="hidden space-y-5 lg:block">
             {focusedAccount ? (
-              <AccountDetail
-                key={focusedAccount.id}
-                account={focusedAccount}
-                onSetupTOTP={(id) => {
-                  setTOTPAccountId(id);
-                  setShowTOTPSetup(true);
-                }}
-                rateLimitInfo={rateLimitMap.get(focusedAccount.id)}
-                onClearRateLimit={handleClearRateLimit}
-              />
+              <>
+                <AccountDetail
+                  key={focusedAccount.id}
+                  account={focusedAccount}
+                  onSetupTOTP={(id) => {
+                    setTOTPAccountId(id);
+                    setShowTOTPSetup(true);
+                  }}
+                  rateLimitInfo={rateLimitMap.get(focusedAccount.id)}
+                  onClearRateLimit={handleClearRateLimit}
+                />
+                {focusedAccount.status === 'active' && (
+                  <AccountSecurityCard
+                    key={`security-${focusedAccount.id}`}
+                    accountId={focusedAccount.id}
+                  />
+                )}
+              </>
             ) : (
               <Card className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-[1.2rem] border border-[rgba(162,179,229,0.12)] bg-[rgba(255,255,255,0.04)]">
@@ -442,7 +451,7 @@ export function AccountsPage() {
 
       {/* Mobile detail: show below list when active */}
       {focusedAccount && (
-        <div className="lg:hidden pb-24">
+        <div className="space-y-5 pb-24 lg:hidden">
           <AccountDetail
             key={focusedAccount.id}
             account={focusedAccount}
@@ -453,6 +462,12 @@ export function AccountsPage() {
             rateLimitInfo={rateLimitMap.get(focusedAccount.id)}
             onClearRateLimit={handleClearRateLimit}
           />
+          {focusedAccount.status === 'active' && (
+            <AccountSecurityCard
+              key={`security-mobile-${focusedAccount.id}`}
+              accountId={focusedAccount.id}
+            />
+          )}
         </div>
       )}
 

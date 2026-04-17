@@ -14,6 +14,30 @@ export interface LogoutResult {
   server_logout?: ServerLogoutStatus | null;
 }
 
+export interface AccountConfirmationRequest {
+  accountId: string;
+  channel: 'email' | 'phone';
+  target: string;
+  sent: boolean;
+  message: string | null;
+  extra: Record<string, unknown>;
+}
+
+export interface AccountSecurityInfo {
+  accountId: string;
+  twoFactorEnabled: boolean | null;
+  totpTwoFactorEnabled: boolean | null;
+  smsTwoFactorEnabled: boolean | null;
+  whatsappTwoFactorEnabled: boolean | null;
+  backupCodesAvailable: boolean | null;
+  trustedDevicesCount: number | null;
+  isPhoneConfirmed: boolean | null;
+  isEligibleForWhatsapp: boolean | null;
+  nationalNumber: string | null;
+  countryCode: string | null;
+  extra: Record<string, unknown>;
+}
+
 export const accountsApi = {
   list: () => api.get<Account[]>('/accounts').then((r) => r.data),
   bulkHydrateProfiles: () => api.post<{ queued: number }>('/accounts/bulk/hydrate-profiles').then((r) => r.data),
@@ -88,4 +112,17 @@ export const accountsApi = {
     api.get<{ username: string; password: string; totpSecret: string }>(
       `/accounts/${id}/credentials`
     ).then((r) => r.data),
+
+  requestEmailConfirm: (id: string, email: string) =>
+    api
+      .post<AccountConfirmationRequest>(`/accounts/${id}/confirm-email`, { email })
+      .then((r) => r.data),
+
+  requestPhoneConfirm: (id: string, phone: string) =>
+    api
+      .post<AccountConfirmationRequest>(`/accounts/${id}/confirm-phone`, { phone })
+      .then((r) => r.data),
+
+  getAccountSecurityInfo: (id: string) =>
+    api.get<AccountSecurityInfo>(`/accounts/${id}/security-info`).then((r) => r.data),
 };

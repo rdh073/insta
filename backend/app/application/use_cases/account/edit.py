@@ -8,10 +8,14 @@ delegating to the InstagramAccountWriter port.
 from __future__ import annotations
 
 import os
+import re
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
-from app.application.dto.instagram_account_dto import AccountProfile
+from app.application.dto.instagram_account_dto import (
+    AccountConfirmationRequest,
+    AccountProfile,
+)
 
 if TYPE_CHECKING:
     from app.application.ports.instagram_account_writer import InstagramAccountWriter
@@ -19,6 +23,8 @@ if TYPE_CHECKING:
 
 
 _BIOGRAPHY_MAX_LEN = 150
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_RE = re.compile(r"^\+?[0-9][0-9\-\s]{5,}$")
 
 
 class AccountEditUseCases:
@@ -106,3 +112,35 @@ class AccountEditUseCases:
         if not isinstance(disabled, bool):
             raise ValueError(f"disabled must be a bool, got {type(disabled).__name__}")
         return self.account_writer.set_presence_disabled(account_id, disabled)
+
+    # ── Contact confirmation ─────────────────────────────────────────────────
+    def request_email_confirm(
+        self, account_id: str, email: str
+    ) -> AccountConfirmationRequest:
+        """Ask Instagram to deliver a code to ``email``.
+
+        The operator must submit the received code in a separate step (not yet
+        wired — tracked alongside the second-step confirmation token work).
+        """
+        self._require_authenticated(account_id)
+        if not isinstance(email, str):
+            raise ValueError("email must be a string")
+        normalized = email.strip()
+        if not _EMAIL_RE.match(normalized):
+            raise ValueError(f"email is not a valid address: {email!r}")
+        return self.account_writer.request_email_confirm(account_id, normalized)
+
+    def request_phone_confirm(
+        self, account_id: str, phone: str
+    ) -> AccountConfirmationRequest:
+        """Ask Instagram to deliver a code to ``phone``.
+
+        Accepts E.164 (``+1555...``) or national formats with digits/dashes.
+        """
+        self._require_authenticated(account_id)
+        if not isinstance(phone, str):
+            raise ValueError("phone must be a string")
+        normalized = phone.strip()
+        if not _PHONE_RE.match(normalized):
+            raise ValueError(f"phone is not a valid phone number: {phone!r}")
+        return self.account_writer.request_phone_confirm(account_id, normalized)

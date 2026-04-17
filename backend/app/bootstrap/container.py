@@ -21,6 +21,7 @@ from app.application.use_cases.account import AccountUseCases
 from app.application.use_cases.account.challenge import ChallengeUseCases
 from app.application.use_cases.account.edit import AccountEditUseCases
 from app.application.use_cases.account.relogin import ReloginUseCases
+from app.application.use_cases.account.security import AccountSecurityUseCases
 from app.application.use_cases.account_auth import AccountAuthUseCases
 from app.application.use_cases.account_connectivity import AccountConnectivityUseCases
 from app.application.use_cases.account_profile import AccountProfileUseCases
@@ -90,6 +91,9 @@ from app.adapters.instagram.relationship_writer import (
 from app.adapters.instagram.media_writer import InstagramMediaWriterAdapter
 
 from app.adapters.instagram.account_writer import InstagramAccountWriterAdapter
+from app.adapters.instagram.account_security_reader import (
+    InstagramAccountSecurityReaderAdapter,
+)
 
 from app.adapters.instagram.media_reader import InstagramMediaReaderAdapter
 
@@ -149,6 +153,7 @@ def _build_instagram_adapters(client_repo):
         "totp": TOTPAdapter(),
         "identity_reader": InstagramIdentityReaderAdapter(client_repo),
         "account_writer": InstagramAccountWriterAdapter(client_repo),
+        "account_security_reader": InstagramAccountSecurityReaderAdapter(client_repo),
         "relationship_reader": InstagramRelationshipReaderAdapter(client_repo),
         "relationship_writer": InstagramRelationshipWriterAdapter(client_repo),
         "media_reader": InstagramMediaReaderAdapter(client_repo),
@@ -178,7 +183,13 @@ def _build_account_usecases(
 ):
     """Build all account-related use case instances."""
     account_repo, client_repo, status_repo, uow = repos
-    instagram, totp, identity_reader, account_writer = ig
+    (
+        instagram,
+        totp,
+        identity_reader,
+        account_writer,
+        account_security_reader,
+    ) = ig
     activity_log, proxy_checker = infra
 
     relogin = ReloginUseCases(
@@ -273,6 +284,11 @@ def _build_account_usecases(
         client_repo=client_repo,
         account_writer=account_writer,
     )
+    security = AccountSecurityUseCases(
+        account_repo=account_repo,
+        client_repo=client_repo,
+        security_reader=account_security_reader,
+    )
     return {
         "legacy": legacy,
         "relogin": relogin,
@@ -283,6 +299,7 @@ def _build_account_usecases(
         "import": imp,
         "connectivity": connectivity,
         "edit": edit,
+        "security": security,
         "challenge": challenge,
     }
 
@@ -595,7 +612,13 @@ def create_services():
 
     acct = _build_account_usecases(
         repos=(account_repo, client_repo, status_repo, uow),
-        ig=(instagram, ig["totp"], ig["identity_reader"], ig["account_writer"]),
+        ig=(
+            instagram,
+            ig["totp"],
+            ig["identity_reader"],
+            ig["account_writer"],
+            ig["account_security_reader"],
+        ),
         infra=(activity_log, proxy_checker),
         verify_session_on_restore=verify_session_on_restore,
         challenge_resolver=challenge_resolver,
@@ -658,6 +681,7 @@ def create_services():
         "account_import": acct["import"],
         "account_connectivity": acct["connectivity"],
         "account_edit": acct["edit"],
+        "account_security": acct["security"],
         "account_challenge": acct["challenge"],
         "challenge_resolver": challenge_resolver,
         "postjobs": postjob_usecases,

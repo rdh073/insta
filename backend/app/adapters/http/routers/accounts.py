@@ -34,6 +34,7 @@ from app.adapters.http.dependencies import (
     get_account_edit_usecases,
     get_account_profile_usecases,
     get_account_proxy_usecases,
+    get_account_security_usecases,
     get_account_totp_usecases,
     get_account_import_usecases,
     get_account_repo,
@@ -816,6 +817,106 @@ def set_account_presence(
     try:
         profile = usecases.set_presence_disabled(account_id, body.disabled)
         return _serialize_account_profile(profile)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+class _ConfirmEmailRequest(BaseModel):
+    email: str
+
+
+class _ConfirmPhoneRequest(BaseModel):
+    phone: str
+
+
+def _serialize_confirmation(req) -> dict:
+    return {
+        "accountId": req.account_id,
+        "channel": req.channel,
+        "target": req.target,
+        "sent": req.sent,
+        "message": req.message,
+        "extra": req.extra,
+    }
+
+
+def _serialize_security_info(info) -> dict:
+    return {
+        "accountId": info.account_id,
+        "twoFactorEnabled": info.two_factor_enabled,
+        "totpTwoFactorEnabled": info.totp_two_factor_enabled,
+        "smsTwoFactorEnabled": info.sms_two_factor_enabled,
+        "whatsappTwoFactorEnabled": info.whatsapp_two_factor_enabled,
+        "backupCodesAvailable": info.backup_codes_available,
+        "trustedDevicesCount": info.trusted_devices_count,
+        "isPhoneConfirmed": info.is_phone_confirmed,
+        "isEligibleForWhatsapp": info.is_eligible_for_whatsapp,
+        "nationalNumber": info.national_number,
+        "countryCode": info.country_code,
+        "extra": info.extra,
+    }
+
+
+@router.post("/{account_id}/confirm-email")
+def request_confirm_email(
+    account_id: str,
+    body: _ConfirmEmailRequest,
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Ask Instagram to deliver a confirmation code to ``email``.
+
+    Pairs with a prior ``PATCH /profile`` that set the new email — this call
+    triggers the verification step the vendor requires before the change takes
+    effect.
+    """
+    try:
+        result = usecases.request_email_confirm(account_id, body.email)
+        return _serialize_confirmation(result)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post("/{account_id}/confirm-phone")
+def request_confirm_phone(
+    account_id: str,
+    body: _ConfirmPhoneRequest,
+    usecases=Depends(get_account_edit_usecases),
+):
+    """Ask Instagram to deliver a confirmation code to ``phone``."""
+    try:
+        result = usecases.request_phone_confirm(account_id, body.phone)
+        return _serialize_confirmation(result)
+    except ValueError as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        if status_code == 500:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as exc:
+        status_code, detail = _format_error_from_failure(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/{account_id}/security-info")
+def get_account_security_info(
+    account_id: str,
+    usecases=Depends(get_account_security_usecases),
+):
+    """Read the account's 2FA / trusted-device posture."""
+    try:
+        info = usecases.get_account_security_info(account_id)
+        return _serialize_security_info(info)
     except ValueError as exc:
         status_code, detail = _format_error_from_failure(exc)
         if status_code == 500:

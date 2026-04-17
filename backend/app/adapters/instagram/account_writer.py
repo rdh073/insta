@@ -1,22 +1,28 @@
 """
 Instagram account writer adapter.
 
-Maps self-account mutations (privacy, avatar, profile fields, presence)
-through instagrapi into the InstagramAccountWriter port. Vendor types are
-contained here — every method returns an AccountProfile DTO.
+Maps self-account mutations (privacy, avatar, profile fields, presence,
+email/phone confirm requests) through instagrapi into the
+InstagramAccountWriter port. Vendor types are contained here — every method
+returns an application DTO.
 """
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.application.dto.instagram_account_dto import AccountProfile
+from app.application.dto.instagram_account_dto import (
+    AccountConfirmationRequest,
+    AccountProfile,
+)
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import (
     attach_instagram_failure,
     translate_instagram_error,
 )
+
+_KNOWN_CONFIRM_KEYS = {"status", "message", "title", "body", "ok"}
 
 
 class InstagramAccountWriterAdapter:
@@ -117,6 +123,72 @@ class InstagramAccountWriterAdapter:
             ) from exc
         return self._map_account_to_profile(
             account, override_presence_disabled=disabled
+        )
+
+    # ── Confirmation requests ────────────────────────────────────────────────
+    def request_email_confirm(
+        self, account_id: str, email: str
+    ) -> AccountConfirmationRequest:
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            raw = client.send_confirm_email(email)
+        except Exception as exc:
+            failure = translate_instagram_error(
+                exc, operation="send_confirm_email", account_id=account_id
+            )
+            raise attach_instagram_failure(
+                ValueError(failure.user_message), failure
+            ) from exc
+        return self._map_confirmation_response(
+            account_id=account_id, channel="email", target=email, raw=raw
+        )
+
+    def request_phone_confirm(
+        self, account_id: str, phone: str
+    ) -> AccountConfirmationRequest:
+        client = get_guarded_client(self.client_repo, account_id)
+        try:
+            raw = client.send_confirm_phone_number(phone)
+        except Exception as exc:
+            failure = translate_instagram_error(
+                exc, operation="send_confirm_phone_number", account_id=account_id
+            )
+            raise attach_instagram_failure(
+                ValueError(failure.user_message), failure
+            ) from exc
+        return self._map_confirmation_response(
+            account_id=account_id, channel="phone", target=phone, raw=raw
+        )
+
+    @staticmethod
+    def _map_confirmation_response(
+        *,
+        account_id: str,
+        channel: str,
+        target: str,
+        raw: Any,
+    ) -> AccountConfirmationRequest:
+        """Normalize the vendor confirmation payload into a DTO.
+
+        instagrapi returns an arbitrary dict; we treat ``status == "ok"`` as
+        the positive signal (falling back to ``ok`` if the vendor shape
+        shifts) and stash the full payload in ``extra`` for UI surfacing.
+        """
+        payload: dict = raw if isinstance(raw, dict) else {}
+        status = payload.get("status")
+        if status is not None:
+            sent = str(status).lower() == "ok"
+        else:
+            sent = bool(payload.get("ok", False))
+        message = payload.get("message")
+        extra = {k: v for k, v in payload.items() if k not in _KNOWN_CONFIRM_KEYS}
+        return AccountConfirmationRequest(
+            account_id=account_id,
+            channel=channel,
+            target=target,
+            sent=sent,
+            message=str(message) if message is not None else None,
+            extra=extra,
         )
 
     # ── Mapping ───────────────────────────────────────────────────────────────

@@ -61,6 +61,12 @@ def get_account_edit_usecases():
     return services["account_edit"]
 
 
+def get_account_security_usecases():
+    """Get account security use cases (2FA / trusted-device posture read)."""
+    services = get_services()
+    return services["account_security"]
+
+
 def get_account_challenge_usecases():
     """Get challenge use cases (pending/submit/cancel)."""
     services = get_services()

@@ -1,13 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Account } from '../types';
+import type { AccountSecurityInfo } from '../api/accounts';
 
 type AccountWithLegacyError = Account & { error?: string };
 type AccountPatchWithLegacyError = Partial<Account> & { error?: string };
 
+export type PendingConfirmation = 'email' | 'phone';
+
 interface AccountStore {
   accounts: Account[];
   activeId: string | null;
+  securityInfo: Record<string, AccountSecurityInfo>;
+  pendingConfirmations: Record<string, Partial<Record<PendingConfirmation, string>>>;
   setAccounts: (accounts: Account[]) => void;
   upsertAccount: (account: Account) => void;
   patchAccount: (id: string, patch: Partial<Account>) => void;
@@ -19,6 +24,10 @@ interface AccountStore {
     lastError?: string,
     lastErrorCode?: string,
   ) => void;
+  setSecurityInfo: (id: string, info: AccountSecurityInfo) => void;
+  clearSecurityInfo: (id: string) => void;
+  markPendingConfirmation: (id: string, channel: PendingConfirmation, target: string) => void;
+  clearPendingConfirmation: (id: string, channel: PendingConfirmation) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,9 +91,10 @@ function toAccountOrNull(raw: unknown): Account | null {
 export function migratePersistedAccountsState(persistedState: unknown): {
   accounts: Account[];
   activeId: string | null;
+  pendingConfirmations: Record<string, Partial<Record<PendingConfirmation, string>>>;
 } {
   if (!isRecord(persistedState)) {
-    return { accounts: [], activeId: null };
+    return { accounts: [], activeId: null, pendingConfirmations: {} };
   }
 
   const rawAccounts = Array.isArray(persistedState.accounts) ? persistedState.accounts : [];
@@ -93,7 +103,18 @@ export function migratePersistedAccountsState(persistedState: unknown): {
   const activeId = typeof rawActiveId === 'string' ? rawActiveId : null;
   const validActiveId = activeId && accounts.some((account) => account.id === activeId) ? activeId : null;
 
-  return { accounts, activeId: validActiveId };
+  const pendingConfirmations: Record<string, Partial<Record<PendingConfirmation, string>>> = {};
+  if (isRecord(persistedState.pendingConfirmations)) {
+    for (const [id, entry] of Object.entries(persistedState.pendingConfirmations)) {
+      if (!isRecord(entry)) continue;
+      const slot: Partial<Record<PendingConfirmation, string>> = {};
+      if (typeof entry.email === 'string') slot.email = entry.email;
+      if (typeof entry.phone === 'string') slot.phone = entry.phone;
+      if (Object.keys(slot).length > 0) pendingConfirmations[id] = slot;
+    }
+  }
+
+  return { accounts, activeId: validActiveId, pendingConfirmations };
 }
 
 export const useAccountStore = create<AccountStore>()(
@@ -101,6 +122,8 @@ export const useAccountStore = create<AccountStore>()(
     (set) => ({
       accounts: [],
       activeId: null,
+      securityInfo: {},
+      pendingConfirmations: {},
 
       setAccounts: (accounts) => set({ accounts: accounts.map((account) => normalizeAccount(account)) }),
 
@@ -124,10 +147,16 @@ export const useAccountStore = create<AccountStore>()(
         })),
 
       removeAccount: (id) =>
-        set((s) => ({
-          accounts: s.accounts.filter((a) => a.id !== id),
-          activeId: s.activeId === id ? null : s.activeId,
-        })),
+        set((s) => {
+          const { [id]: _removedSecurity, ...remainingSecurity } = s.securityInfo;
+          const { [id]: _removedPending, ...remainingPending } = s.pendingConfirmations;
+          return {
+            accounts: s.accounts.filter((a) => a.id !== id),
+            activeId: s.activeId === id ? null : s.activeId,
+            securityInfo: remainingSecurity,
+            pendingConfirmations: remainingPending,
+          };
+        }),
 
       setActive: (id) => set({ activeId: id }),
 
@@ -137,11 +166,47 @@ export const useAccountStore = create<AccountStore>()(
             a.id === id ? { ...a, status, lastError, lastErrorCode } : a
           ),
         })),
+
+      setSecurityInfo: (id, info) =>
+        set((s) => ({ securityInfo: { ...s.securityInfo, [id]: info } })),
+
+      clearSecurityInfo: (id) =>
+        set((s) => {
+          const { [id]: _removed, ...rest } = s.securityInfo;
+          return { securityInfo: rest };
+        }),
+
+      markPendingConfirmation: (id, channel, target) =>
+        set((s) => ({
+          pendingConfirmations: {
+            ...s.pendingConfirmations,
+            [id]: { ...(s.pendingConfirmations[id] ?? {}), [channel]: target },
+          },
+        })),
+
+      clearPendingConfirmation: (id, channel) =>
+        set((s) => {
+          const current = s.pendingConfirmations[id];
+          if (!current || !(channel in current)) return s;
+          const { [channel]: _removed, ...rest } = current;
+          const nextEntry = Object.keys(rest).length > 0 ? rest : undefined;
+          const next = { ...s.pendingConfirmations };
+          if (nextEntry === undefined) {
+            delete next[id];
+          } else {
+            next[id] = nextEntry;
+          }
+          return { pendingConfirmations: next };
+        }),
     }),
     {
       name: 'insta-accounts',
       version: 2,
-      partialize: (s) => ({ accounts: s.accounts, activeId: s.activeId }),
+      partialize: (s) => ({
+        accounts: s.accounts,
+        activeId: s.activeId,
+        pendingConfirmations: s.pendingConfirmations,
+      }),
       migrate: (persistedState) => migratePersistedAccountsState(persistedState),
     }
   )

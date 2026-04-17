@@ -1,6 +1,7 @@
 export { AccountAvatar } from './AccountAvatar';
 export { AccountDetail } from './AccountDetail';
 export { AccountRow } from './AccountRow';
+export { AccountSecurityCard } from './AccountSecurityCard';
 export { AddAccountModal } from './AddAccountModal';
 export { BulkProxyModal } from './BulkProxyModal';
 export { CredentialsModal } from './CredentialsModal';
