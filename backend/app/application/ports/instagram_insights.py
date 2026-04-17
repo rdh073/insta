@@ -6,7 +6,10 @@ instagrapi's analytics dict payloads to application code.
 
 from typing import Protocol
 
-from app.application.dto.instagram_analytics_dto import MediaInsightSummary
+from app.application.dto.instagram_analytics_dto import (
+    AccountInsightSummary,
+    MediaInsightSummary,
+)
 
 
 class InstagramInsightReader(Protocol):
@@ -14,6 +17,24 @@ class InstagramInsightReader(Protocol):
 
     All methods are read-only and stateless.
     """
+
+    def get_account_insight(
+        self,
+        account_id: str,
+    ) -> AccountInsightSummary:
+        """Retrieve account-level insight metrics (profile dashboard).
+
+        Args:
+            account_id: The application account ID (for client lookup).
+
+        Returns:
+            AccountInsightSummary with profile-level metrics and any
+            additional vendor fields captured in extra_metrics.
+
+        Raises:
+            ValueError: If account not found or not authenticated.
+        """
+        ...
 
     def get_media_insight(
         self,

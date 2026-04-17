@@ -281,6 +281,9 @@ class ToolPolicyRegistry:
         "list_media_insights": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads analytics for multiple posts"
         ),
+        "get_account_insight": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads account-level dashboard analytics"
+        ),
         # ── Write-sensitive: social actions ──────────────────────────────────
         "follow_user": ToolClassification(
             ToolPolicy.WRITE_SENSITIVE, True, "modifies follow relationship"

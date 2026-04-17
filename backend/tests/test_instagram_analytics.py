@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import Mock
 
 from app.application.dto.instagram_analytics_dto import (
+    AccountInsightSummary,
     MediaInsightSummary,
     TrackSummary,
     TrackDetail,
@@ -315,6 +316,138 @@ class TestInsightReaderAdapter:
         assert insight.reach_count is None
         assert insight.impression_count is None
         assert insight.like_count is None
+        assert insight.extra_metrics == {}
+
+
+class TestAccountInsightReaderAdapter:
+    """Tests for the account-level insight adapter mapping."""
+
+    def _build_adapter(self, client):
+        repo = Mock()
+        repo.get.return_value = client
+        return InstagramInsightReaderAdapter(repo)
+
+    def test_get_account_insight_success_maps_flat_dict(self):
+        """Verify insights_account() flat dict maps to AccountInsightSummary."""
+        mock_client = Mock()
+        mock_client.insights_account.return_value = {
+            "followers_count": 10000,
+            "following_count": 500,
+            "media_count": 200,
+            "impressions_last_7_days": 15000,
+            "reach_last_7_days": 10000,
+            "profile_views_last_7_days": 320,
+            "website_clicks_last_7_days": 42,
+            "follower_change_last_7_days": 125,
+        }
+
+        adapter = self._build_adapter(mock_client)
+        result = adapter.get_account_insight("acc-123")
+
+        assert isinstance(result, AccountInsightSummary)
+        assert result.followers_count == 10000
+        assert result.following_count == 500
+        assert result.media_count == 200
+        assert result.impressions_last_7_days == 15000
+        assert result.reach_last_7_days == 10000
+        assert result.profile_views_last_7_days == 320
+        assert result.website_clicks_last_7_days == 42
+        assert result.follower_change_last_7_days == 125
+        assert result.extra_metrics == {}
+        # Vendor call must be exactly insights_account() with no args.
+        mock_client.insights_account.assert_called_once_with()
+
+    def test_get_account_insight_nested_account_insights_payload(self):
+        """Verify nested {"account_insights": {...}} shape is flattened."""
+        mock_client = Mock()
+        mock_client.insights_account.return_value = {
+            "account_insights": {
+                "followers_count": 3200,
+                "following_count": 180,
+                "media_count": 75,
+                "impressions_last_7_days": 5400,
+                "reach_last_7_days": 3100,
+            }
+        }
+
+        adapter = self._build_adapter(mock_client)
+        result = adapter.get_account_insight("acc-123")
+
+        assert result.followers_count == 3200
+        assert result.reach_last_7_days == 3100
+        assert result.media_count == 75
+
+    def test_get_account_insight_unknown_metrics_passthrough(self):
+        """Unknown vendor fields must land in extra_metrics, not be dropped."""
+        mock_client = Mock()
+        mock_client.insights_account.return_value = {
+            "followers_count": 1000,
+            "reach_last_7_days": 2000,
+            "engagement_rate_last_7_days": 0.045,
+            "story_taps_back": 12,
+            "content_interactions": "trending",
+        }
+
+        adapter = self._build_adapter(mock_client)
+        result = adapter.get_account_insight("acc-123")
+
+        assert result.followers_count == 1000
+        assert result.reach_last_7_days == 2000
+        assert result.extra_metrics["engagement_rate_last_7_days"] == 0.045
+        assert result.extra_metrics["story_taps_back"] == 12
+        assert result.extra_metrics["content_interactions"] == "trending"
+
+    def test_get_account_insight_aliases_followers_without_suffix(self):
+        """Verify adapter resolves legacy vendor aliases (follower_count, followers)."""
+        mock_client = Mock()
+        mock_client.insights_account.return_value = {
+            "follower_count": 777,
+            "following": 33,
+            "medias_count": 11,
+            "profile_views": 55,
+        }
+
+        adapter = self._build_adapter(mock_client)
+        result = adapter.get_account_insight("acc-123")
+
+        assert result.followers_count == 777
+        assert result.following_count == 33
+        assert result.media_count == 11
+        assert result.profile_views_last_7_days == 55
+
+    def test_get_account_insight_missing_client(self):
+        """Verify proper error when authenticated client is missing."""
+        mock_repo = Mock()
+        mock_repo.get.return_value = None
+        adapter = InstagramInsightReaderAdapter(mock_repo)
+
+        with pytest.raises(ValueError, match="not found or not authenticated"):
+            adapter.get_account_insight("acc-123")
+
+    def test_get_account_insight_api_error_translates_via_catalog(self):
+        """Verify vendor exception is translated via failure catalog."""
+        raw_msg = "Account is not business account"
+        mock_client = Mock()
+        mock_client.insights_account.side_effect = Exception(raw_msg)
+
+        adapter = self._build_adapter(mock_client)
+
+        with pytest.raises(ValueError) as err:
+            adapter.get_account_insight("acc-123")
+        assert str(err.value) == SPEC_CLIENT_UNKNOWN_ERROR.user_message
+        assert raw_msg not in str(err.value)
+
+    def test_account_insight_summary_frozen(self):
+        """Verify AccountInsightSummary is immutable."""
+        insight = AccountInsightSummary(followers_count=1)
+        with pytest.raises(AttributeError):
+            insight.followers_count = 2
+
+    def test_account_insight_summary_defaults(self):
+        """Verify AccountInsightSummary has sensible defaults."""
+        insight = AccountInsightSummary()
+        assert insight.followers_count is None
+        assert insight.reach_last_7_days is None
         assert insight.extra_metrics == {}
 
 

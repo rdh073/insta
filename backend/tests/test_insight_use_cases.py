@@ -21,7 +21,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.application.dto.instagram_analytics_dto import MediaInsightSummary
+from app.application.dto.instagram_analytics_dto import (
+    AccountInsightSummary,
+    MediaInsightSummary,
+)
 from app.application.use_cases.insight import InsightUseCases
 
 
@@ -74,6 +77,34 @@ class TestAccountPreconditions:
         uc, _ = _build_use_cases(account_exists=False)
         with pytest.raises(ValueError, match="not found"):
             uc.list_media_insights("no-such")
+
+    def test_get_account_insight_raises_if_account_missing(self):
+        uc, _ = _build_use_cases(account_exists=False)
+        with pytest.raises(ValueError, match="not found"):
+            uc.get_account_insight("no-such")
+
+    def test_get_account_insight_raises_if_not_authenticated(self):
+        uc, _ = _build_use_cases(client_exists=False)
+        with pytest.raises(ValueError, match="not authenticated"):
+            uc.get_account_insight("acc-1")
+
+    def test_get_account_insight_delegates_to_port(self):
+        uc, reader = _build_use_cases()
+        expected = AccountInsightSummary(followers_count=2500, reach_last_7_days=9000)
+        reader.get_account_insight.return_value = expected
+
+        result = uc.get_account_insight("acc-1")
+
+        assert result is expected
+        reader.get_account_insight.assert_called_once_with("acc-1")
+
+    def test_get_account_insight_does_not_call_port_when_missing_account(self):
+        uc, reader = _build_use_cases(account_exists=False)
+
+        with pytest.raises(ValueError):
+            uc.get_account_insight("acc-1")
+
+        reader.get_account_insight.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

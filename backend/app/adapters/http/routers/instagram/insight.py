@@ -7,9 +7,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.adapters.http.dependencies import get_insight_usecases
 from app.adapters.http.utils import format_error
 
-from .mappers import _to_insight
+from .mappers import _to_account_insight, _to_insight
 
 router = APIRouter()
+
+
+@router.get("/insight/{account_id}/account")
+def get_account_insight(
+    account_id: str,
+    usecases=Depends(get_insight_usecases),
+):
+    """Get account-level dashboard metrics via InsightUseCases."""
+    try:
+        insight = usecases.get_account_insight(account_id)
+        return _to_account_insight(insight)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Account insight failed")
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Account insight failed")
+        )
 
 
 @router.get("/insight/{account_id}/media/{media_pk}")

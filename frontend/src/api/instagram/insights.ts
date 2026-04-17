@@ -1,5 +1,9 @@
 import { api } from '../client';
-import type { MediaInsightSummary, MediaInsightListResult } from '../../types/instagram/insight';
+import type {
+  AccountInsightSummary,
+  MediaInsightListResult,
+  MediaInsightSummary,
+} from '../../types/instagram/insight';
 
 export type InsightPostType = 'ALL' | 'PHOTO' | 'VIDEO' | 'CAROUSEL';
 export type InsightTimeFrame = 'TWO_YEARS' | 'ONE_YEAR' | 'SIX_MONTHS' | 'MONTH' | 'WEEK';
@@ -13,6 +17,11 @@ export type InsightOrdering =
   | 'SAVE_COUNT';
 
 export const insightsApi = {
+  getAccountInsight: (accountId: string) =>
+    api
+      .get<AccountInsightSummary>(`/instagram/insight/${accountId}/account`)
+      .then((r) => r.data),
+
   getMediaInsight: (accountId: string, mediaPk: number) =>
     api
       .get<MediaInsightSummary>(`/instagram/insight/${accountId}/media/${mediaPk}`)

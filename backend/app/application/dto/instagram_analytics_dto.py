@@ -54,6 +54,48 @@ class MediaInsightSummary:
 
 
 @dataclass(frozen=True)
+class AccountInsightSummary:
+    """Account-level insight metrics.
+
+    Normalizes Instagram's account dashboard metrics (followers, reach,
+    impressions, profile activity) into stable internal fields. Unknown
+    vendor metrics are captured in extra_metrics instead of leaking raw dicts.
+    All metric counts are None if unavailable rather than 0.
+    """
+
+    followers_count: Optional[int] = None
+    """Total accounts following this profile."""
+
+    following_count: Optional[int] = None
+    """Total accounts this profile follows."""
+
+    media_count: Optional[int] = None
+    """Total media items published on this profile."""
+
+    impressions_last_7_days: Optional[int] = None
+    """Total impressions across the last 7 days."""
+
+    reach_last_7_days: Optional[int] = None
+    """Unique accounts reached in the last 7 days."""
+
+    profile_views_last_7_days: Optional[int] = None
+    """Profile views in the last 7 days."""
+
+    website_clicks_last_7_days: Optional[int] = None
+    """Website-link clicks in the last 7 days."""
+
+    follower_change_last_7_days: Optional[int] = None
+    """Net follower change (gained minus lost) in the last 7 days."""
+
+    extra_metrics: dict = field(default_factory=dict)
+    """Unmapped vendor metrics stored as key-value pairs.
+
+    Captures vendor-specific or newer Instagram metrics not yet modeled.
+    Keys are vendor field names, values can be int, float, str, or None.
+    """
+
+
+@dataclass(frozen=True)
 class TrackSummary:
     """Music track summary for search results and catalog lookups.
 

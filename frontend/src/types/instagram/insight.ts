@@ -14,3 +14,15 @@ export interface MediaInsightListResult {
   count: number;
   items: MediaInsightSummary[];
 }
+
+export interface AccountInsightSummary {
+  followersCount: number | null;
+  followingCount: number | null;
+  mediaCount: number | null;
+  impressionsLast7Days: number | null;
+  reachLast7Days: number | null;
+  profileViewsLast7Days: number | null;
+  websiteClicksLast7Days: number | null;
+  followerChangeLast7Days: number | null;
+  extraMetrics: Record<string, unknown>;
+}

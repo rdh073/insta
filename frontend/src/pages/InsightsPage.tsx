@@ -8,6 +8,7 @@ import type { MediaInsightSummary } from '../types/instagram/insight';
 import { Button } from '../components/ui/Button';
 import { useInsightsStore } from '../store/insights';
 import { cn } from '../lib/cn';
+import { AccountInsightCard } from '../features/analytics/components/AccountInsightCard';
 
 const POST_TYPES: InsightPostType[] = ['ALL', 'PHOTO', 'VIDEO', 'CAROUSEL'];
 const TIME_FRAMES: InsightTimeFrame[] = ['WEEK', 'MONTH', 'SIX_MONTHS', 'ONE_YEAR', 'TWO_YEARS'];
@@ -157,6 +158,13 @@ export function InsightsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Account-level dashboard (above media list) */}
+      {accountId && (
+        <div className="shrink-0 border-b border-[rgba(162,179,229,0.06)] px-5 py-3">
+          <AccountInsightCard accountId={accountId} />
+        </div>
+      )}
 
       {/* Aggregate totals */}
       {items.length > 0 && (

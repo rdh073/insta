@@ -1,13 +1,16 @@
 """Instagram insight reader adapter.
 
-Maps instagrapi insights_media() and insights_media_feed_all() dict payloads
-to stable MediaInsightSummary DTOs.
+Maps instagrapi insights_account(), insights_media(), and
+insights_media_feed_all() dict payloads to stable DTOs.
 Normalizes vendor metric names and captures unknown metrics separately.
 """
 
 from typing import Any, Optional
 
-from app.application.dto.instagram_analytics_dto import MediaInsightSummary
+from app.application.dto.instagram_analytics_dto import (
+    AccountInsightSummary,
+    MediaInsightSummary,
+)
 from app.application.ports.repositories import ClientRepository
 from app.adapters.instagram.client_guard import get_guarded_client
 from app.adapters.instagram.error_utils import translate_instagram_error
@@ -32,6 +35,38 @@ class InstagramInsightReaderAdapter:
     }
     _MEDIA_PK_KEYS = ("media_pk", "pk", "media_id", "id", "instagram_media_id")
 
+    _ACCOUNT_METRIC_ALIASES = {
+        "followers_count": ("followers_count", "follower_count", "followers"),
+        "following_count": ("following_count", "following"),
+        "media_count": ("media_count", "medias_count"),
+        "impressions_last_7_days": (
+            "impressions_last_7_days",
+            "impression_count",
+            "impressions",
+        ),
+        "reach_last_7_days": (
+            "reach_last_7_days",
+            "reach_count",
+            "reach",
+        ),
+        "profile_views_last_7_days": (
+            "profile_views_last_7_days",
+            "profile_views",
+            "profile_view_count",
+        ),
+        "website_clicks_last_7_days": (
+            "website_clicks_last_7_days",
+            "website_clicks",
+            "website_click_count",
+        ),
+        "follower_change_last_7_days": (
+            "follower_change_last_7_days",
+            "follower_count_change",
+            "follower_change",
+            "followers_delta",
+        ),
+    }
+
     def __init__(self, client_repo: ClientRepository):
         """Initialize insight reader.
 
@@ -39,6 +74,33 @@ class InstagramInsightReaderAdapter:
             client_repo: Repository for retrieving authenticated clients.
         """
         self.client_repo = client_repo
+
+    def get_account_insight(
+        self,
+        account_id: str,
+    ) -> AccountInsightSummary:
+        """Retrieve account-level insights (profile dashboard metrics).
+
+        Args:
+            account_id: The application account ID (for client lookup).
+
+        Returns:
+            AccountInsightSummary with normalized account metrics.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or API fails.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            insight_dict = client.insights_account()
+            return self._map_account_insight_to_summary(insight_dict)
+
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="get_account_insight", account_id=account_id
+            )
+            raise ValueError(failure.user_message)
 
     def get_media_insight(
         self,
@@ -272,6 +334,89 @@ class InstagramInsightReaderAdapter:
             if alias in insight_dict:
                 return insight_dict.get(alias)
         return None
+
+    @staticmethod
+    def _parse_account_metric(value: Any) -> Optional[int]:
+        """Coerce an account metric value to int when it is numerically sensible."""
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value) if value.is_integer() else None
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            try:
+                return int(raw)
+            except ValueError:
+                try:
+                    parsed = float(raw)
+                except ValueError:
+                    return None
+                return int(parsed) if parsed.is_integer() else None
+        return None
+
+    @classmethod
+    def _get_account_metric_value(
+        cls, insight_dict: dict[str, Any], metric_name: str
+    ) -> Optional[int]:
+        """Resolve an account metric value across alias keys."""
+        for alias in cls._ACCOUNT_METRIC_ALIASES[metric_name]:
+            if alias in insight_dict:
+                return cls._parse_account_metric(insight_dict[alias])
+        return None
+
+    @classmethod
+    def _map_account_insight_to_summary(
+        cls,
+        insight_dict: Any,
+    ) -> AccountInsightSummary:
+        """Map vendor account insight dict to AccountInsightSummary DTO."""
+        if not isinstance(insight_dict, dict):
+            return AccountInsightSummary()
+
+        flat = cls._flatten_metric_containers(insight_dict)
+        inner = flat.get("account_insights")
+        if isinstance(inner, dict):
+            # Common shape: {"account_insights": {...}}. Flatten the inner
+            # payload too (covers nested metrics containers from vendor).
+            merged = dict(flat)
+            merged.pop("account_insights", None)
+            for key, value in cls._flatten_metric_containers(inner).items():
+                if key not in merged:
+                    merged[key] = value
+            flat = merged
+
+        known_fields: set[str] = set()
+        for aliases in cls._ACCOUNT_METRIC_ALIASES.values():
+            known_fields.update(aliases)
+
+        extra_metrics: dict[str, Any] = {}
+        for key, value in flat.items():
+            if key not in known_fields:
+                extra_metrics[key] = value
+
+        return AccountInsightSummary(
+            followers_count=cls._get_account_metric_value(flat, "followers_count"),
+            following_count=cls._get_account_metric_value(flat, "following_count"),
+            media_count=cls._get_account_metric_value(flat, "media_count"),
+            impressions_last_7_days=cls._get_account_metric_value(
+                flat, "impressions_last_7_days"
+            ),
+            reach_last_7_days=cls._get_account_metric_value(flat, "reach_last_7_days"),
+            profile_views_last_7_days=cls._get_account_metric_value(
+                flat, "profile_views_last_7_days"
+            ),
+            website_clicks_last_7_days=cls._get_account_metric_value(
+                flat, "website_clicks_last_7_days"
+            ),
+            follower_change_last_7_days=cls._get_account_metric_value(
+                flat, "follower_change_last_7_days"
+            ),
+            extra_metrics=extra_metrics,
+        )
 
     @staticmethod
     def _map_insight_to_summary(

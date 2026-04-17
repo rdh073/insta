@@ -229,3 +229,17 @@ def _to_insight(i) -> dict:
         "videoViewCount": i.video_view_count,
         "extraMetrics": i.extra_metrics,
     }
+
+
+def _to_account_insight(i) -> dict:
+    return {
+        "followersCount": i.followers_count,
+        "followingCount": i.following_count,
+        "mediaCount": i.media_count,
+        "impressionsLast7Days": i.impressions_last_7_days,
+        "reachLast7Days": i.reach_last_7_days,
+        "profileViewsLast7Days": i.profile_views_last_7_days,
+        "websiteClicksLast7Days": i.website_clicks_last_7_days,
+        "followerChangeLast7Days": i.follower_change_last_7_days,
+        "extraMetrics": i.extra_metrics,
+    }

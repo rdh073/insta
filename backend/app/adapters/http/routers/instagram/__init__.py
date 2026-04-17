@@ -66,7 +66,12 @@ from .identity import (
     get_public_user_by_username,
     router as identity_router,
 )
-from .insight import get_media_insight, list_media_insights, router as insight_router
+from .insight import (
+    get_account_insight,
+    get_media_insight,
+    list_media_insights,
+    router as insight_router,
+)
 from .mappers import (
     _to_comment,
     _to_comment_receipt,
@@ -80,6 +85,7 @@ from .mappers import (
     _to_highlight_detail,
     _to_highlight_receipt,
     _to_highlight_summary,
+    _to_account_insight,
     _to_insight,
     _to_media,
     _to_media_receipt,
@@ -194,6 +200,7 @@ __all__ = [
     "list_collections",
     "get_collection_posts",
     "list_liked_medias",
+    "get_account_insight",
     "get_media_insight",
     "list_media_insights",
     "create_comment",
@@ -237,4 +244,5 @@ __all__ = [
     "_to_highlight_detail",
     "_to_highlight_receipt",
     "_to_insight",
+    "_to_account_insight",
 ]

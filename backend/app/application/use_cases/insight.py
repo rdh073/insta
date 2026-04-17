@@ -13,7 +13,10 @@ Filter normalization policy (owned here, not in router):
 
 from __future__ import annotations
 
-from app.application.dto.instagram_analytics_dto import MediaInsightSummary
+from app.application.dto.instagram_analytics_dto import (
+    AccountInsightSummary,
+    MediaInsightSummary,
+)
 from app.application.ports.instagram_insights import InstagramInsightReader
 from app.application.ports.repositories import AccountRepository, ClientRepository
 
@@ -144,6 +147,21 @@ class InsightUseCases:
     # -------------------------------------------------------------------------
     # Read operations
     # -------------------------------------------------------------------------
+
+    def get_account_insight(self, account_id: str) -> AccountInsightSummary:
+        """Retrieve account-level analytics (profile dashboard).
+
+        Args:
+            account_id: Application account ID.
+
+        Returns:
+            AccountInsightSummary with normalized account metrics.
+
+        Raises:
+            ValueError: If account not found or not authenticated.
+        """
+        self._require_authenticated(account_id)
+        return self.insight_reader.get_account_insight(account_id)
 
     def get_media_insight(
         self,

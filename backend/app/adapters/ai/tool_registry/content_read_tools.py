@@ -118,6 +118,20 @@ def _insight_to_dict(insight) -> dict:
     }
 
 
+def _account_insight_to_dict(insight) -> dict:
+    return {
+        "followers_count": insight.followers_count,
+        "following_count": insight.following_count,
+        "media_count": insight.media_count,
+        "impressions_last_7_days": insight.impressions_last_7_days,
+        "reach_last_7_days": insight.reach_last_7_days,
+        "profile_views_last_7_days": insight.profile_views_last_7_days,
+        "website_clicks_last_7_days": insight.website_clicks_last_7_days,
+        "follower_change_last_7_days": insight.follower_change_last_7_days,
+        "extra_metrics": insight.extra_metrics,
+    }
+
+
 def _media_oembed_to_dict(oembed) -> dict:
     return {
         "media_id": oembed.media_id,
@@ -797,6 +811,18 @@ def register_insight_read_tools(registry: ToolRegistry, context: "ToolBuilderCon
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
 
+    def get_account_insight_handler(args: dict) -> dict:
+        if context.insight_use_cases is None:
+            return {"error": "Insight use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            insight = context.insight_use_cases.get_account_insight(account_id)
+            return _account_insight_to_dict(insight)
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
     def list_media_insights_handler(args: dict) -> dict:
         if context.insight_use_cases is None:
             return {"error": "Insight use cases not available"}
@@ -832,6 +858,22 @@ def register_insight_read_tools(registry: ToolRegistry, context: "ToolBuilderCon
                 "media_pk": {"type": "integer", "description": "Numeric post ID"},
             },
             required=["username", "media_pk"],
+        ),
+    )
+
+    registry.register(
+        "get_account_insight",
+        get_account_insight_handler,
+        schema(
+            "get_account_insight",
+            "Get account-level dashboard analytics: followers, reach/impressions last 7 days, profile views, website clicks, follower change.",
+            properties={
+                "username": {
+                    "type": "string",
+                    "description": "Authenticated account username",
+                },
+            },
+            required=["username"],
         ),
     )
 
