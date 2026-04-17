@@ -28,10 +28,11 @@ import { MediaActionsMenu } from '../features/media/MediaActionsMenu';
 import { MediaLikersPanel } from '../features/media/MediaLikersPanel';
 import { UserClipsGrid } from '../features/media/UserClipsGrid';
 import { UserTaggedGrid } from '../features/media/UserTaggedGrid';
+import { LikedMediasTab } from '../features/collections/LikedMediasTab';
 import { cn } from '../lib/cn';
 
 type DrawerTab = 'detail' | 'comments' | 'likers';
-type FeedTab = 'posts' | 'clips' | 'tagged';
+type FeedTab = 'posts' | 'clips' | 'tagged' | 'liked';
 
 const MEDIA_TYPE_LABEL: Record<number, string> = { 1: 'Photo', 2: 'Video', 8: 'Album' };
 
@@ -449,9 +450,9 @@ export function MediaPage() {
         {/* Grid */}
         <div className="flex-1 overflow-y-auto p-5">
           {/* Feed tab switcher */}
-          {resolvedUserId && (
+          {accountId && (
             <div className="mb-4 flex items-center gap-1 rounded-xl border border-[rgba(162,179,229,0.10)] bg-[rgba(255,255,255,0.02)] p-1">
-              {(['posts', 'clips', 'tagged'] as FeedTab[]).map((t) => (
+              {(['posts', 'clips', 'tagged', 'liked'] as FeedTab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -466,6 +467,7 @@ export function MediaPage() {
                   {t === 'posts' && <Image className="h-3 w-3" />}
                   {t === 'clips' && <Film className="h-3 w-3" />}
                   {t === 'tagged' && <AtSign className="h-3 w-3" />}
+                  {t === 'liked' && <Heart className="h-3 w-3" />}
                   {t}
                 </button>
               ))}
@@ -511,6 +513,14 @@ export function MediaPage() {
             <UserTaggedGrid
               accountId={accountId}
               userId={resolvedUserId}
+              selectedPk={selectedMedia?.pk ?? null}
+              onSelect={(m) => { setSelected(m); setDrawerTab('detail'); }}
+            />
+          )}
+
+          {feedTab === 'liked' && (
+            <LikedMediasTab
+              accountId={accountId}
               selectedPk={selectedMedia?.pk ?? null}
               onSelect={(m) => { setSelected(m); setDrawerTab('detail'); }}
             />

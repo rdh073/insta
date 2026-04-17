@@ -139,6 +139,42 @@ class InstagramCollectionReaderAdapter:
             )
             raise ValueError(failure.user_message)
 
+    def list_liked_medias(
+        self,
+        account_id: str,
+        amount: int = 21,
+        last_media_pk: int = 0,
+    ) -> list[MediaSummary]:
+        """
+        List posts the authenticated account has liked.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            amount: Number of posts to retrieve (default 21).
+            last_media_pk: Pagination cursor; 0 starts from beginning.
+
+        Returns:
+            List of MediaSummary.
+
+        Raises:
+            ValueError: If account not found or client not authenticated.
+        """
+        client = get_guarded_client(self.client_repo, account_id)
+
+        try:
+            medias = client.liked_medias(amount=amount, last_media_pk=last_media_pk)
+
+            return [
+                InstagramMediaReaderAdapter._map_media_to_summary(media)
+                for media in medias
+            ]
+
+        except Exception as e:
+            failure = translate_instagram_error(
+                e, operation="list_liked_medias", account_id=account_id
+            )
+            raise ValueError(failure.user_message)
+
     @staticmethod
     def _map_collection_to_summary(collection: Any) -> CollectionSummary:
         """

@@ -14,6 +14,7 @@ from .capabilities import get_instagram_capabilities, router as capabilities_rou
 from .collection import (
     get_collection_posts,
     list_collections,
+    list_liked_medias,
     router as collection_router,
 )
 from .comment import (
@@ -192,6 +193,7 @@ __all__ = [
     "delete_highlight",
     "list_collections",
     "get_collection_posts",
+    "list_liked_medias",
     "get_media_insight",
     "list_media_insights",
     "create_comment",

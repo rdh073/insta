@@ -479,6 +479,58 @@ class TestCollectionReaderAdapter:
         with pytest.raises(ValueError, match="not found or not authenticated"):
             adapter.get_collection_posts("acc-123", 999)
 
+        with pytest.raises(ValueError, match="not found or not authenticated"):
+            adapter.list_liked_medias("acc-123")
+
+    def test_list_liked_medias(self):
+        """Verify liked_medias returns MediaSummary list with exact kwargs."""
+        mock_client = Mock()
+        mock_media = [
+            self._create_mock_media(pk=300, caption_text="Liked 1"),
+            self._create_mock_media(pk=301, caption_text="Liked 2"),
+        ]
+        mock_client.liked_medias.return_value = mock_media
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramCollectionReaderAdapter(mock_repo)
+        results = adapter.list_liked_medias("acc-123", amount=10)
+
+        assert len(results) == 2
+        assert all(isinstance(r, MediaSummary) for r in results)
+        assert results[0].pk == 300
+        # Verify exact vendor method name + kwargs per instagrapi docs
+        mock_client.liked_medias.assert_called_once_with(amount=10, last_media_pk=0)
+
+    def test_list_liked_medias_empty(self):
+        """Verify empty-list path returns empty MediaSummary list."""
+        mock_client = Mock()
+        mock_client.liked_medias.return_value = []
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramCollectionReaderAdapter(mock_repo)
+        results = adapter.list_liked_medias("acc-123")
+
+        assert results == []
+        mock_client.liked_medias.assert_called_once_with(amount=21, last_media_pk=0)
+
+    def test_list_liked_medias_with_pagination(self):
+        """Verify liked_medias forwards last_media_pk cursor."""
+        mock_client = Mock()
+        mock_client.liked_medias.return_value = [self._create_mock_media(pk=400)]
+
+        mock_repo = Mock()
+        mock_repo.get.return_value = mock_client
+
+        adapter = InstagramCollectionReaderAdapter(mock_repo)
+        results = adapter.list_liked_medias("acc-123", amount=21, last_media_pk=250)
+
+        assert len(results) == 1
+        mock_client.liked_medias.assert_called_once_with(amount=21, last_media_pk=250)
+
     @staticmethod
     def _create_mock_collection(pk=1, name="Test", media_count=0):
         """Create a mock Collection object."""

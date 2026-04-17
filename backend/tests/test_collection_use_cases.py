@@ -87,6 +87,11 @@ class TestAccountPreconditions:
         with pytest.raises(ValueError, match="not found"):
             uc.get_collection_posts("no-such", 1)
 
+    def test_list_liked_medias_raises_if_account_missing(self):
+        uc, _ = _build_use_cases(account_exists=False)
+        with pytest.raises(ValueError, match="not found"):
+            uc.list_liked_medias("no-such")
+
 
 # ---------------------------------------------------------------------------
 # Precondition: account not authenticated
@@ -107,6 +112,11 @@ class TestAuthPreconditions:
         uc, _ = _build_use_cases(client_exists=False)
         with pytest.raises(ValueError, match="not authenticated"):
             uc.get_collection_posts("acc-1", 1)
+
+    def test_list_liked_medias_raises_if_not_authenticated(self):
+        uc, _ = _build_use_cases(client_exists=False)
+        with pytest.raises(ValueError, match="not authenticated"):
+            uc.list_liked_medias("acc-1")
 
 
 # ---------------------------------------------------------------------------
@@ -334,3 +344,71 @@ class TestDTOBoundary:
         results = uc.get_collection_posts("acc-1", 1)
 
         assert all(isinstance(r, MediaSummary) for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Liked medias
+# ---------------------------------------------------------------------------
+
+
+class TestListLikedMedias:
+    def test_returns_media_from_port(self):
+        uc, reader = _build_use_cases()
+        expected = [_make_media(1), _make_media(2)]
+        reader.list_liked_medias.return_value = expected
+
+        result = uc.list_liked_medias("acc-1")
+
+        assert result is expected
+        reader.list_liked_medias.assert_called_once_with("acc-1", 21, 0)
+
+    def test_returns_empty_list(self):
+        uc, reader = _build_use_cases()
+        reader.list_liked_medias.return_value = []
+
+        assert uc.list_liked_medias("acc-1") == []
+
+    def test_clamps_amount_to_max(self):
+        uc, reader = _build_use_cases()
+        reader.list_liked_medias.return_value = []
+
+        uc.list_liked_medias("acc-1", amount=9999)
+
+        reader.list_liked_medias.assert_called_once_with("acc-1", 200, 0)
+
+    def test_clamps_amount_to_min(self):
+        uc, reader = _build_use_cases()
+        reader.list_liked_medias.return_value = []
+
+        uc.list_liked_medias("acc-1", amount=0)
+
+        reader.list_liked_medias.assert_called_once_with("acc-1", 1, 0)
+
+    def test_passes_last_media_pk(self):
+        uc, reader = _build_use_cases()
+        reader.list_liked_medias.return_value = []
+
+        uc.list_liked_medias("acc-1", amount=50, last_media_pk=777)
+
+        reader.list_liked_medias.assert_called_once_with("acc-1", 50, 777)
+
+    def test_rejects_negative_last_media_pk(self):
+        uc, _ = _build_use_cases()
+        with pytest.raises(ValueError, match="non-negative"):
+            uc.list_liked_medias("acc-1", last_media_pk=-1)
+
+    def test_items_are_media_summary(self):
+        uc, reader = _build_use_cases()
+        reader.list_liked_medias.return_value = [_make_media(i) for i in range(3)]
+
+        results = uc.list_liked_medias("acc-1")
+
+        assert all(isinstance(r, MediaSummary) for r in results)
+
+    def test_reader_not_called_on_bad_precondition(self):
+        uc, reader = _build_use_cases(account_exists=False)
+
+        with pytest.raises(ValueError):
+            uc.list_liked_medias("acc-1")
+
+        reader.list_liked_medias.assert_not_called()

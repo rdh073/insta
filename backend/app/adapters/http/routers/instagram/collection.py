@@ -66,3 +66,29 @@ def get_collection_posts(
         raise HTTPException(
             status_code=400, detail=format_error(exc, "Collection posts failed")
         )
+
+
+@router.get("/collection/{account_id}/liked")
+def list_liked_medias(
+    account_id: str,
+    amount: int = Query(21, ge=1, le=200),
+    last_media_pk: int = Query(0, ge=0),
+    usecases=Depends(get_collection_usecases),
+):
+    """List posts the authenticated account has liked via CollectionUseCases."""
+    try:
+        posts = usecases.list_liked_medias(
+            account_id, amount=amount, last_media_pk=last_media_pk
+        )
+        return {
+            "count": len(posts),
+            "posts": [_to_media(m) for m in posts],
+        }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Liked medias failed")
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=format_error(exc, "Liked medias failed")
+        )

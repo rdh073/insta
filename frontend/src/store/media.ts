@@ -5,7 +5,7 @@ import type { PublicUserProfile } from '../types/instagram/user';
 import type { MediaAction } from '../features/media/types';
 
 type DrawerTab = 'detail' | 'comments' | 'likers';
-type FeedTab = 'posts' | 'clips' | 'tagged';
+type FeedTab = 'posts' | 'clips' | 'tagged' | 'liked';
 
 interface UserMediaCache {
   posts: MediaSummary[];

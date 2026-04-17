@@ -473,6 +473,25 @@ def register_discovery_read_tools(registry: ToolRegistry, context: "ToolBuilderC
         except (ValueError, KeyError) as exc:
             return {"error": str(exc)}
 
+    def list_liked_medias_handler(args: dict) -> dict:
+        if context.collection_use_cases is None:
+            return {"error": "Collection use cases not available"}
+        account_id, error = context.resolve_account_from_args(args)
+        if not account_id:
+            return {"error": error}
+        try:
+            medias = context.collection_use_cases.list_liked_medias(
+                account_id,
+                amount=int(args.get("amount", 21)),
+                last_media_pk=int(args.get("last_media_pk", 0)),
+            )
+            return {
+                "count": len(medias),
+                "posts": [_media_to_dict(media) for media in medias],
+            }
+        except (ValueError, KeyError) as exc:
+            return {"error": str(exc)}
+
     registry.register(
         "search_hashtags",
         search_hashtags_handler,
@@ -509,6 +528,21 @@ def register_discovery_read_tools(registry: ToolRegistry, context: "ToolBuilderC
             "List saved collections for the authenticated account.",
             properties={
                 "username": {"type": "string", "description": "Authenticated account username"},
+            },
+            required=["username"],
+        ),
+    )
+
+    registry.register(
+        "list_liked_medias",
+        list_liked_medias_handler,
+        schema(
+            "list_liked_medias",
+            "List posts the authenticated account has liked. Supports pagination via last_media_pk cursor.",
+            properties={
+                "username": {"type": "string", "description": "Authenticated account username"},
+                "amount": {"type": "integer", "description": "Number of posts to retrieve (default 21, max 200)"},
+                "last_media_pk": {"type": "integer", "description": "Pagination cursor; 0 starts from beginning"},
             },
             required=["username"],
         ),

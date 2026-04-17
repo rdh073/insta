@@ -145,3 +145,36 @@ class CollectionUseCases:
         return self.collection_reader.get_collection_posts(
             account_id, collection_pk, clamped, last_media_pk
         )
+
+    def list_liked_medias(
+        self,
+        account_id: str,
+        amount: int = _AMOUNT_DEFAULT,
+        last_media_pk: int = 0,
+    ) -> list[MediaSummary]:
+        """List posts the authenticated account has liked.
+
+        Amount is clamped to [1, 200]. last_media_pk = 0 starts from the beginning.
+
+        Args:
+            account_id: Application account ID.
+            amount: Number of posts to retrieve. Clamped to [1, 200].
+            last_media_pk: Pagination cursor — fetch posts after this media PK.
+                Use 0 (default) to start from the beginning.
+
+        Returns:
+            List of MediaSummary the authenticated account has liked.
+
+        Raises:
+            ValueError: If account not found, not authenticated, or
+                last_media_pk is negative.
+        """
+        self._require_authenticated(account_id)
+        if not isinstance(last_media_pk, int) or last_media_pk < 0:
+            raise ValueError(
+                f"last_media_pk must be a non-negative integer, got {last_media_pk!r}"
+            )
+        clamped = self._clamp_amount(amount)
+        return self.collection_reader.list_liked_medias(
+            account_id, clamped, last_media_pk
+        )

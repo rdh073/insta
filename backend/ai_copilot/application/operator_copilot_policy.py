@@ -238,6 +238,9 @@ class ToolPolicyRegistry:
         "list_collections": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads saved collection metadata for the account"
         ),
+        "list_liked_medias": ToolClassification(
+            ToolPolicy.READ_ONLY, False, "reads the authenticated account's liked posts history"
+        ),
         # ── Read-only: stories & highlights ──────────────────────────────────
         "get_story": ToolClassification(
             ToolPolicy.READ_ONLY, False, "reads one story with overlay counts"

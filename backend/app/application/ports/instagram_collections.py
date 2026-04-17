@@ -78,3 +78,29 @@ class InstagramCollectionReader(Protocol):
             Exception: If collection not found or read fails.
         """
         ...
+
+    def list_liked_medias(
+        self,
+        account_id: str,
+        amount: int = 21,
+        last_media_pk: int = 0,
+    ) -> list[MediaSummary]:
+        """
+        List posts the authenticated account has liked.
+
+        Maps to instagrapi ``liked_medias(amount, last_media_pk)``. Results are
+        returned as MediaSummary DTOs.
+
+        Args:
+            account_id: The application account ID (for client lookup).
+            amount: Number of posts to retrieve (default 21).
+            last_media_pk: Pagination cursor — fetch posts after this media PK
+                (0 = start from beginning).
+
+        Returns:
+            List of MediaSummary the authenticated account has liked.
+
+        Raises:
+            Exception: If account not authenticated or read fails.
+        """
+        ...
