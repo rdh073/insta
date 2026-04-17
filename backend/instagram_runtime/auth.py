@@ -337,10 +337,19 @@ def create_authenticated_client(
         )
 
     session_file = SESSIONS_DIR / f"{username}.json"
-    # Device UUIDs captured from the session file before the login attempt.
-    # Re-applied to the fresh client when the session-restore path falls
-    # through, so Instagram sees the same device fingerprint on re-auth.
+    # Device fingerprint captured from the session file before the login
+    # attempt. Re-applied to the fresh client when the session-restore path
+    # falls through, so Instagram sees the SAME device on re-auth.
+    #
+    # Without this, _new_client_with_optional_geo() picks a random device
+    # profile on every fresh-login retry (device_profile_factory returns
+    # different user_agents and form factors), so a few transient errors
+    # cause Instagram to see one account logging in from Samsung, then
+    # OnePlus, then Xiaomi in minutes — guaranteed to trigger bad_password
+    # decoys and escalate to ChallengeRequired.
     _saved_uuids: dict | None = None
+    _saved_device_settings: dict | None = None
+    _saved_user_agent: str | None = None
 
     def _totp_code() -> str:
         """Generate a fresh TOTP code, or empty string if no secret."""
@@ -361,7 +370,10 @@ def create_authenticated_client(
         )
         client.load_settings(session_file)
         try:
-            _saved_uuids = (client.get_settings() or {}).get("uuids")
+            loaded_settings = client.get_settings() or {}
+            _saved_uuids = loaded_settings.get("uuids")
+            _saved_device_settings = loaded_settings.get("device_settings")
+            _saved_user_agent = loaded_settings.get("user_agent")
         except Exception:
             pass
         try:
@@ -419,9 +431,16 @@ def create_authenticated_client(
             return client
 
     # Fresh login — new client, stale cookies discarded.
-    # Restore device UUIDs from the prior session (captured above) so
-    # Instagram recognises the same device fingerprint and does not flag
-    # this as a new-device login, which would trigger security challenges.
+    # Restore the FULL device fingerprint (UUIDs + device_settings +
+    # user_agent) from the prior session so Instagram recognises the same
+    # device and does not flag this as a new-device login.
+    #
+    # Carrying over only UUIDs (earlier behaviour) is not enough: each
+    # _new_client_with_optional_geo() call picks a fresh random device via
+    # device_profile_factory(), so bursts of relogin attempts look to
+    # Instagram like the same account logging in from wildly different
+    # devices. Instagram's anti-abuse responds with deceptive bad_password
+    # replies that quickly escalate to ChallengeRequired.
     client = _new_client_with_optional_geo(
         new_client_fn,
         proxy,
@@ -430,6 +449,16 @@ def create_authenticated_client(
         locale=locale,
         timezone_offset=timezone_offset,
     )
+    if _saved_device_settings:
+        try:
+            client.set_device(_saved_device_settings)
+        except Exception:
+            pass  # unexpected device_settings shape — keep random fallback
+    if _saved_user_agent:
+        try:
+            client.set_user_agent(_saved_user_agent)
+        except Exception:
+            pass  # unexpected user_agent shape — keep random fallback
     if _saved_uuids:
         try:
             client.set_uuids(_saved_uuids)

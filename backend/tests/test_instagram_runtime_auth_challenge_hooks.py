@@ -212,3 +212,126 @@ def test_create_authenticated_client_verify_session_falls_back_to_reauth_on_inva
     assert client.login_calls[0].get("verification_code") is None
     assert client.login_calls[1].get("verification_code", None) == ""
     assert client.dumped == 1
+
+
+def test_create_authenticated_client_fresh_fallback_restores_full_device_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """Regression for device-drift on fresh-login fallback.
+
+    When the session-restore path raises a non-terminal Exception and
+    create_authenticated_client falls through to the fresh-login branch, the
+    new client must keep the saved device_settings, user_agent, AND uuids
+    from the session file — not just uuids.
+
+    Before the fix, only uuids were carried over. Each _new_client_with_optional_geo
+    call picks a random device_profile_factory(), so the fresh-login branch
+    would post accounts/login/ with a *different* user_agent every time.
+    Instagram's anti-abuse sees one account logging in from many devices in
+    minutes, returns bad_password decoys, and eventually locks the account
+    into ChallengeRequired. Root-caused live 2026-04-17 on doloresball269.
+    """
+
+    monkeypatch.setattr(auth, "SESSIONS_DIR", tmp_path)
+
+    saved_device = {"manufacturer": "Samsung", "model": "SM-A325F", "android_version": 30}
+    saved_user_agent = "Instagram 364.0.0.35.86 Android (30/11; 400dpi; 1080x2400; Samsung; SM-A325F; a32; mt6853; en_US; 374010953)"
+    saved_uuids = {"phone_id": "PHONE-UUID-FIXED", "android_device_id": "android-UUID-FIXED"}
+
+    session_file = tmp_path / "alice.json"
+    session_file.write_text(
+        json.dumps(
+            {
+                "uuids": saved_uuids,
+                "device_settings": saved_device,
+                "user_agent": saved_user_agent,
+                "authorization_data": {"sessionid": "stale"},
+            }
+        )
+    )
+
+    # Tracks both clients: the session-restore client and the fresh-fallback client.
+    # We assert on the second one.
+    created_clients: list["_FallbackClient"] = []
+
+    class _FallbackClient(_StubClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.loaded_settings = False
+            self.set_uuids_called_with: dict | None = None
+            self.set_device_called_with: dict | None = None
+            self.set_user_agent_called_with: str | None = None
+            self.login_calls: list[dict] = []
+            self.dumped = False
+            created_clients.append(self)
+
+        def load_settings(self, _path: Path) -> None:
+            self.loaded_settings = True
+
+        def get_settings(self) -> dict:
+            # Returned from the FIRST client right after load_settings so the
+            # outer flow captures the saved fingerprint to replay on the fallback.
+            return {
+                "uuids": saved_uuids,
+                "device_settings": saved_device,
+                "user_agent": saved_user_agent,
+            }
+
+        def set_uuids(self, uuids: dict) -> None:
+            self.set_uuids_called_with = uuids
+
+        def set_device(self, device: dict) -> None:
+            super().set_device(device)
+            self.set_device_called_with = device
+
+        def set_user_agent(self, user_agent: str) -> None:
+            super().set_user_agent(user_agent)
+            self.set_user_agent_called_with = user_agent
+
+        def login(self, username: str, password: str, **kwargs) -> None:
+            self.login_calls.append({"username": username, "password": password, **kwargs})
+            if self.loaded_settings and len(self.login_calls) == 1:
+                # First client: session restore — simulate a transient error
+                # that is NOT BadPassword, ChallengeRequired, or LoginRequired.
+                # Per existing auth.py:412-415 this falls through to fresh login.
+                raise RuntimeError("transient network blip")
+
+        def dump_settings(self, _path: Path) -> None:
+            self.dumped = True
+
+    # Use a different client per _new_client_with_optional_geo call so the test
+    # can assert the fresh-fallback client (second created) got the device restored.
+    client_factory_calls = {"count": 0}
+
+    def _new_client_fn(_proxy):
+        client_factory_calls["count"] += 1
+        return _FallbackClient()
+
+    auth.create_authenticated_client(
+        "alice",
+        "secret",
+        proxy=None,
+        new_client_fn=_new_client_fn,
+    )
+
+    # Two clients were created: restore path + fresh-fallback path.
+    assert client_factory_calls["count"] == 2
+    assert len(created_clients) == 2
+
+    fallback_client = created_clients[1]
+
+    # The fallback client MUST have been configured with the saved device.
+    assert fallback_client.set_device_called_with == saved_device, (
+        "fresh-login fallback dropped the saved device_settings — "
+        "this is what caused Instagram to see each relogin as a new device"
+    )
+    assert fallback_client.set_user_agent_called_with == saved_user_agent, (
+        "fresh-login fallback dropped the saved user_agent"
+    )
+    assert fallback_client.set_uuids_called_with == saved_uuids, (
+        "fresh-login fallback dropped the saved UUIDs"
+    )
+
+    # And it must have posted the credentials login (expected behaviour).
+    assert len(fallback_client.login_calls) == 1
