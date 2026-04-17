@@ -826,6 +826,62 @@ async def test_execute_tools_logs_failure_for_malformed_json_args():
 
 
 # ===========================================================================
+# review_results_node tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_review_results_non_json_reviewer_output_does_not_crash_audit():
+    """Reviewer LLM returning non-JSON (e.g. Ollama gpt-oss:20b free-form text)
+    must not poison the audit stream — the parse_error field is documented and
+    the run proceeds with a synthetic pass-through finding."""
+    audit = FakeAuditLogPort()  # strict mode: validates payload
+    nodes = _make_nodes(
+        llm=FakeLLMGateway(responses=["I think everything looks fine, no issues."]),
+        audit=audit,
+    )
+    state = _base_state(
+        normalized_goal="list accounts",
+        tool_results={"c1": {"accounts": []}},
+        execution_plan=[{"step": 1, "tool": "list_accounts"}],
+    )
+
+    result = await nodes.review_results_node(state)
+
+    # Reviewer failure falls through to a pass-through finding.
+    assert result["review_findings"]["matched_intent"] is True
+    assert result["review_findings"]["recommendation"] == "proceed_to_summary"
+
+    # Audit event was accepted by the strict validator (no ValueError raised above).
+    events = audit.get_events("review_finding")
+    assert len(events) == 1
+    assert events[0]["data"]["parse_error"] == "reviewer_returned_non_json"
+
+
+@pytest.mark.asyncio
+async def test_review_results_valid_json_reviewer_output_no_parse_error():
+    """When the reviewer returns valid JSON, parse_error is None but still
+    allowed by the schema."""
+    audit = FakeAuditLogPort()
+    reviewer_resp = json.dumps({
+        "matched_intent": True,
+        "warnings": [],
+        "recommendation": "proceed_to_summary",
+    })
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[reviewer_resp]), audit=audit)
+    state = _base_state(
+        normalized_goal="list accounts",
+        tool_results={"c1": {"accounts": []}},
+    )
+
+    await nodes.review_results_node(state)
+
+    events = audit.get_events("review_finding")
+    assert len(events) == 1
+    assert events[0]["data"]["parse_error"] is None
+
+
+# ===========================================================================
 # finish_node tests
 # ===========================================================================
 

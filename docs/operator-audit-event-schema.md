@@ -97,7 +97,9 @@ Each event lists `required` payload keys and `optional` payload keys.
       "thread_id",
       "warnings"
     ],
-    "optional": []
+    "optional": [
+      "parse_error"
+    ]
   },
   "stop_reason": {
     "required": [

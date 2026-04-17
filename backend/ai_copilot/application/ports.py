@@ -84,7 +84,7 @@ AUDIT_EVENT_SCHEMA: dict[str, AuditEventSchema] = {
     },
     "review_finding": {
         "required": frozenset({"thread_id", "matched_intent", "warnings", "recommendation"}),
-        "optional": frozenset(),
+        "optional": frozenset({"parse_error"}),
     },
     "stop_reason": {
         "required": frozenset({"thread_id", "stop_reason"}),
