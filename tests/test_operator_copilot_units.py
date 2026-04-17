@@ -1179,5 +1179,186 @@ def test_route_after_plan_empty_calls_still_routes_to_summarize():
     assert route_after_plan(state) == "summarize_result"
 
 
+# ===========================================================================
+# route_after_execute_tools — routing function unit tests
+# ===========================================================================
+
+
+def test_route_after_execute_tools_skips_review_for_small_read_only_success():
+    """Small read-only run with no errors should bypass review_results."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={"c1": "read_only"},
+        tool_results={"c1": {"accounts": [{"id": "a1", "username": "test"}]}},
+    )
+    assert route_after_execute_tools(state, policy) == "summarize_result"
+
+
+def test_route_after_execute_tools_reviews_for_write_sensitive():
+    """Any write-sensitive flag must route through review_results."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "follow_user", "arguments": {}}],
+        tool_policy_flags={"c1": "write_sensitive"},
+        tool_results={"c1": {"status": "followed"}},
+    )
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+
+def test_route_after_execute_tools_reviews_for_mixed_read_write():
+    """Mixed read/write calls must still route through review_results."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(
+        approved_tool_calls=[
+            {"id": "c1", "name": "list_accounts", "arguments": {}},
+            {"id": "c2", "name": "follow_user", "arguments": {}},
+        ],
+        tool_policy_flags={"c1": "read_only", "c2": "write_sensitive"},
+        tool_results={"c1": {"accounts": []}, "c2": {"status": "followed"}},
+    )
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+
+def test_route_after_execute_tools_reviews_for_error_in_result():
+    """Truthy error field in any result forces review_results even when policy is read_only."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={"c1": "read_only"},
+        tool_results={"c1": {"error": "upstream timeout"}},
+    )
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+
+def test_route_after_execute_tools_reviews_for_large_payload():
+    """Tool results exceeding 4 KB threshold must go through review_results."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    large_accounts = [{"id": f"a{i}", "username": f"user{i}" * 10} for i in range(200)]
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={"c1": "read_only"},
+        tool_results={"c1": {"accounts": large_accounts}},
+    )
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+
+def test_route_after_execute_tools_conservative_fallback_when_no_flags():
+    """Missing policy flags with non-empty approved_tool_calls must fall back to review."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={},
+        tool_results={"c1": {"accounts": []}},
+    )
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+
+def test_route_after_execute_tools_skips_for_empty_execution():
+    """Empty approved_tool_calls and empty results can skip review (nothing to review)."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    state = _base_state(approved_tool_calls=[], tool_policy_flags={}, tool_results={})
+    assert route_after_execute_tools(state, policy) == "summarize_result"
+
+
+# ===========================================================================
+# route_after_execute_tools — integration-style audit trail tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_skip_path_produces_no_review_finding_audit_event():
+    """On the skip path, review_results is not called → review_finding event absent."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    audit = FakeAuditLogPort()
+    nodes = _make_nodes(
+        llm=FakeLLMGateway(responses=["Here are your accounts."]),
+        audit=audit,
+    )
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={"c1": "read_only"},
+        tool_results={"c1": {"accounts": []}},
+        execution_plan=[{"step": 1, "tool": "list_accounts"}],
+    )
+
+    assert route_after_execute_tools(state, policy) == "summarize_result"
+
+    # Simulate the skip path: summarize is called directly, review_results is not.
+    await nodes.summarize_result_node(state)
+
+    assert not audit.has_event("review_finding")
+
+
+@pytest.mark.asyncio
+async def test_non_skip_path_produces_review_finding_audit_event():
+    """On the non-skip path (write-sensitive), review_results runs → review_finding logged."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    audit = FakeAuditLogPort()
+    reviewer_resp = json.dumps({
+        "matched_intent": True,
+        "warnings": [],
+        "recommendation": "proceed_to_summary",
+    })
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[reviewer_resp]), audit=audit)
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "follow_user", "arguments": {}}],
+        tool_policy_flags={"c1": "write_sensitive"},
+        tool_results={"c1": {"status": "followed"}},
+    )
+
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+    # Simulate the non-skip path: review_results is called before summarize.
+    await nodes.review_results_node(state)
+
+    assert audit.has_event("review_finding")
+
+
+@pytest.mark.asyncio
+async def test_large_payload_path_produces_review_finding_audit_event():
+    """Large payload (>4 KB) triggers review_results → review_finding is logged."""
+    from ai_copilot.application.graphs.operator_copilot.routing import route_after_execute_tools
+
+    policy = ToolPolicyRegistry()
+    audit = FakeAuditLogPort()
+    reviewer_resp = json.dumps({
+        "matched_intent": True,
+        "warnings": [],
+        "recommendation": "proceed_to_summary",
+    })
+    nodes = _make_nodes(llm=FakeLLMGateway(responses=[reviewer_resp]), audit=audit)
+    large_accounts = [{"id": f"a{i}", "username": f"user{i}" * 10} for i in range(200)]
+    state = _base_state(
+        approved_tool_calls=[{"id": "c1", "name": "list_accounts", "arguments": {}}],
+        tool_policy_flags={"c1": "read_only"},
+        tool_results={"c1": {"accounts": large_accounts}},
+    )
+
+    assert route_after_execute_tools(state, policy) == "review_results"
+
+    await nodes.review_results_node(state)
+
+    assert audit.has_event("review_finding")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

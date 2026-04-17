@@ -68,7 +68,14 @@ def build_operator_copilot_graph(
         },
     )
 
-    graph.add_edge("execute_tools", "review_results")
+    graph.add_conditional_edges(
+        "execute_tools",
+        nodes.route_after_execute_tools,
+        {
+            "review_results": "review_results",
+            "summarize_result": "summarize_result",
+        },
+    )
     graph.add_edge("review_results", "summarize_result")
     graph.add_edge("summarize_result", "finish")
     graph.add_edge("finish", END)

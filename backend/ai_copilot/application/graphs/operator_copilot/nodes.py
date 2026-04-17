@@ -9,6 +9,7 @@ from .nodes_plan_policy import OperatorCopilotPlanPolicyNodes
 from .routing import (
     route_after_approval,
     route_after_classify,
+    route_after_execute_tools,
     route_after_plan,
     route_after_policy,
 )
@@ -28,6 +29,9 @@ class OperatorCopilotNodes(OperatorCopilotApprovalExecutionNodes):
 
     def route_after_approval(self, state: OperatorCopilotState) -> str:
         return route_after_approval(state)
+
+    def route_after_execute_tools(self, state: OperatorCopilotState) -> str:
+        return route_after_execute_tools(state, self.policy_registry)
 
 
 __all__ = [

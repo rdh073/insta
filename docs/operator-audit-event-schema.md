@@ -5,6 +5,12 @@ Canonical event taxonomy and payload contract for `AuditLogPort.log(event_type, 
 `event_type` must be one of the keys below.
 Each event lists `required` payload keys and `optional` payload keys.
 
+> **Conditional events:** `review_finding` is emitted only when `review_results_node` runs.
+> Since 2026-04-17 the graph topology skips `review_results` for turns where all executed
+> tools were READ_ONLY, total tool-result payload is below 4 KB, and no tool returned an
+> error. On those turns `review_finding` will be absent from the audit trail — this is
+> expected and correct. Coverage scanners must allow its absence on the skip path.
+
 ```json
 {
   "operator_request": {
